@@ -21,24 +21,11 @@ export default async function SchoolAdminPage({ params }: { params: { id: string
   const roleLabel = roles.map((r) => ROLE_LABELS[r] ?? r).join(", ") || "Member";
 
   return (
-    <>
-      <TopBar email={ctx.email} role={roleLabel} />
-      <div className="container">
-        <h1>{school.name}</h1>
-        <p className="page-sub">
-          <span className={`badge ${school.status}`}>{school.status}</span>{" "}
-          {school.subscription && <> · {school.subscription.plan.name} plan</>}
-        </p>
-        <SchoolPortal
-          schoolId={params.id}
-          roles={roles}
-          initial={JSON.parse(
-            JSON.stringify({
-              school,
-            })
-          )}
-        />
-      </div>
-    </>
+    <SchoolPortal
+      schoolId={params.id}
+      roles={roles}
+      email={ctx.email}
+      initial={JSON.parse(JSON.stringify({ school }))}
+    />
   );
 }

@@ -24,7 +24,7 @@ export async function GET(req: Request, { params }: Params) {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="schoolhub-${type}-template.csv"`,
+        "Content-Disposition": `attachment; filename="siplat-${type}-template.csv"`,
       },
     });
   } catch (err) {

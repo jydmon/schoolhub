@@ -4,6 +4,7 @@ import { hashPassword } from "@/lib/auth";
 import { onboardSchoolSchema } from "@/lib/validation";
 import { recordAudit } from "@/lib/audit";
 import { AUDIT, ROLES } from "@/lib/constants";
+import { sendEmail } from "@/lib/email";
 import { handleError, clientIp, ok } from "@/lib/http";
 
 // List all tenants (platform admin only).
@@ -100,6 +101,16 @@ export async function POST(req: Request) {
       targetId: result.admin.id,
       metadata: { role: ROLES.SCHOOL_ADMIN },
     });
+
+    // Welcome email so the new school administrator can start using the platform.
+    try {
+      const appUrl = process.env.APP_URL ?? "";
+      await sendEmail({
+        to: result.admin.email,
+        subject: `Welcome to SIPlat — ${input.schoolName}`,
+        body: `Hi ${input.adminName},\n\n${input.schoolName} is now set up on SIPlat, and you are the School Administrator.\n\nSign in to get started:\n${appUrl}/login\n\nEmail: ${result.admin.email}\nUse the temporary password you were given, then change it under “My security”.\n\nFrom here you can add students, guardians and staff (manually or by connecting your systems), set up transport and communications, and invite colleagues.\n\nWelcome aboard,\nThe SIPlat team`,
+      });
+    } catch { /* non-fatal: email provider may not be configured yet */ }
 
     return ok({ school: result.school, adminId: result.admin.id }, 201);
   } catch (err) {

@@ -73,7 +73,7 @@ export default function ParentDashboard() {
 
   return (
     <>
-      <div className="tabs">
+      <div className="tabs" id="p-overview">
         {RANGES.map(([k, label]) => (
           <button key={k} className={range === k ? "active" : ""} onClick={() => setRange(k)}>{label}</button>
         ))}
@@ -93,10 +93,10 @@ export default function ParentDashboard() {
 
       {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
 
-      <ParentNotifications />
-      <ParentTransport children={children} />
-      <ParentTrips />
-      <ParentRewards />
+      <div id="p-notifications"><ParentNotifications /></div>
+      <div id="p-transport"><ParentTransport children={children} /></div>
+      <div id="p-trips"><ParentTrips /></div>
+      <div id="p-rewards"><ParentRewards /></div>
 
       {outstanding.length > 0 && (
         <div className="panel" style={{ borderColor: "var(--warn)" }}>
@@ -183,9 +183,9 @@ export default function ParentDashboard() {
         ) : <p className="muted">Loading subscription link…</p>}
       </div>
 
-      <ParentReports />
-      <ParentMessaging />
-      <ParentPreferences />
+      <div id="p-reports"><ParentReports /></div>
+      <div id="p-messaging"><ParentMessaging /></div>
+      <div id="p-preferences"><ParentPreferences /></div>
       <AssistantChat examples={PARENT_EXAMPLES} />
     </>
   );

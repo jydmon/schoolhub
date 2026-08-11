@@ -13,6 +13,48 @@ import BehaviourTab from "./BehaviourTab";
 import CommsTab from "./CommsTab";
 import ReportsTab from "./ReportsTab";
 import OpsTab from "./OpsTab";
+import AppShell, { NavGroup } from "@/components/AppShell";
+
+const SCHOOL_NAV: NavGroup[] = [
+  { label: "Overview", items: [{ key: "ops", label: "Operations", icon: "📊" }] },
+  { label: "People", items: [
+    { key: "students", label: "Students", icon: "🎓" },
+    { key: "guardians", label: "Guardians", icon: "👪" },
+    { key: "staff", label: "Staff", icon: "🧑‍🏫" },
+    { key: "users", label: "Users & roles", icon: "🔑" },
+  ] },
+  { label: "Learning & care", items: [
+    { key: "calendar", label: "Calendar", icon: "📅" },
+    { key: "behaviour", label: "Behaviour", icon: "⭐" },
+    { key: "reports", label: "Reports", icon: "📄" },
+    { key: "knowledge", label: "Knowledge", icon: "📚" },
+  ] },
+  { label: "Transport", items: [
+    { key: "transport", label: "Transport", icon: "🚌" },
+    { key: "trips", label: "Trips", icon: "🧳" },
+  ] },
+  { label: "Communication", items: [
+    { key: "comms", label: "Comms", icon: "✉️" },
+    { key: "assistant", label: "AI Assistant", icon: "🤖" },
+  ] },
+  { label: "Data & integrations", items: [
+    { key: "import", label: "Manual import", icon: "📥" },
+    { key: "integrations", label: "Integrations", icon: "🔌" },
+    { key: "hub", label: "Integration Hub", icon: "🧩" },
+  ] },
+  { label: "Settings", items: [
+    { key: "config", label: "Configuration", icon: "⚙️" },
+    { key: "audit", label: "Audit", icon: "🗂️" },
+    { key: "security", label: "My security", icon: "🔐" },
+  ] },
+];
+const SCHOOL_TITLES: Record<string, string> = {
+  ops: "Operations", students: "Students", guardians: "Guardians", staff: "Staff", users: "Users & roles",
+  calendar: "Calendar", behaviour: "Behaviour", reports: "Reports", knowledge: "Knowledge",
+  transport: "Transport", trips: "Trips", comms: "Comms", assistant: "AI Assistant",
+  import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
+  config: "Configuration", audit: "Audit", security: "My security",
+};
 
 const ALL_MODULES = ["dashboard", "calendar", "transport", "trips", "comms", "ai"];
 const ASSIGNABLE_ROLES = [
@@ -29,9 +71,10 @@ type Props = {
   schoolId: string;
   roles: string[];
   initial: { school: any };
+  email?: string;
 };
 
-export default function SchoolPortal({ schoolId, roles, initial }: Props) {
+export default function SchoolPortal({ schoolId, roles, initial, email = "" }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
   type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "security";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
@@ -57,14 +100,11 @@ export default function SchoolPortal({ schoolId, roles, initial }: Props) {
     ["audit", "Audit"],
   ];
 
+  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "security", label: "My security", icon: "🔐" }] }];
   return (
-    <>
-      <div className="tabs">
-        {canManage && manageTabs.map(([t, label]) => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{label}</button>
-        ))}
-        <button className={tab === "security" ? "active" : ""} onClick={() => setTab("security")}>My security</button>
-      </div>
+    <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
+      onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
+      email={email} role={canManage ? "School Administrator" : "Member"}>
       {tab === "ops" && canManage && <OpsTab schoolId={schoolId} />}
       {tab === "students" && canManage && <StudentsTab schoolId={schoolId} />}
       {tab === "guardians" && canManage && <GuardiansTab schoolId={schoolId} />}
@@ -84,7 +124,7 @@ export default function SchoolPortal({ schoolId, roles, initial }: Props) {
       {tab === "users" && canManage && <UsersTab schoolId={schoolId} />}
       {tab === "audit" && canManage && <AuditTab schoolId={schoolId} />}
       {tab === "security" && <SecurityTab />}
-    </>
+    </AppShell>
   );
 }
 
