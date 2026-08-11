@@ -122,6 +122,7 @@ const NAV: NavGroup[] = [
     { key: "templates", label: "Templates", icon: "🧩" },
     { key: "policies", label: "Policies", icon: "📋" },
     { key: "videos", label: "Help Videos", icon: "🎬" },
+    { key: "website", label: "Website CMS", icon: "🌐" },
   ] },
   { label: "Integrations", items: [
     { key: "integrations", label: "Integrations", icon: "🔌" },
@@ -144,7 +145,7 @@ const NAV: NavGroup[] = [
 ];
 const TITLES: Record<string, string> = {
   tenants: "Schools", groups: "Trusts & Groups", templates: "Templates", policies: "Policies",
-  videos: "Help Videos", integrations: "Integrations", crm: "CRM", email: "Platform comms",
+  videos: "Help Videos", website: "Website CMS", integrations: "Integrations", crm: "CRM", email: "Platform comms",
   subs: "Subscriptions", packages: "Packages", revenue: "Parent Revenue", usage: "User analytics",
   reports: "Reports", support: "Help desk", trouble: "Troubleshooting", team: "Team & Access", audit: "Audit trail",
 };
@@ -178,6 +179,7 @@ export default function AdminPortal({ email = "" }: { email?: string }) {
         {tab === "policies" && <Policies />}
         {tab === "crm" && <Crm />}
         {tab === "videos" && <Videos />}
+        {tab === "website" && <WebsitePages />}
         {tab === "support" && <Support />}
         {tab === "email" && <EmailCfg />}
         {tab === "integrations" && <Integrations />}
@@ -694,7 +696,53 @@ function Templates() {
 }
 
 /* ============================ POLICIES ============================ */
-const BLANK_POL = { title: "", category: "data_protection", audience: "all", version: "", summary: "", body: "", fileUrl: "", requireAck: false, published: true };
+const BLANK_POL = { title: "", category: "data_protection", audience: "all", version: "", summary: "", body: "", fileUrl: "", requireAck: false, status: "draft" };
+const POLICY_STATUS_OPTS = ["draft", "approved", "published"];
+const polStatus = (p: any): string => p.status || (p.published ? "published" : "draft");
+function StatusBadge({ s }: { s: string }) {
+  const cls = s === "published" ? "published" : s === "approved" ? "scheduled" : "draft";
+  return <span className={`badge ${cls}`}>{s}</span>;
+}
+function PolicyHistory({ policy, onClose, onRestored }: { policy: any; onClose: () => void; onRestored: () => void }) {
+  const { data, err, reload } = useJson<any>(`/api/platform/policies/${policy.id}/versions`);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [preview, setPreview] = useState<any | null>(null);
+  const versions: any[] = data?.versions ?? [];
+  async function restore(v: any) {
+    setBusy(v.id);
+    try { await send(`/api/platform/policies/${policy.id}/versions`, { versionId: v.id }); onRestored(); reload(); }
+    catch { /* surfaced by reload */ } finally { setBusy(null); }
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex-between"><h2 style={{ margin: 0 }}>History — {policy.title}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
+        <p className="sub">Every save and status change is captured. Restore rolls a prior version back onto the live document (and is itself recorded).</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <div style={{ maxHeight: 360, overflow: "auto" }}>
+          <table><thead><tr><th>When</th><th>Version</th><th>Status</th><th>Change</th><th className="right"></th></tr></thead>
+            <tbody>
+              {versions.map((v) => (
+                <tr key={v.id}>
+                  <td className="mono muted">{dt(v.changedAt)}</td>
+                  <td className="muted">{v.version || "—"}</td>
+                  <td><StatusBadge s={v.status} /></td>
+                  <td className="muted">{v.note || "—"}</td>
+                  <td className="right nowrap">
+                    <button className="secondary small" onClick={() => setPreview(v)}>View</button>{" "}
+                    <button className="secondary small" disabled={busy === v.id} onClick={() => restore(v)}>{busy === v.id ? "…" : "Restore"}</button>
+                  </td>
+                </tr>
+              ))}
+              {versions.length === 0 && <Empty cols={5} text="No versions recorded yet." />}
+            </tbody>
+          </table>
+        </div>
+        {preview && <DocModal title={`${preview.title} · v${preview.version}`} meta={`${preview.status} · saved ${dt(preview.changedAt)}`} onClose={() => setPreview(null)}>{preview.summary ? preview.summary + "\n\n" : ""}{preview.body || "(no content)"}</DocModal>}
+      </div>
+    </div>
+  );
+}
 function Policies() {
   const { data, err, reload } = useJson<any>("/api/platform/policies");
   const [f, setF] = useState<any>({ ...BLANK_POL });
@@ -703,8 +751,10 @@ function Policies() {
   const [view, setView] = useState<any | null>(null);
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState<{ mode: "one" | "bulk"; row?: any } | null>(null);
+  const [history, setHistory] = useState<any | null>(null);
   const sel = useSel();
-  const sort = useSort<any>({ title: (p) => (p.title || "").toLowerCase(), category: (p) => p.category || "", audience: (p) => p.audience || "", version: (p) => p.version || "", status: (p) => (p.published ? 1 : 0) }, "title");
+  const statusRank: Record<string, number> = { draft: 0, approved: 1, published: 2 };
+  const sort = useSort<any>({ title: (p) => (p.title || "").toLowerCase(), category: (p) => p.category || "", audience: (p) => p.audience || "", version: (p) => p.version || "", status: (p) => statusRank[polStatus(p)] ?? 0 }, "title");
   const all: any[] = data?.policies ?? [];
   const rows = sort.apply(all.filter((p) => matchQ(q, p.title, p.category, p.audience, p.summary)));
   const dirty = !!editId || f.title.trim().length > 0 || f.body.trim().length > 0;
@@ -720,15 +770,15 @@ function Policies() {
       reset(); reload();
     } catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
-  function edit(p: any) { setEditId(p.id); setF({ title: p.title || "", category: p.category || "general", audience: p.audience || "all", version: p.version || "", summary: p.summary || "", body: p.body || "", fileUrl: p.fileUrl || "", requireAck: !!p.requireAck, published: !!p.published }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  function edit(p: any) { setEditId(p.id); setF({ title: p.title || "", category: p.category || "general", audience: p.audience || "all", version: p.version || "", summary: p.summary || "", body: p.body || "", fileUrl: p.fileUrl || "", requireAck: !!p.requireAck, status: polStatus(p) }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
   async function duplicate(p: any) {
     setMsg(null);
-    try { await send("/api/platform/policies", { title: `${p.title} (copy)`, category: p.category || undefined, audience: p.audience || undefined, version: p.version || undefined, summary: p.summary || undefined, body: p.body || undefined, ...(p.fileUrl ? { fileUrl: p.fileUrl } : {}), requireAck: !!p.requireAck, published: false }); setMsg({ k: "ok", t: "Policy duplicated (as draft)." }); reload(); }
+    try { await send("/api/platform/policies", { title: `${p.title} (copy)`, category: p.category || undefined, audience: p.audience || undefined, version: p.version || undefined, summary: p.summary || undefined, body: p.body || undefined, ...(p.fileUrl ? { fileUrl: p.fileUrl } : {}), requireAck: !!p.requireAck, status: "draft" }); setMsg({ k: "ok", t: "Policy duplicated (as draft)." }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
-  async function togglePublish(p: any) {
+  async function changeStatus(p: any, status: string) {
     setMsg(null);
-    try { await send(`/api/platform/policies/${p.id}`, { published: !p.published }, "PATCH"); reload(); }
+    try { await send(`/api/platform/policies/${p.id}`, { status }, "PATCH"); setMsg({ k: "ok", t: `“${p.title}” → ${status}.` }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
   async function doDelete() {
@@ -748,9 +798,10 @@ function Policies() {
         {view.fileUrl ? <p style={{ marginTop: 12 }}><a href={view.fileUrl} target="_blank" rel="noreferrer">Open attached document</a></p> : null}
       </DocModal>}
       <ConfirmDialog open={confirm !== null} title={confirm?.mode === "bulk" ? "Delete selected policies?" : "Delete this policy?"} message={confirm?.mode === "bulk" ? `${sel.ids.length} policy(ies) will be permanently deleted.` : `“${confirm?.row?.title}” will be permanently deleted.`} confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirm(null)} />
+      {history && <PolicyHistory policy={history} onClose={() => setHistory(null)} onRestored={() => { setMsg({ k: "ok", t: "Version restored." }); reload(); }} />}
       <div className="panel">
         <h2>Platform policies</h2>
-        <p className="sub">Data-protection, safeguarding and general policies pushed to all tenants. Toggle Publish to move a policy between draft and published.</p>
+        <p className="sub">Data-protection, safeguarding and general policies. Each document has a lifecycle — <strong>draft → approved → published</strong>, set freely from the Status column — and every save/status change is versioned (open History to view or restore).</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
         <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
           {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
@@ -773,11 +824,11 @@ function Policies() {
                 <td className="muted">{p.category || "—"}</td>
                 <td className="muted">{p.audience || "all"}</td>
                 <td className="muted">{p.version || "—"}</td>
-                <td>{p.published ? <span className="badge published">published</span> : <span className="badge draft">draft</span>}</td>
+                <td><select className="small" value={polStatus(p)} onChange={(e) => changeStatus(p, e.target.value)} title="Lifecycle status">{POLICY_STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}</select></td>
                 <td className="right nowrap">
                   <button className="secondary small" onClick={() => setView(p)}>View</button>{" "}
                   <button className="secondary small" onClick={() => edit(p)}>Edit</button>{" "}
-                  <button className="secondary small" onClick={() => togglePublish(p)}>{p.published ? "Unpublish" : "Publish"}</button>{" "}
+                  <button className="secondary small" onClick={() => setHistory(p)}>History</button>{" "}
                   <button className="secondary small" onClick={() => duplicate(p)}>Duplicate</button>{" "}
                   <button className="danger small" onClick={() => setConfirm({ mode: "one", row: p })}>Delete</button>
                 </td>
@@ -805,7 +856,10 @@ function Policies() {
           <textarea rows={6} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
           <label>Or link to an uploaded document (URL)</label>
           <input type="url" value={f.fileUrl} onChange={(e) => setF({ ...f, fileUrl: e.target.value })} placeholder="https://…" />
-          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.published} onChange={(e) => setF({ ...f, published: e.target.checked })} /> Published (untick to save as draft)</label>
+          <div className="row" style={{ marginTop: 8 }}>
+            <div><label>Lifecycle status</label><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{POLICY_STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+            <div />
+          </div>
           <label className="consent" style={{ display: "block", marginTop: 6 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Require acknowledgement</label>
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
             <button type="submit">{editId ? "Update policy" : "Save policy"}</button>
@@ -977,6 +1031,92 @@ function Crm() {
           <RichText value={camp.body} onChange={(html) => setCamp((prev) => ({ ...prev, body: html }))} />
           <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Personalise with {"{{name}}"} and include an unsubscribe link with {"{{unsubscribe}}"}. Links are automatically click-tracked and an open pixel is added on send.</p>
           <button type="submit" style={{ marginTop: 12 }}>Create campaign (draft)</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ WEBSITE CMS ============================ */
+const BLANK_PAGE = { title: "", slug: "", status: "draft", seoTitle: "", seoDescription: "", contentHtml: "", navLabel: "", showInNav: false, navOrder: "0" };
+function WebsitePages() {
+  const { data, err, reload } = useJson<any>("/api/platform/cms/pages");
+  const [f, setF] = useState<any>({ ...BLANK_PAGE });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [q, setQ] = useState("");
+  const [confirm, setConfirm] = useState<any | null>(null);
+  const pages: any[] = data?.pages ?? [];
+  const rows = pages.filter((p) => matchQ(q, p.title, p.slug, p.status));
+  const dirty = !!editId || f.title.trim().length > 0 || f.contentHtml.trim().length > 0;
+  useDirty(dirty);
+  function reset() { setF({ ...BLANK_PAGE }); setEditId(null); }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    const body = { title: f.title, slug: f.slug || undefined, status: f.status, seoTitle: f.seoTitle, seoDescription: f.seoDescription, contentHtml: f.contentHtml, navLabel: f.navLabel, showInNav: f.showInNav, navOrder: Number(f.navOrder) || 0 };
+    try {
+      if (editId) { await send(`/api/platform/cms/pages/${editId}`, body, "PATCH"); setMsg({ k: "ok", t: "Page saved." }); }
+      else { const r = await send("/api/platform/cms/pages", body); setMsg({ k: "ok", t: `Page created at /site/${r.slug}.` }); }
+      reset(); reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  function edit(p: any) { setEditId(p.id); setF({ title: p.title || "", slug: p.slug || "", status: p.status || "draft", seoTitle: p.seoTitle || "", seoDescription: p.seoDescription || "", contentHtml: p.contentHtml || "", navLabel: p.navLabel || "", showInNav: !!p.showInNav, navOrder: String(p.navOrder ?? 0) }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  async function changeStatus(p: any, status: string) { setMsg(null); try { await send(`/api/platform/cms/pages/${p.id}`, { status }, "PATCH"); reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function del() { if (!confirm) return; try { await send(`/api/platform/cms/pages/${confirm.id}`, {}, "DELETE"); setMsg({ k: "ok", t: "Page deleted." }); } catch (e: any) { setMsg({ k: "err", t: e.message }); } finally { setConfirm(null); reload(); } }
+  return (
+    <>
+      <ConfirmDialog open={confirm !== null} title="Delete this page?" message={`“${confirm?.title}” will be permanently deleted from the website.`} confirmLabel="Delete" danger onConfirm={del} onCancel={() => setConfirm(null)} />
+      <div className="panel">
+        <h2>Website pages</h2>
+        <p className="sub">Manage marketing-site content here. Published pages render at <span className="mono">/site/&lt;slug&gt;</span> and are available to the website via <span className="mono">/api/public/cms/pages</span> — so the main site can be connected to this CMS later without rebuilding it.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <Notice msg={msg} />
+        <TableTools q={q} setQ={setQ} count={rows.length} total={pages.length} />
+        <table>
+          <thead><tr><th>Title</th><th>Slug</th><th>In nav</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
+          <tbody>
+            {rows.map((p) => (
+              <tr key={p.id}>
+                <td><strong>{p.title}</strong></td>
+                <td className="mono muted">/site/{p.slug}</td>
+                <td>{p.showInNav ? <span className="badge active">yes</span> : <span className="muted">—</span>}</td>
+                <td><select className="small" value={p.status} onChange={(e) => changeStatus(p, e.target.value)}>{["draft", "published"].map((s) => <option key={s} value={s}>{s}</option>)}</select></td>
+                <td className="mono muted">{dt(p.updatedAt)}</td>
+                <td className="right nowrap">
+                  <a href={`/site/${p.slug}`} target="_blank" rel="noreferrer"><button className="secondary small">View</button></a>{" "}
+                  <button className="secondary small" onClick={() => edit(p)}>Edit</button>{" "}
+                  <button className="danger small" onClick={() => setConfirm(p)}>Delete</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && <Empty cols={6} text={pages.length ? "No pages match your filter." : "No website pages yet — create one below."} />}
+          </tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>{editId ? "Edit page" : "New page"}</h2>
+        <form onSubmit={submit}>
+          <div className="row">
+            <div><label>Title</label><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required /></div>
+            <div><label>Slug (URL)</label><input value={f.slug} onChange={(e) => setF({ ...f, slug: e.target.value })} placeholder="auto from title" /></div>
+          </div>
+          <div className="row">
+            <div><label>SEO title</label><input value={f.seoTitle} onChange={(e) => setF({ ...f, seoTitle: e.target.value })} /></div>
+            <div><label>Status</label><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{["draft", "published"].map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+          </div>
+          <label>SEO description</label>
+          <input value={f.seoDescription} onChange={(e) => setF({ ...f, seoDescription: e.target.value })} />
+          <label style={{ marginTop: 8 }}>Page content</label>
+          <RichText value={f.contentHtml} onChange={(html) => setF((prev: any) => ({ ...prev, contentHtml: html }))} placeholder="Write the page content…" />
+          <div className="row" style={{ marginTop: 10 }}>
+            <div><label>Nav label (optional)</label><input value={f.navLabel} onChange={(e) => setF({ ...f, navLabel: e.target.value })} placeholder="e.g. About" /></div>
+            <div><label>Nav order</label><input type="number" value={f.navOrder} onChange={(e) => setF({ ...f, navOrder: e.target.value })} /></div>
+          </div>
+          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.showInNav} onChange={(e) => setF({ ...f, showInNav: e.target.checked })} /> Show in website navigation</label>
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <button type="submit">{editId ? "Save page" : "Create page"}</button>
+            {editId && <button type="button" className="secondary" onClick={reset}>Cancel edit</button>}
+          </div>
         </form>
       </div>
     </>

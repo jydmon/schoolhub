@@ -809,6 +809,8 @@ export const policySchema = z.object({
   requireAck: z.boolean().optional(),
   effectiveDate: z.string().datetime().optional(),
   published: z.boolean().optional(),
+  status: z.enum(["draft", "approved", "published"]).optional(),
+  note: z.string().max(500).optional(),
 });
 export const announcementSchema = z.object({
   title: z.string().min(2).max(200),
