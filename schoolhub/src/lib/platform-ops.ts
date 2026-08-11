@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { recordAudit } from "./audit";
 import { AUDIT } from "./constants";
 import { encryptSecret } from "./integration/crypto";
+import { invalidateEmailCache } from "./email";
 import { buildReport, isValidReportType, type ReportType } from "./report-builder-logic";
 
 // Platform operations: email configuration, support chat with tenant admins, and
@@ -22,6 +23,7 @@ export async function setEmailConfig(input: { provider: string; fromName?: strin
   };
   if (input.secret) data.secretEnc = encryptSecret(input.secret); // never stored or returned in plaintext
   const c = await prisma.emailConfig.upsert({ where: { id: "singleton" }, update: data, create: { id: "singleton", ...data } });
+  invalidateEmailCache(); // the transport re-reads the new provider/secret on next send
   await recordAudit({ action: AUDIT.EMAIL_CONFIG_CHANGED, actorUserId: input.actorUserId, targetType: "EmailConfig", targetId: c.id, metadata: { provider: input.provider } });
   return { ok: true };
 }

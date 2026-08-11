@@ -1145,6 +1145,8 @@ function EmailCfg() {
   const [f, setF] = useState<any>({ provider: "console", fromName: "", fromEmail: "", host: "", port: "", username: "", secret: "" });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   useEffect(() => { if (data) setF((prev: any) => ({ ...prev, provider: data.provider ?? "console", fromName: data.fromName ?? "", fromEmail: data.fromEmail ?? "", host: data.host ?? "", port: data.port ?? "", username: data.username ?? "" })); }, [data]);
+  const [testTo, setTestTo] = useState("");
+  const [testing, setTesting] = useState(false);
   async function save(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
     const body: any = { provider: f.provider, fromName: f.fromName || undefined, fromEmail: f.fromEmail || undefined, host: f.host || undefined, username: f.username || undefined };
@@ -1153,10 +1155,24 @@ function EmailCfg() {
     try { await send("/api/platform/email-config", body, "PUT"); setMsg({ k: "ok", t: "Email settings saved." }); setF({ ...f, secret: "" }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
+  async function sendTest() {
+    setMsg(null); setTesting(true);
+    try { const r = await send("/api/platform/email-config/test", { to: testTo }); setMsg({ k: "ok", t: `Test email sent to ${r.sentTo} — provider verified.` }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: `Test failed: ${e.message}` }); }
+    finally { setTesting(false); }
+  }
+  const provHint: Record<string, string> = {
+    console: "Emails are written to the server log only — nothing is delivered. Choose a real provider to go live.",
+    resend: "Secret = your Resend API key. Set From email to a verified domain sender.",
+    postmark: "Secret = your Postmark Server Token. From email must be on a verified Sender Signature / domain.",
+    smtp: "Set host, port (587 STARTTLS or 465 TLS), username, and the password as the secret.",
+    ses: "Use the Amazon SES SMTP endpoint as host with your SES SMTP username + password (secret). Verify your sender in SES first.",
+  };
   return (
     <div className="panel">
-      <h2>Email configuration</h2>
-      <p className="sub">How the platform sends email. The secret is encrypted at rest and never shown again. {data?.secretSet ? "A secret is currently set." : ""}</p>
+      <h2>Email configuration <span className="sub" style={{ fontWeight: 400 }}>· {data?.verified ? <span className="badge active">verified</span> : <span className="badge draft">not verified</span>}</span></h2>
+      <p className="sub">How the platform sends email (welcome emails, CRM campaigns, notifications). The secret is encrypted at rest and never shown again. {data?.secretSet ? "A secret is currently set." : ""}</p>
+      <p className="sub" style={{ background: "#f7f9fc", border: "1px solid var(--line,#d7deea)", borderRadius: 8, padding: "8px 10px" }}>{provHint[f.provider] || ""}</p>
       {err && <Notice msg={{ k: "err", t: err }} />}
       <Notice msg={msg} />
       <form onSubmit={save}>
@@ -1176,6 +1192,14 @@ function EmailCfg() {
         <input type="password" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
         <button type="submit" style={{ marginTop: 12 }}>Save email settings</button>
       </form>
+      <div style={{ marginTop: 18, borderTop: "1px solid var(--line,#d7deea)", paddingTop: 14 }}>
+        <h2 style={{ fontSize: 15 }}>Send a test email</h2>
+        <p className="sub">Verify the live provider by sending yourself a test. Save your settings first.</p>
+        <div className="row">
+          <div style={{ flex: 2 }}><label>Send test to</label><input type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@school.test" /></div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}><button type="button" className="secondary" disabled={!testTo || testing} onClick={sendTest}>{testing ? "Sending…" : "Send test"}</button></div>
+        </div>
+      </div>
     </div>
   );
 }
