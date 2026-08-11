@@ -463,7 +463,7 @@ export const INFO_CATEGORIES = [
 
 export const IMPORT_TYPES = [
   "students", "parents", "staff", "messaging_consent",
-  "vehicles", "routes", "calendar_events", "announcements", "pupil_reports", "menus",
+  "vehicles", "routes", "calendar_events", "announcements", "pupil_reports", "menus", "trips",
 ] as const;
 export type ImportType = (typeof IMPORT_TYPES)[number];
 
@@ -473,5 +473,5 @@ export const IMPORT_TYPE_LABELS: Record<string, string> = {
   messaging_consent: "Messaging consent (SMS/WhatsApp opt-in)",
   vehicles: "Vehicles (fleet)", routes: "Transport routes",
   calendar_events: "Calendar & timetable events", announcements: "Announcements",
-  pupil_reports: "Pupil reports", menus: "Meals & menus",
+  pupil_reports: "Pupil reports", menus: "Meals & menus", trips: "Trips & events",
 };

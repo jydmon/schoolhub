@@ -458,6 +458,28 @@ export async function runImport(opts: {
         const existing = await prisma.menuItem.findFirst({ where: { schoolId, day, meal, course, name } });
         if (existing) { await prisma.menuItem.update({ where: { id: existing.id }, data }); updated++; }
         else { await prisma.menuItem.create({ data: { schoolId, name, ...data } }); created++; }
+      } else if (type === "trips") {
+        const title = row.title?.trim();
+        if (!title) throw new Error("title is required");
+        const date = (row.date || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("date must be YYYY-MM-DD");
+        const dupKey = "trip:" + title.toLowerCase() + "@" + date;
+        if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "title", message: `duplicate trip "${title}" in file`, fatal: false }); continue; }
+        seen.add(dupKey);
+        const status = (row.status?.trim() || "planned").toLowerCase();
+        const data = {
+          date,
+          destination: row.destination?.trim() || null,
+          departureTime: row.departureTime?.trim() || null,
+          returnTime: row.returnTime?.trim() || null,
+          purpose: row.purpose?.trim() || null,
+          venue: row.venue?.trim() || null,
+          status: ["planned", "active", "completed", "cancelled"].includes(status) ? status : "planned",
+          createdById: opts.actorUserId || null,
+        };
+        const existing = await prisma.trip.findFirst({ where: { schoolId, title, date } });
+        if (existing) { await prisma.trip.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.trip.create({ data: { schoolId, title, ...data } }); created++; }
       }
     } catch (err) {
       errors.push({ row: line, message: (err as Error).message, fatal: true });

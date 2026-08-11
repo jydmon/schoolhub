@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, createContext, useContext } from "react";
+import { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog, useBeforeUnload } from "@/components/ConfirmDialog";
 import { PLATFORM_AREAS, AREA_LABELS } from "@/lib/platform-staff-logic";
@@ -819,20 +819,103 @@ function Policies() {
 
 /* ============================ CRM ============================ */
 const AUDIENCE_KEYS = ["subscriber", "parent", "driver", "tenant_admin", "teacher", "transport_manager", "lead"];
+
+// Lightweight rich-text editor (contentEditable) producing HTML for campaign bodies.
+function RichText({ value, onChange, placeholder }: { value: string; onChange: (html: string) => void; placeholder?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (ref.current && ref.current.innerHTML !== value) ref.current.innerHTML = value || ""; }, [value]);
+  function cmd(command: string, arg?: string) { document.execCommand(command, false, arg); ref.current?.focus(); onChange(ref.current?.innerHTML || ""); }
+  function link() { const url = window.prompt("Link URL (https://…)"); if (url) cmd("createLink", url); }
+  const btn = (label: any, fn: () => void, key: string) => <button key={key} type="button" className="rte-btn" onMouseDown={(e) => e.preventDefault()} onClick={fn}>{label}</button>;
+  return (
+    <div className="rte">
+      <div className="rte-tb">
+        {btn(<b>B</b>, () => cmd("bold"), "b")}
+        {btn(<i>I</i>, () => cmd("italic"), "i")}
+        {btn(<u>U</u>, () => cmd("underline"), "u")}
+        {btn("H", () => cmd("formatBlock", "H3"), "h")}
+        {btn("• List", () => cmd("insertUnorderedList"), "ul")}
+        {btn("1. List", () => cmd("insertOrderedList"), "ol")}
+        {btn("Link", link, "a")}
+        {btn("Clear", () => cmd("removeFormat"), "x")}
+      </div>
+      <div ref={ref} className="rte-area" contentEditable suppressContentEditableWarning
+        onInput={() => onChange(ref.current?.innerHTML || "")} data-ph={placeholder || "Write your email… use {{name}} to personalise."} />
+    </div>
+  );
+}
+
+function StatTiles({ s }: { s: any }) {
+  const tiles: [string, any][] = [
+    ["Recipients", s?.total ?? 0], ["Sent", s?.sent ?? 0], ["Opened", `${s?.opened ?? 0} (${s?.openRate ?? 0}%)`],
+    ["Clicked", `${s?.clicked ?? 0} (${s?.clickRate ?? 0}%)`], ["Failed", s?.failed ?? 0], ["Unsub", s?.unsub ?? 0],
+  ];
+  return <div className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>{tiles.map(([l, v]) => <div className="stat" key={l}><div className="n" style={{ fontSize: 20 }}>{v}</div><div className="l">{l}</div></div>)}</div>;
+}
+
+function CampaignReport({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data, err } = useJson<any>(`/api/crm/campaigns/${id}`);
+  const stats = data?.stats;
+  const recipients: any[] = data?.recipients ?? [];
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 820 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex-between"><h2 style={{ margin: 0 }}>{data?.campaign?.name || "Campaign report"}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
+        <p className="sub">{data?.campaign?.subject}</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <StatTiles s={stats} />
+        <h3 style={{ marginTop: 16, fontSize: 15 }}>Recipients</h3>
+        <div style={{ maxHeight: 320, overflow: "auto" }}>
+          <table><thead><tr><th>Email</th><th>Status</th><th>Sent</th><th>Opened</th><th>Clicked</th></tr></thead>
+            <tbody>
+              {recipients.map((r) => <tr key={r.id}><td className="mono">{r.email}</td><td><span className={`badge ${r.status === "clicked" || r.status === "opened" ? "active" : r.status === "failed" ? "suspended" : "role"}`}>{r.status}</span></td><td className="mono muted">{r.sentAt ? new Date(r.sentAt).toLocaleString() : "—"}</td><td className="mono muted">{r.openedAt ? new Date(r.openedAt).toLocaleString() : "—"}</td><td className="mono muted">{r.clickedAt ? new Date(r.clickedAt).toLocaleString() : "—"}</td></tr>)}
+              {recipients.length === 0 && <Empty cols={5} text="No recipients yet — send the campaign to populate this." />}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Crm() {
   const contacts = useJson<any>("/api/crm/contacts");
   const campaigns = useJson<any>("/api/crm/campaigns");
   const [c, setC] = useState({ email: "", name: "", audience: "subscriber" });
-  const [camp, setCamp] = useState({ name: "", subject: "", body: "" });
+  const [camp, setCamp] = useState<{ name: string; subject: string; body: string; audiences: Record<string, boolean> }>({ name: "", subject: "", body: "", audiences: { subscriber: true } });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; danger?: boolean; run: () => void }>(null);
+  const [report, setReport] = useState<string | null>(null);
   const list: any[] = contacts.data?.contacts ?? [];
-  const counts: any = contacts.data?.counts ?? {};
   const campList: any[] = campaigns.data?.campaigns ?? [];
+  const dirty = !!(camp.name || camp.subject || camp.body);
+  useDirty(dirty);
+
   async function addContact(e: React.FormEvent) { e.preventDefault(); setMsg(null); try { await send("/api/crm/contacts", { ...c, consent: true }); setMsg({ k: "ok", t: "Contact saved." }); setC({ email: "", name: "", audience: "subscriber" }); contacts.reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
   async function sync() { setMsg(null); try { const r = await send("/api/crm/audiences", { roles: ["Parent", "Teacher", "Driver"] }); setMsg({ k: "ok", t: `Synced ${r.synced ?? 0} contacts.` }); contacts.reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
-  async function createCampaign(e: React.FormEvent) { e.preventDefault(); setMsg(null); try { await send("/api/crm/campaigns", camp); setMsg({ k: "ok", t: "Campaign created." }); setCamp({ name: "", subject: "", body: "" }); campaigns.reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function createCampaign(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    const audiences = Object.keys(camp.audiences).filter((a) => camp.audiences[a]);
+    if (!audiences.length) { setMsg({ k: "err", t: "Choose at least one audience." }); return; }
+    try {
+      const r = await send("/api/crm/campaigns", { name: camp.name, subject: camp.subject, body: camp.body, audience: { audiences } });
+      setMsg({ k: "ok", t: `Campaign created — ~${r.estimatedRecipients ?? 0} recipient(s). Use Send when ready.` });
+      setCamp({ name: "", subject: "", body: "", audiences: { subscriber: true } });
+      campaigns.reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function action(id: string, act: string, extra?: any, okText?: string) {
+    setMsg(null);
+    try { const r = await send(`/api/crm/campaigns/${id}/action`, { action: act, ...extra }); setMsg({ k: "ok", t: okText || (r.sent !== undefined ? `Sent to ${r.sent}, ${r.failed} failed (of ${r.total}).` : "Done.") }); campaigns.reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  function askSend(k: any) { setConfirm({ title: `Send “${k.name}”?`, message: "This emails every resolved recipient now and starts open/click tracking. This can't be undone.", label: "Send campaign", danger: true, run: () => { action(k.id, "send"); setConfirm(null); } }); }
+  function test(k: any) { const email = window.prompt("Send a test copy to which email?"); if (email) action(k.id, "test", { testEmail: email }, `Test sent to ${email}.`); }
+
   return (
     <>
+      {report && <CampaignReport id={report} onClose={() => setReport(null)} />}
+      <ConfirmDialog open={!!confirm} title={confirm?.title || ""} message={confirm?.message || ""} confirmLabel={confirm?.label || "Confirm"} danger={confirm?.danger} onConfirm={() => confirm?.run()} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>CRM — contacts</h2>
         <p className="sub">Marketing contacts across all audiences. Sync platform users in to reach them with campaigns.</p>
@@ -850,19 +933,50 @@ function Crm() {
           <button type="submit" style={{ marginTop: 8 }}>Add contact</button>
         </form>
       </div>
+
       <div className="panel">
         <h2>CRM — campaigns</h2>
-        <table><thead><tr><th>Name</th><th>Subject</th><th>Status</th><th>Created</th></tr></thead>
-          <tbody>{campList.map((k: any) => <tr key={k.id}><td><strong>{k.name}</strong></td><td className="muted">{k.subject}</td><td>{k.status ? <span className="badge role">{k.status}</span> : "—"}</td><td className="mono muted">{dt(k.createdAt)}</td></tr>)}{campList.length === 0 && <Empty cols={4} text="No campaigns yet." />}</tbody>
+        <p className="sub">Create a rich-text email, choose the audience, send it, and track opens &amp; clicks. Open the report on any sent campaign for per-recipient detail.</p>
+        <table><thead><tr><th>Name</th><th>Status</th><th>Sent</th><th>Opened</th><th>Clicked</th><th>Created</th><th className="right">Actions</th></tr></thead>
+          <tbody>{campList.map((k: any) => (
+            <tr key={k.id}>
+              <td><strong>{k.name}</strong><div className="muted" style={{ fontSize: 12 }}>{k.subject}</div></td>
+              <td><span className={`badge ${k.status === "sent" ? "active" : k.status === "failed" ? "suspended" : "role"}`}>{k.status}</span></td>
+              <td>{k.sentCount ?? 0}</td>
+              <td>{k.openCount ?? 0}</td>
+              <td>{k.clickCount ?? 0}</td>
+              <td className="mono muted">{dt(k.createdAt)}</td>
+              <td className="right nowrap">
+                {["draft", "scheduled"].includes(k.status) && <><button className="small" onClick={() => askSend(k)}>Send</button>{" "}</>}
+                <button className="secondary small" onClick={() => test(k)}>Test</button>{" "}
+                <button className="secondary small" onClick={() => setReport(k.id)}>Report</button>{" "}
+                <button className="secondary small" onClick={() => action(k.id, "duplicate", undefined, "Duplicated as draft.")}>Duplicate</button>
+                {["draft", "scheduled"].includes(k.status) && <>{" "}<button className="danger small" onClick={() => action(k.id, "cancel", undefined, "Cancelled.")}>Cancel</button></>}
+              </td>
+            </tr>
+          ))}{campList.length === 0 && <Empty cols={7} text="No campaigns yet — create one below." />}</tbody>
         </table>
-        <form onSubmit={createCampaign} style={{ marginTop: 12 }}>
+      </div>
+
+      <div className="panel">
+        <h2>New campaign</h2>
+        <form onSubmit={createCampaign}>
           <div className="row">
             <div><label>Campaign name</label><input value={camp.name} onChange={(e) => setCamp({ ...camp, name: e.target.value })} required /></div>
             <div><label>Subject</label><input value={camp.subject} onChange={(e) => setCamp({ ...camp, subject: e.target.value })} required /></div>
           </div>
-          <label>Body</label>
-          <textarea rows={3} value={camp.body} onChange={(e) => setCamp({ ...camp, body: e.target.value })} />
-          <button type="submit" style={{ marginTop: 8 }}>Create campaign</button>
+          <label style={{ marginTop: 8 }}>Audience</label>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+            {AUDIENCE_KEYS.map((a) => (
+              <label key={a} className="consent" style={{ display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+                <input type="checkbox" checked={!!camp.audiences[a]} onChange={(e) => setCamp({ ...camp, audiences: { ...camp.audiences, [a]: e.target.checked } })} /> {a}
+              </label>
+            ))}
+          </div>
+          <label style={{ marginTop: 10 }}>Email body</label>
+          <RichText value={camp.body} onChange={(html) => setCamp((prev) => ({ ...prev, body: html }))} />
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Personalise with {"{{name}}"} and include an unsubscribe link with {"{{unsubscribe}}"}. Links are automatically click-tracked and an open pixel is added on send.</p>
+          <button type="submit" style={{ marginTop: 12 }}>Create campaign (draft)</button>
         </form>
       </div>
     </>

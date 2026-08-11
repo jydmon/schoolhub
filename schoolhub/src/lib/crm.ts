@@ -236,29 +236,29 @@ export async function sendCampaign(campaignId: string, actor?: { userId?: string
 
   let sent = 0, failed = 0;
   for (const r of recipients) {
-    // Idempotent per (campaign, email): skip if we already have a row.
+    // Idempotent per (campaign, email): skip if already delivered/engaged.
     const existing = await prisma.campaignRecipient.findUnique({ where: { campaignId_email: { campaignId, email: r.email } } });
-    if (existing && existing.status === "sent") { sent++; continue; }
+    if (existing && ["sent", "opened", "clicked"].includes(existing.status)) { sent++; continue; }
 
-    const token = r.email; // unsubscribe link carries a signed token in real transport
+    // Create/refresh the recipient row FIRST so we have a stable id to embed in
+    // the open pixel and click-tracking links.
+    const rec = await prisma.campaignRecipient.upsert({
+      where: { campaignId_email: { campaignId, email: r.email } },
+      update: { status: "queued", error: null, name: r.name ?? null, contactId: r.contactId ?? null, userId: r.userId ?? null },
+      create: { campaignId, email: r.email, name: r.name ?? null, contactId: r.contactId ?? null, userId: r.userId ?? null, status: "queued" },
+    });
+
     const vars = {
       name: firstName(r.name), email: r.email, school: "",
-      unsubscribe: `${APP_URL()}/unsubscribe?e=${encodeURIComponent(r.email)}&t=${encodeURIComponent(unsubToken(token))}`,
+      unsubscribe: `${APP_URL()}/unsubscribe?e=${encodeURIComponent(r.email)}&t=${encodeURIComponent(unsubToken(r.email))}`,
     };
     try {
-      await sendEmail({ to: r.email, subject: renderTemplate(campaign.subject, vars), body: renderTemplate(campaign.body, vars) });
-      await prisma.campaignRecipient.upsert({
-        where: { campaignId_email: { campaignId, email: r.email } },
-        update: { status: "sent", sentAt: new Date(), error: null, name: r.name ?? null, contactId: r.contactId ?? null, userId: r.userId ?? null },
-        create: { campaignId, email: r.email, name: r.name ?? null, contactId: r.contactId ?? null, userId: r.userId ?? null, status: "sent", sentAt: new Date() },
-      });
+      const bodyHtml = injectTracking(renderTemplate(campaign.body, vars), rec.id, APP_URL());
+      await sendEmail({ to: r.email, subject: renderTemplate(campaign.subject, vars), body: bodyHtml });
+      await prisma.campaignRecipient.update({ where: { id: rec.id }, data: { status: "sent", sentAt: new Date(), error: null } });
       sent++;
     } catch (err: any) {
-      await prisma.campaignRecipient.upsert({
-        where: { campaignId_email: { campaignId, email: r.email } },
-        update: { status: "failed", error: String(err?.message ?? err) },
-        create: { campaignId, email: r.email, name: r.name ?? null, status: "failed", error: String(err?.message ?? err) },
-      });
+      await prisma.campaignRecipient.update({ where: { id: rec.id }, data: { status: "failed", error: String(err?.message ?? err) } });
       failed++;
     }
   }
@@ -276,6 +276,48 @@ export async function sendCampaign(campaignId: string, actor?: { userId?: string
 }
 
 /** Duplicate a campaign as a fresh draft (recipients/stats are NOT copied). */
+// ---------------------------------------------------------------------------
+// Open / click tracking
+// ---------------------------------------------------------------------------
+
+/** Rewrite absolute links through the click tracker and append a 1×1 open pixel. */
+function injectTracking(html: string, recipientId: string, appUrl: string): string {
+  const base = appUrl.replace(/\/+$/, "");
+  const out = (html || "").replace(/href="(https?:\/\/[^"]+)"/gi,
+    (_m, url) => `href="${base}/api/track/click/${recipientId}?u=${encodeURIComponent(url)}"`);
+  return out + `<img src="${base}/api/track/open/${recipientId}" width="1" height="1" alt="" style="display:none" />`;
+}
+
+const ENGAGE_LOCKED = ["failed", "unsubscribed", "bounced"];
+
+/** Record an email open (idempotent-ish: first open upgrades sent→opened + bumps counter). */
+export async function recordOpen(recipientId: string): Promise<void> {
+  const rec = await prisma.campaignRecipient.findUnique({ where: { id: recipientId } });
+  if (!rec || ENGAGE_LOCKED.includes(rec.status)) return;
+  const firstOpen = !rec.openedAt;
+  await prisma.campaignRecipient.update({
+    where: { id: recipientId },
+    data: { openedAt: rec.openedAt ?? new Date(), status: rec.status === "clicked" ? "clicked" : "opened" },
+  });
+  if (firstOpen) await prisma.campaign.update({ where: { id: rec.campaignId }, data: { openCount: { increment: 1 } } });
+}
+
+/** Record a link click (implies an open). Redirect target is handled by the route. */
+export async function recordClick(recipientId: string): Promise<void> {
+  const rec = await prisma.campaignRecipient.findUnique({ where: { id: recipientId } });
+  if (!rec || ENGAGE_LOCKED.includes(rec.status)) return;
+  const firstClick = !rec.clickedAt;
+  const firstOpen = !rec.openedAt;
+  await prisma.campaignRecipient.update({
+    where: { id: recipientId },
+    data: { status: "clicked", clickedAt: rec.clickedAt ?? new Date(), openedAt: rec.openedAt ?? new Date() },
+  });
+  const data: any = {};
+  if (firstClick) data.clickCount = { increment: 1 };
+  if (firstOpen) data.openCount = { increment: 1 };
+  if (Object.keys(data).length) await prisma.campaign.update({ where: { id: rec.campaignId }, data });
+}
+
 export async function duplicateCampaign(campaignId: string, actor?: { userId?: string | null; email?: string | null }): Promise<{ id: string }> {
   const c = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!c) throw new Error("campaign not found");

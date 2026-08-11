@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 const UPDATE_TYPES: [string, string][] = [
   ["students_assembled", "Students assembled"], ["all_accounted", "All accounted for"], ["coach_departed", "Coach departed"],
@@ -32,6 +33,7 @@ export default function TripsTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="trips" title="Import trips & events" hint="No system to integrate? Bulk-add trips/events from a CSV (dates YYYY-MM-DD). They arrive as planned; add live-update buttons per trip in the app." />
       <div className="panel">
         <div className="flex-between"><div><h2>School trips</h2><p className="sub" style={{ marginBottom: 0 }}>{trips.length} trip(s)</p></div><button onClick={() => setShow((v) => !v)}>{show ? "Close" : "New trip"}</button></div>
         {show && (

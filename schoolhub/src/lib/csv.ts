@@ -156,4 +156,10 @@ export const IMPORT_TEMPLATES: Record<
     headers: ["day", "meal", "course", "name", "description", "allergens", "price", "active"],
     example: ["Mon", "lunch", "main", "Roast chicken & potatoes", "Served with seasonal vegetables", "gluten,milk", "2.50", "true"],
   },
+  trips: {
+    // Trips & events (event-tracking). Created as "planned"; live update buttons
+    // are added per trip in the app. Matched by title + date. Dates are YYYY-MM-DD.
+    headers: ["title", "date", "destination", "departureTime", "returnTime", "purpose", "venue", "status"],
+    example: ["Ecomuseum trip — Year 4", "2026-09-18", "Ecomuseum", "08:30", "15:00", "Curriculum enrichment", "Ecomuseum", "planned"],
+  },
 };

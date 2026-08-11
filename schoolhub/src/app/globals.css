@@ -216,6 +216,15 @@ td.nowrap .small { margin-bottom: 2px; }
 .kebab-menu button:hover { background: #f1f5ff; }
 .kebab-menu button.danger { color: var(--danger, #dc2626); }
 .kebab-menu button.danger:hover { background: #fef2f2; }
+/* Rich-text editor (CRM campaign body) */
+.rte { border: 1px solid var(--line, #d7deea); border-radius: 10px; overflow: hidden; }
+.rte-tb { display: flex; gap: 4px; flex-wrap: wrap; padding: 6px; background: #f7f9fc; border-bottom: 1px solid var(--line, #d7deea); }
+.rte-btn { background: #fff; border: 1px solid var(--line, #d7deea); border-radius: 6px; padding: 3px 9px; font-size: 13px; cursor: pointer; color: var(--brand-ink, #1e293b); }
+.rte-btn:hover { background: #eef2ff; }
+.rte-area { min-height: 150px; padding: 12px; font-size: 14px; line-height: 1.5; outline: none; }
+.rte-area:empty:before { content: attr(data-ph); color: #94a3b8; }
+.rte-area a { color: var(--brand, #4f46e5); text-decoration: underline; }
+.rte-area ul, .rte-area ol { margin: 8px 0 8px 22px; }
 
 @media (max-width: 860px) {
   .sidebar { width: 74px; padding: 14px 8px; }
