@@ -2,107 +2,111 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-type School = {
-  id: string;
-  name: string;
-  slug: string;
-  status: string;
-  group?: { name: string } | null;
-  subscription?: { status: string; plan: { name: string; key: string } } | null;
-  _count: { memberships: number; students: number; campuses: number };
-};
-type Group = { id: string; name: string; _count: { schools: number } };
-type Audit = {
-  id: string;
-  action: string;
-  actorEmail: string | null;
-  school?: { name: string } | null;
-  createdAt: string;
-  metadata: string;
-};
+/* ---------------------------------------------------------------------------
+ * Platform super-admin console. Every area below is wired to an existing API
+ * under /api/platform, /api/crm, /api/cms, /api/schools, /api/groups, /api/audit.
+ * A platform super-admin (isPlatformAdmin) has access to all areas ("*").
+ * ------------------------------------------------------------------------- */
 
-const PLANS = ["trial", "basic", "standard", "premium"];
+// ---- tiny fetch helpers ----
+function useJson<T = any>(url: string): { data: T | null; err: string | null; loading: boolean; reload: () => void } {
+  const [data, setData] = useState<T | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(() => {
+    setLoading(true); setErr(null);
+    fetch(url)
+      .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`); return j; })
+      .then((j) => setData(j))
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+  }, [url]);
+  useEffect(() => { reload(); }, [reload]);
+  return { data, err, loading, reload };
+}
+async function send(url: string, body: any, method = "POST") {
+  const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function Notice({ msg }: { msg: { k: string; t: string } | null }) {
+  if (!msg) return null;
+  return <div className={`notice ${msg.k === "ok" ? "ok" : "err"}`}>{msg.t}</div>;
+}
+function Empty({ cols, text }: { cols: number; text: string }) {
+  return <tr><td colSpan={cols} className="muted">{text}</td></tr>;
+}
+const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
+
+// ---- tab registry ----
+const TABS: { key: string; label: string }[] = [
+  { key: "tenants", label: "Tenants" },
+  { key: "groups", label: "Trusts & Groups" },
+  { key: "team", label: "Team & Access" },
+  { key: "subs", label: "Subscriptions" },
+  { key: "revenue", label: "Parent Revenue" },
+  { key: "usage", label: "Usage" },
+  { key: "reports", label: "Reports" },
+  { key: "templates", label: "Templates" },
+  { key: "policies", label: "Policies" },
+  { key: "crm", label: "CRM" },
+  { key: "videos", label: "Help Videos" },
+  { key: "support", label: "Support" },
+  { key: "email", label: "Email" },
+  { key: "audit", label: "Audit trail" },
+];
 
 export default function AdminPortal() {
-  const [tab, setTab] = useState<"tenants" | "groups" | "audit">("tenants");
+  const [tab, setTab] = useState<string>("tenants");
   return (
     <>
-      <div className="tabs">
-        <button className={tab === "tenants" ? "active" : ""} onClick={() => setTab("tenants")}>
-          Tenants
-        </button>
-        <button className={tab === "groups" ? "active" : ""} onClick={() => setTab("groups")}>
-          Trusts &amp; Groups
-        </button>
-        <button className={tab === "audit" ? "active" : ""} onClick={() => setTab("audit")}>
-          Audit trail
-        </button>
+      <div className="tabs" style={{ flexWrap: "wrap" }}>
+        {TABS.map((t) => (
+          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>{t.label}</button>
+        ))}
       </div>
       {tab === "tenants" && <Tenants />}
       {tab === "groups" && <Groups />}
+      {tab === "team" && <Team />}
+      {tab === "subs" && <Subscriptions />}
+      {tab === "revenue" && <ParentRevenue />}
+      {tab === "usage" && <Usage />}
+      {tab === "reports" && <Reports />}
+      {tab === "templates" && <Templates />}
+      {tab === "policies" && <Policies />}
+      {tab === "crm" && <Crm />}
+      {tab === "videos" && <Videos />}
+      {tab === "support" && <Support />}
+      {tab === "email" && <EmailCfg />}
       {tab === "audit" && <AuditTab />}
     </>
   );
 }
 
+/* ============================ TENANTS ============================ */
+type School = { id: string; name: string; slug: string; status: string; group?: { name: string } | null; subscription?: { status: string; plan: { name: string; key: string } } | null; _count: { memberships: number; students: number; campuses: number } };
+type Group = { id: string; name: string; _count: { schools: number } };
+
 function Tenants() {
   const [schools, setSchools] = useState<School[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
-  const [form, setForm] = useState({
-    schoolName: "",
-    slug: "",
-    adminName: "",
-    adminEmail: "",
-    adminPassword: "",
-    planKey: "trial",
-    groupId: "",
-  });
-
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [form, setForm] = useState({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "trial", groupId: "" });
   const load = useCallback(async () => {
-    const [s, g] = await Promise.all([
-      fetch("/api/schools").then((r) => r.json()),
-      fetch("/api/groups").then((r) => r.json()),
-    ]);
-    setSchools(s.schools ?? []);
-    setGroups(g.groups ?? []);
+    const [s, g] = await Promise.all([fetch("/api/schools").then((r) => r.json()), fetch("/api/groups").then((r) => r.json())]);
+    setSchools(s.schools ?? []); setGroups(g.groups ?? []);
   }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
+  useEffect(() => { load(); }, [load]);
   async function onboard(e: React.FormEvent) {
-    e.preventDefault();
-    setMsg(null);
-    const res = await fetch("/api/schools", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, groupId: form.groupId || null }),
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      setMsg({ kind: "err", text: data.error || "Failed to onboard school" });
-      return;
-    }
-    setMsg({ kind: "ok", text: `Created "${form.schoolName}" and its administrator.` });
-    setForm({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "trial", groupId: "" });
-    load();
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/schools", { ...form, groupId: form.groupId || null }); setMsg({ k: "ok", t: `Created "${form.schoolName}" and its administrator.` }); setForm({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "trial", groupId: "" }); load(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message || "Failed to onboard school" }); }
   }
-
-  async function setStatus(id: string, status: string) {
-    await fetch(`/api/schools/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    load();
-  }
-
+  async function setStatus(id: string, status: string) { await send(`/api/schools/${id}`, { status }, "PATCH"); load(); }
   const active = schools.filter((s) => s.status === "active").length;
   const suspended = schools.filter((s) => s.status === "suspended").length;
-  const students = schools.reduce((n, s) => n + s._count.students, 0);
-
+  const students = schools.reduce((n, s) => n + (s._count?.students ?? 0), 0);
   return (
     <>
       <div className="stat-grid" style={{ marginBottom: 20 }}>
@@ -111,80 +115,42 @@ function Tenants() {
         <div className="stat"><div className="n">{suspended}</div><div className="l">Suspended</div></div>
         <div className="stat"><div className="n">{students}</div><div className="l">Students</div></div>
       </div>
-
       <div className="panel">
         <h2>Schools</h2>
         <p className="sub">Every school is an isolated tenant. Suspend to block all access instantly.</p>
         <table>
-          <thead>
-            <tr><th>School</th><th>Trust</th><th>Plan</th><th>Users</th><th>Status</th><th className="right">Actions</th></tr>
-          </thead>
+          <thead><tr><th>School</th><th>Trust</th><th>Plan</th><th>Users</th><th>Status</th><th className="right">Actions</th></tr></thead>
           <tbody>
             {schools.map((s) => (
               <tr key={s.id}>
-                <td>
-                  <strong>{s.name}</strong>
-                  <div className="mono muted">/{s.slug}</div>
-                </td>
+                <td><strong>{s.name}</strong><div className="mono muted">/{s.slug}</div></td>
                 <td>{s.group?.name ?? <span className="muted">—</span>}</td>
-                <td>{s.subscription?.plan.name ?? <span className="muted">—</span>}</td>
-                <td>{s._count.memberships}</td>
+                <td>{s.subscription?.plan?.name ?? <span className="muted">—</span>}</td>
+                <td>{s._count?.memberships ?? 0}</td>
                 <td><span className={`badge ${s.status}`}>{s.status}</span></td>
-                <td className="right">
-                  {s.status === "suspended" ? (
-                    <button className="secondary small" onClick={() => setStatus(s.id, "active")}>Reactivate</button>
-                  ) : (
-                    <button className="danger small" onClick={() => setStatus(s.id, "suspended")}>Suspend</button>
-                  )}
-                </td>
+                <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => setStatus(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => setStatus(s.id, "suspended")}>Suspend</button>}</td>
               </tr>
             ))}
-            {schools.length === 0 && (
-              <tr><td colSpan={6} className="muted">No tenants yet — onboard one below.</td></tr>
-            )}
+            {schools.length === 0 && <Empty cols={6} text="No tenants yet — onboard one below." />}
           </tbody>
         </table>
       </div>
-
       <div className="panel">
         <h2>Onboard a school</h2>
         <p className="sub">Creates the tenant, its configuration, a subscription and the first School Administrator.</p>
-        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <Notice msg={msg} />
         <form onSubmit={onboard}>
           <div className="row">
-            <div>
-              <label>School name</label>
-              <input value={form.schoolName} onChange={(e) => setForm({ ...form, schoolName: e.target.value, slug: form.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} required />
-            </div>
-            <div>
-              <label>Slug (subdomain)</label>
-              <input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} required />
-            </div>
+            <div><label>School name</label><input value={form.schoolName} onChange={(e) => setForm({ ...form, schoolName: e.target.value, slug: form.slug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} required /></div>
+            <div><label>Slug (subdomain)</label><input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} required /></div>
           </div>
           <div className="row">
-            <div>
-              <label>Plan</label>
-              <select value={form.planKey} onChange={(e) => setForm({ ...form, planKey: e.target.value })}>
-                {PLANS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div>
-              <label>Trust / group (optional)</label>
-              <select value={form.groupId} onChange={(e) => setForm({ ...form, groupId: e.target.value })}>
-                <option value="">— none —</option>
-                {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-              </select>
-            </div>
+            <div><label>Plan</label><select value={form.planKey} onChange={(e) => setForm({ ...form, planKey: e.target.value })}>{["trial", "basic", "standard", "premium"].map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+            <div><label>Trust / group (optional)</label><select value={form.groupId} onChange={(e) => setForm({ ...form, groupId: e.target.value })}><option value="">— none —</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
           </div>
           <div className="row">
-            <div>
-              <label>Administrator name</label>
-              <input value={form.adminName} onChange={(e) => setForm({ ...form, adminName: e.target.value })} required />
-            </div>
-            <div>
-              <label>Administrator email</label>
-              <input type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} required />
-            </div>
+            <div><label>Administrator name</label><input value={form.adminName} onChange={(e) => setForm({ ...form, adminName: e.target.value })} required /></div>
+            <div><label>Administrator email</label><input type="email" value={form.adminEmail} onChange={(e) => setForm({ ...form, adminEmail: e.target.value })} required /></div>
           </div>
           <label>Administrator temporary password</label>
           <input type="text" value={form.adminPassword} onChange={(e) => setForm({ ...form, adminPassword: e.target.value })} minLength={8} required />
@@ -195,77 +161,499 @@ function Tenants() {
   );
 }
 
+/* ============================ GROUPS ============================ */
 function Groups() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [name, setName] = useState("");
-
-  const load = useCallback(async () => {
-    const g = await fetch("/api/groups").then((r) => r.json());
-    setGroups(g.groups ?? []);
-  }, []);
+  const load = useCallback(async () => { const g = await fetch("/api/groups").then((r) => r.json()); setGroups(g.groups ?? []); }, []);
   useEffect(() => { load(); }, [load]);
-
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    await fetch("/api/groups", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    setName("");
-    load();
-  }
-
+  async function create(e: React.FormEvent) { e.preventDefault(); await send("/api/groups", { name }); setName(""); load(); }
   return (
     <div className="panel">
       <h2>Academy trusts &amp; school groups</h2>
       <p className="sub">Group multiple schools under a single overseeing organisation.</p>
-      <table>
-        <thead><tr><th>Name</th><th>Schools</th></tr></thead>
-        <tbody>
-          {groups.map((g) => (
-            <tr key={g.id}><td>{g.name}</td><td>{g._count.schools}</td></tr>
-          ))}
-          {groups.length === 0 && <tr><td colSpan={2} className="muted">No groups yet.</td></tr>}
-        </tbody>
+      <table><thead><tr><th>Name</th><th>Schools</th></tr></thead>
+        <tbody>{groups.map((g) => <tr key={g.id}><td>{g.name}</td><td>{g._count?.schools ?? 0}</td></tr>)}{groups.length === 0 && <Empty cols={2} text="No groups yet." />}</tbody>
       </table>
       <form onSubmit={create} style={{ marginTop: 16 }}>
-        <div className="row">
-          <div style={{ flex: 3 }}>
-            <label>New trust / group name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-end" }}>
-            <button type="submit">Add</button>
-          </div>
-        </div>
+        <div className="row"><div style={{ flex: 3 }}><label>New trust / group name</label><input value={name} onChange={(e) => setName(e.target.value)} required /></div><div style={{ display: "flex", alignItems: "flex-end" }}><button type="submit">Add</button></div></div>
       </form>
     </div>
   );
 }
 
+/* ============================ TEAM & ACCESS ============================ */
+function Team() {
+  const { data, err, reload } = useJson<any>("/api/platform/staff");
+  const roles = useJson<any>("/api/platform/staff/roles");
+  const [f, setF] = useState({ userId: "", email: "", name: "", roleKey: "" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const staff: any[] = data?.staff ?? [];
+  const roleList: any[] = roles.data?.roles ?? [];
+  async function add(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/platform/staff", { ...f, roleKey: f.roleKey || roleList[0]?.key }); setMsg({ k: "ok", t: "Staff member saved." }); setF({ userId: "", email: "", name: "", roleKey: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function status(id: string, s: string) { try { await send(`/api/platform/staff/${id}`, { status: s }, "PATCH"); reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  return (
+    <>
+      <div className="panel">
+        <h2>SIPlat team &amp; access</h2>
+        <p className="sub">Platform staff and which super-admin areas each role can open. You (the owner) always have full access.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table>
+          <thead><tr><th>Member</th><th>Role</th><th>Areas</th><th>Status</th><th>Last active</th><th className="right">Actions</th></tr></thead>
+          <tbody>
+            {staff.map((s) => (
+              <tr key={s.id}>
+                <td><strong>{s.name || s.email}</strong><div className="mono muted">{s.email}</div></td>
+                <td>{s.roleName || s.roleKey}</td>
+                <td className="muted">{Array.isArray(s.areas) ? (s.areas.includes("*") ? "All areas" : s.areas.join(", ")) : "—"}</td>
+                <td><span className={`badge ${s.status}`}>{s.status}</span></td>
+                <td className="mono muted">{dt(s.lastActiveAt)}</td>
+                <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => status(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => status(s.id, "suspended")}>Suspend</button>}</td>
+              </tr>
+            ))}
+            {staff.length === 0 && <Empty cols={6} text="No additional staff yet — the owner has full access." />}
+          </tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>Add / update a staff member</h2>
+        <p className="sub">Grant an existing user platform-staff access with a role. Roles: {roleList.map((r) => r.name).join(", ") || "loading…"}</p>
+        <Notice msg={msg} />
+        <form onSubmit={add}>
+          <div className="row">
+            <div><label>User ID</label><input value={f.userId} onChange={(e) => setF({ ...f, userId: e.target.value })} required /></div>
+            <div><label>Email</label><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required /></div>
+          </div>
+          <div className="row">
+            <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+            <div><label>Role</label><select value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value })}>{roleList.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}</select></div>
+          </div>
+          <button type="submit" style={{ marginTop: 12 }}>Save staff member</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ SUBSCRIPTIONS ============================ */
+function firstArray(o: any): any[] { if (!o) return []; if (Array.isArray(o)) return o; for (const k of ["rows", "subscriptions", "items", "list"]) if (Array.isArray(o[k])) return o[k]; const merged: any[] = []; for (const v of Object.values(o)) if (Array.isArray(v)) merged.push(...v); return merged; }
+function Subscriptions() {
+  const { data, err, reload } = useJson<any>("/api/platform/subscriptions");
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const rows = firstArray(data);
+  async function act(row: any, action: string, mode?: string) {
+    setMsg(null);
+    try { await send(`/api/platform/subscriptions?id=${encodeURIComponent(row.id)}`, { type: row.type, action, mode }); setMsg({ k: "ok", t: "Updated." }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <div className="panel">
+      <h2>Subscriptions</h2>
+      <p className="sub">School and parent subscriptions, renewal reminders, and manual-approval overrides for held renewals.</p>
+      {err && <Notice msg={{ k: "err", t: err }} />}
+      <Notice msg={msg} />
+      <table>
+        <thead><tr><th>Subscriber</th><th>Type</th><th>Plan</th><th>Status</th><th>Renewal</th><th>Approval</th><th className="right">Actions</th></tr></thead>
+        <tbody>
+          {rows.map((s: any) => (
+            <tr key={`${s.type}-${s.id}`}>
+              <td>{s.who}</td>
+              <td><span className="badge role">{s.type}</span></td>
+              <td>{s.plan}</td>
+              <td><span className={`badge ${s.status}`}>{s.status}</span></td>
+              <td className="muted">{s.renewalDate ? new Date(s.renewalDate).toLocaleDateString() : "—"}{typeof s.daysUntil === "number" ? ` (${s.daysUntil}d)` : ""}</td>
+              <td className="muted">{s.approvalMode || "auto"}{s.approvalStatus ? ` · ${s.approvalStatus}` : ""}</td>
+              <td className="right">
+                {s.needsApproval && <><button className="small" onClick={() => act(s, "approve")}>Approve</button> <button className="danger small" onClick={() => act(s, "reject")}>Reject</button> </>}
+                <button className="secondary small" onClick={() => act(s, "set_mode", s.approvalMode === "manual" ? "auto" : "manual")}>{s.approvalMode === "manual" ? "Set auto" : "Set manual"}</button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && <Empty cols={7} text="No subscriptions yet." />}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ============================ PARENT REVENUE ============================ */
+function ParentRevenue() {
+  const { data, err } = useJson<any>("/api/platform/parent-subscriptions");
+  const perSchool: any[] = data?.perSchool ?? [];
+  return (
+    <>
+      <div className="stat-grid" style={{ marginBottom: 20 }}>
+        <div className="stat"><div className="n">{data?.active ?? 0}</div><div className="l">Active parents</div></div>
+        <div className="stat"><div className="n">{data?.trialing ?? 0}</div><div className="l">Trialing</div></div>
+        <div className="stat"><div className="n">{data?.mrrFormatted ?? "—"}</div><div className="l">MRR</div></div>
+        <div className="stat"><div className="n">{data?.arrFormatted ?? "—"}</div><div className="l">ARR</div></div>
+      </div>
+      <div className="panel">
+        <h2>Parent premium revenue by school</h2>
+        <p className="sub">Recurring revenue from parent premium subscriptions. No card data is ever stored — only opaque Stripe references.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table>
+          <thead><tr><th>School</th><th>Active</th><th>MRR</th></tr></thead>
+          <tbody>{perSchool.map((r: any) => <tr key={r.schoolId}><td>{r.schoolName}</td><td>{r.active}</td><td>{r.mrr}</td></tr>)}{perSchool.length === 0 && <Empty cols={3} text="No parent subscriptions yet." />}</tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ============================ USAGE ============================ */
+function Usage() {
+  const [view, setView] = useState<"system" | "users" | "roles">("system");
+  const { data, err } = useJson<any>(`/api/platform/usage?view=${view}&days=30`);
+  const sys = data?.system;
+  const users: any[] = data?.users ?? [];
+  const roles: any[] = data?.roles ?? [];
+  return (
+    <div className="panel">
+      <h2>Usage analytics <span className="sub" style={{ fontWeight: 400 }}>· last 30 days</span></h2>
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        {(["system", "users", "roles"] as const).map((v) => <button key={v} className={view === v ? "active" : ""} onClick={() => setView(v)}>{v}</button>)}
+      </div>
+      {err && <Notice msg={{ k: "err", t: err }} />}
+      {view === "system" && sys && (
+        <>
+          <div className="stat-grid">
+            <div className="stat"><div className="n">{sys.volume ?? 0}</div><div className="l">Events</div></div>
+            <div className="stat"><div className="n">{sys.logins ?? 0}</div><div className="l">Logins</div></div>
+            <div className="stat"><div className="n">{sys.activeUsers ?? 0}</div><div className="l">Active users</div></div>
+          </div>
+          <table style={{ marginTop: 16 }}><thead><tr><th>Area</th><th>Events</th></tr></thead>
+            <tbody>{Object.entries(sys.byArea ?? {}).map(([a, n]: any) => <tr key={a}><td>{a}</td><td>{n as any}</td></tr>)}{Object.keys(sys.byArea ?? {}).length === 0 && <Empty cols={2} text="No activity recorded yet." />}</tbody>
+          </table>
+        </>
+      )}
+      {view === "users" && (
+        <table><thead><tr><th>User</th><th>Role</th><th>Events</th><th>Last active</th></tr></thead>
+          <tbody>{users.map((u: any, i: number) => <tr key={u.userId || u.email || i}><td>{u.name || u.email || u.userId}</td><td>{u.role || "—"}</td><td>{u.events ?? u.count ?? "—"}</td><td className="mono muted">{dt(u.lastAt || u.lastActiveAt)}</td></tr>)}{users.length === 0 && <Empty cols={4} text="No user activity yet." />}</tbody>
+        </table>
+      )}
+      {view === "roles" && (
+        <table><thead><tr><th>Role</th><th>Active</th><th>Events</th></tr></thead>
+          <tbody>{roles.map((r: any, i: number) => <tr key={r.role || i}><td>{r.role}</td><td>{r.active ?? "—"}</td><td>{r.events ?? r.count ?? "—"}</td></tr>)}{roles.length === 0 && <Empty cols={3} text="No role activity yet." />}</tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ============================ REPORTS ============================ */
+function Reports() {
+  const { data, err, reload } = useJson<any>("/api/platform/reports");
+  const [f, setF] = useState({ type: "usage", scope: "platform", format: "json" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const reports: any[] = data?.reports ?? [];
+  async function run(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/platform/reports", f); setMsg({ k: "ok", t: "Report generated." }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <>
+      <div className="panel">
+        <h2>Generate a report</h2>
+        <p className="sub">Usage, subscription, engagement, adoption and event-tracking reports across the platform.</p>
+        <Notice msg={msg} />
+        <form onSubmit={run}>
+          <div className="row">
+            <div><label>Type</label><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{["usage", "subscription", "engagement", "event_tracking", "adoption", "parent_child"].map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label>Scope</label><select value={f.scope} onChange={(e) => setF({ ...f, scope: e.target.value })}>{["platform", "tenant", "parent"].map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+            <div><label>Format</label><select value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })}>{["json", "csv"].map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+          </div>
+          <button type="submit" style={{ marginTop: 12 }}>Generate</button>
+        </form>
+      </div>
+      <div className="panel">
+        <h2>Recent reports</h2>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table><thead><tr><th>Type</th><th>Scope</th><th>Created</th></tr></thead>
+          <tbody>{reports.map((r: any) => <tr key={r.id}><td><span className="badge role">{r.type}</span></td><td className="muted">{r.scope || "—"}</td><td className="mono muted">{dt(r.createdAt)}</td></tr>)}{reports.length === 0 && <Empty cols={3} text="No reports generated yet." />}</tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ============================ TEMPLATES ============================ */
+function Templates() {
+  const { data, err, reload } = useJson<any>("/api/platform/templates");
+  const [f, setF] = useState({ kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const templates: any[] = data?.templates ?? [];
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/platform/templates", f); setMsg({ k: "ok", t: "Template created." }); setF({ ...f, name: "", subject: "", body: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <>
+      <div className="panel">
+        <h2>Platform template library</h2>
+        <p className="sub">Reusable email / message templates. Mark as shared to make them available to every tenant admin.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table><thead><tr><th>Name</th><th>Kind</th><th>Category</th><th>Shared</th></tr></thead>
+          <tbody>{templates.map((t: any) => <tr key={t.id}><td><strong>{t.name}</strong></td><td className="muted">{t.kind}</td><td className="muted">{t.category || "—"}</td><td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td></tr>)}{templates.length === 0 && <Empty cols={4} text="No templates yet." />}</tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>New template</h2>
+        <Notice msg={msg} />
+        <form onSubmit={create}>
+          <div className="row">
+            <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
+            <div><label>Kind</label><select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>{["email_campaign", "message_board", "email_notification"].map((k) => <option key={k} value={k}>{k}</option>)}</select></div>
+          </div>
+          <div className="row">
+            <div><label>Category</label><input value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} /></div>
+            <div><label>Subject</label><input value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} /></div>
+          </div>
+          <label>Body</label>
+          <textarea rows={4} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
+          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.sharedWithTenants} onChange={(e) => setF({ ...f, sharedWithTenants: e.target.checked })} /> Share with all tenants</label>
+          <button type="submit" style={{ marginTop: 12 }}>Create template</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ POLICIES ============================ */
+function Policies() {
+  const { data, err, reload } = useJson<any>("/api/platform/policies");
+  const [f, setF] = useState({ title: "", category: "data_protection", audience: "all", version: "", summary: "", requireAck: false, published: true });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const policies: any[] = data?.policies ?? [];
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/platform/policies", f); setMsg({ k: "ok", t: "Policy published." }); setF({ ...f, title: "", version: "", summary: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <>
+      <div className="panel">
+        <h2>Platform policies</h2>
+        <p className="sub">Data-protection, safeguarding and general policies pushed to all tenants.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table><thead><tr><th>Title</th><th>Category</th><th>Audience</th><th>Version</th><th>Status</th></tr></thead>
+          <tbody>{policies.map((p: any) => <tr key={p.id}><td><strong>{p.title}</strong></td><td className="muted">{p.category || "—"}</td><td className="muted">{p.audience || "all"}</td><td className="muted">{p.version || "—"}</td><td>{p.published ? <span className="badge active">published</span> : <span className="muted">draft</span>}</td></tr>)}{policies.length === 0 && <Empty cols={5} text="No policies yet." />}</tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>New policy</h2>
+        <Notice msg={msg} />
+        <form onSubmit={create}>
+          <div className="row">
+            <div><label>Title</label><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required /></div>
+            <div><label>Version</label><input value={f.version} onChange={(e) => setF({ ...f, version: e.target.value })} /></div>
+          </div>
+          <div className="row">
+            <div><label>Category</label><select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{["safeguarding", "data_protection", "behaviour", "transport", "general"].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label>Audience</label><select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}>{["all", "parents", "teachers", "staff"].map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
+          </div>
+          <label>Summary</label>
+          <textarea rows={3} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} />
+          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Require acknowledgement</label>
+          <button type="submit" style={{ marginTop: 12 }}>Publish policy</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ CRM ============================ */
+const AUDIENCE_KEYS = ["subscriber", "parent", "driver", "tenant_admin", "teacher", "transport_manager", "lead"];
+function Crm() {
+  const contacts = useJson<any>("/api/crm/contacts");
+  const campaigns = useJson<any>("/api/crm/campaigns");
+  const [c, setC] = useState({ email: "", name: "", audience: "subscriber" });
+  const [camp, setCamp] = useState({ name: "", subject: "", body: "" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const list: any[] = contacts.data?.contacts ?? [];
+  const counts: any = contacts.data?.counts ?? {};
+  const campList: any[] = campaigns.data?.campaigns ?? [];
+  async function addContact(e: React.FormEvent) { e.preventDefault(); setMsg(null); try { await send("/api/crm/contacts", { ...c, consent: true }); setMsg({ k: "ok", t: "Contact saved." }); setC({ email: "", name: "", audience: "subscriber" }); contacts.reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function sync() { setMsg(null); try { const r = await send("/api/crm/audiences", { roles: ["Parent", "Teacher", "Driver"] }); setMsg({ k: "ok", t: `Synced ${r.synced ?? 0} contacts.` }); contacts.reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function createCampaign(e: React.FormEvent) { e.preventDefault(); setMsg(null); try { await send("/api/crm/campaigns", camp); setMsg({ k: "ok", t: "Campaign created." }); setCamp({ name: "", subject: "", body: "" }); campaigns.reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  return (
+    <>
+      <div className="panel">
+        <h2>CRM — contacts</h2>
+        <p className="sub">Marketing contacts across all audiences. Sync platform users in to reach them with campaigns.</p>
+        <Notice msg={msg} />
+        <div style={{ marginBottom: 12 }}><button className="secondary small" onClick={sync}>Sync platform users → contacts</button></div>
+        <table><thead><tr><th>Contact</th><th>Audience</th><th>Status</th></tr></thead>
+          <tbody>{list.slice(0, 100).map((k: any) => <tr key={k.id || k.email}><td><strong>{k.name || k.email}</strong><div className="mono muted">{k.email}</div></td><td className="muted">{k.audience || "—"}</td><td>{k.status || k.consent ? <span className="badge active">{k.status || "opted-in"}</span> : <span className="muted">—</span>}</td></tr>)}{list.length === 0 && <Empty cols={3} text="No contacts yet — add one or sync users." />}</tbody>
+        </table>
+        <form onSubmit={addContact} style={{ marginTop: 12 }}>
+          <div className="row">
+            <div><label>Email</label><input type="email" value={c.email} onChange={(e) => setC({ ...c, email: e.target.value })} required /></div>
+            <div><label>Name</label><input value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></div>
+            <div><label>Audience</label><select value={c.audience} onChange={(e) => setC({ ...c, audience: e.target.value })}>{AUDIENCE_KEYS.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
+          </div>
+          <button type="submit" style={{ marginTop: 8 }}>Add contact</button>
+        </form>
+      </div>
+      <div className="panel">
+        <h2>CRM — campaigns</h2>
+        <table><thead><tr><th>Name</th><th>Subject</th><th>Status</th><th>Created</th></tr></thead>
+          <tbody>{campList.map((k: any) => <tr key={k.id}><td><strong>{k.name}</strong></td><td className="muted">{k.subject}</td><td>{k.status ? <span className="badge role">{k.status}</span> : "—"}</td><td className="mono muted">{dt(k.createdAt)}</td></tr>)}{campList.length === 0 && <Empty cols={4} text="No campaigns yet." />}</tbody>
+        </table>
+        <form onSubmit={createCampaign} style={{ marginTop: 12 }}>
+          <div className="row">
+            <div><label>Campaign name</label><input value={camp.name} onChange={(e) => setCamp({ ...camp, name: e.target.value })} required /></div>
+            <div><label>Subject</label><input value={camp.subject} onChange={(e) => setCamp({ ...camp, subject: e.target.value })} required /></div>
+          </div>
+          <label>Body</label>
+          <textarea rows={3} value={camp.body} onChange={(e) => setCamp({ ...camp, body: e.target.value })} />
+          <button type="submit" style={{ marginTop: 8 }}>Create campaign</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ HELP VIDEOS (CMS) ============================ */
+function Videos() {
+  const { data, err, reload } = useJson<any>("/api/cms/videos?admin=1");
+  const [f, setF] = useState({ title: "", url: "", category: "getting_started", audience: "all", description: "", published: true });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const videos: any[] = data?.videos ?? [];
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/cms/videos", f); setMsg({ k: "ok", t: "Video added." }); setF({ ...f, title: "", url: "", description: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <>
+      <div className="panel">
+        <h2>Help Centre videos</h2>
+        <p className="sub">How-to videos shown across the platform Help Centre.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table><thead><tr><th>Title</th><th>Category</th><th>Audience</th><th>Status</th></tr></thead>
+          <tbody>{videos.map((v: any) => <tr key={v.id}><td><strong>{v.title}</strong></td><td className="muted">{v.category || "—"}</td><td className="muted">{v.audience || "all"}</td><td>{v.published ? <span className="badge active">published</span> : <span className="muted">draft</span>}</td></tr>)}{videos.length === 0 && <Empty cols={4} text="No videos yet." />}</tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>Add a video</h2>
+        <Notice msg={msg} />
+        <form onSubmit={create}>
+          <div className="row">
+            <div><label>Title</label><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required /></div>
+            <div><label>Video URL</label><input type="url" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} required /></div>
+          </div>
+          <div className="row">
+            <div><label>Category</label><select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{["getting_started", "parents", "staff", "transport", "integrations", "admin"].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label>Audience</label><select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}>{["all", "parent", "staff", "admin", "driver"].map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
+          </div>
+          <label>Description</label>
+          <textarea rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+          <button type="submit" style={{ marginTop: 12 }}>Add video</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ SUPPORT ============================ */
+function Support() {
+  const { data, err, reload } = useJson<any>("/api/platform/support-chats");
+  const schoolsQ = useJson<any>("/api/schools");
+  const [f, setF] = useState({ schoolId: "", subject: "", message: "" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const chats: any[] = data?.chats ?? [];
+  const schools: any[] = schoolsQ.data?.schools ?? [];
+  async function open(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try { await send("/api/platform/support-chats", f); setMsg({ k: "ok", t: "Support chat opened." }); setF({ schoolId: "", subject: "", message: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <>
+      <div className="panel">
+        <h2>Support helpdesk</h2>
+        <p className="sub">Conversations between SIPlat support and each school's tenant admin.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table><thead><tr><th>Subject</th><th>School</th><th>Messages</th><th>Last activity</th></tr></thead>
+          <tbody>{chats.map((c: any) => <tr key={c.id}><td><strong>{c.subject}</strong></td><td className="muted">{c.school?.name || c.schoolId}</td><td>{c.messages?.length ?? 0}</td><td className="mono muted">{dt(c.lastMessageAt)}</td></tr>)}{chats.length === 0 && <Empty cols={4} text="No support chats yet." />}</tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>Open a support chat</h2>
+        <Notice msg={msg} />
+        <form onSubmit={open}>
+          <div className="row">
+            <div><label>School</label><select value={f.schoolId} onChange={(e) => setF({ ...f, schoolId: e.target.value })} required><option value="">— select —</option>{schools.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div><label>Subject</label><input value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} required /></div>
+          </div>
+          <label>First message</label>
+          <textarea rows={3} value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} />
+          <button type="submit" style={{ marginTop: 12 }}>Open chat</button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ EMAIL CONFIG ============================ */
+function EmailCfg() {
+  const { data, err, reload } = useJson<any>("/api/platform/email-config");
+  const [f, setF] = useState<any>({ provider: "console", fromName: "", fromEmail: "", host: "", port: "", username: "", secret: "" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  useEffect(() => { if (data) setF((prev: any) => ({ ...prev, provider: data.provider ?? "console", fromName: data.fromName ?? "", fromEmail: data.fromEmail ?? "", host: data.host ?? "", port: data.port ?? "", username: data.username ?? "" })); }, [data]);
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    const body: any = { provider: f.provider, fromName: f.fromName || undefined, fromEmail: f.fromEmail || undefined, host: f.host || undefined, username: f.username || undefined };
+    if (f.port) body.port = Number(f.port);
+    if (f.secret) body.secret = f.secret;
+    try { await send("/api/platform/email-config", body, "PUT"); setMsg({ k: "ok", t: "Email settings saved." }); setF({ ...f, secret: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <div className="panel">
+      <h2>Email configuration</h2>
+      <p className="sub">How the platform sends email. The secret is encrypted at rest and never shown again. {data?.secretSet ? "A secret is currently set." : ""}</p>
+      {err && <Notice msg={{ k: "err", t: err }} />}
+      <Notice msg={msg} />
+      <form onSubmit={save}>
+        <div className="row">
+          <div><label>Provider</label><select value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })}>{["console", "smtp", "postmark", "ses", "resend"].map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+          <div><label>From name</label><input value={f.fromName} onChange={(e) => setF({ ...f, fromName: e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div><label>From email</label><input type="email" value={f.fromEmail} onChange={(e) => setF({ ...f, fromEmail: e.target.value })} /></div>
+          <div><label>SMTP host (if smtp)</label><input value={f.host} onChange={(e) => setF({ ...f, host: e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div><label>Port</label><input type="number" value={f.port} onChange={(e) => setF({ ...f, port: e.target.value })} /></div>
+          <div><label>Username</label><input value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></div>
+        </div>
+        <label>API key / password {data?.secretSet ? "(leave blank to keep current)" : ""}</label>
+        <input type="password" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} />
+        <button type="submit" style={{ marginTop: 12 }}>Save email settings</button>
+      </form>
+    </div>
+  );
+}
+
+/* ============================ AUDIT ============================ */
+type Audit = { id: string; action: string; actorEmail: string | null; school?: { name: string } | null; createdAt: string; metadata: string };
 function AuditTab() {
   const [entries, setEntries] = useState<Audit[]>([]);
-  useEffect(() => {
-    fetch("/api/audit").then((r) => r.json()).then((d) => setEntries(d.entries ?? []));
-  }, []);
+  useEffect(() => { fetch("/api/audit").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])); }, []);
   return (
     <div className="panel">
       <h2>Platform audit trail</h2>
       <p className="sub">The 300 most recent events across all tenants.</p>
-      <table>
-        <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Tenant</th></tr></thead>
-        <tbody>
-          {entries.map((e) => (
-            <tr key={e.id}>
-              <td className="mono muted">{new Date(e.createdAt).toLocaleString()}</td>
-              <td><span className="badge role">{e.action}</span></td>
-              <td>{e.actorEmail ?? <span className="muted">system</span>}</td>
-              <td>{e.school?.name ?? <span className="muted">platform</span>}</td>
-            </tr>
-          ))}
-          {entries.length === 0 && <tr><td colSpan={4} className="muted">No audit entries.</td></tr>}
-        </tbody>
+      <table><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Tenant</th></tr></thead>
+        <tbody>{entries.map((e) => <tr key={e.id}><td className="mono muted">{dt(e.createdAt)}</td><td><span className="badge role">{e.action}</span></td><td>{e.actorEmail ?? <span className="muted">system</span>}</td><td>{e.school?.name ?? <span className="muted">platform</span>}</td></tr>)}{entries.length === 0 && <Empty cols={4} text="No audit entries." />}</tbody>
       </table>
     </div>
   );
