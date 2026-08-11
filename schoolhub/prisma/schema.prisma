@@ -12,12 +12,20 @@
 // so the same schema works on both engines).
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" covers local use; the rhel target is what Vercel's serverless
+  // runtime needs. Both are safe to keep.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Pooled connection (used by the app at runtime).
+  url       = env("DATABASE_URL")
+  // Direct connection (used by `prisma db push` at build time). On Neon this is
+  // the connection string WITHOUT "-pooler" in the host. Falls back to
+  // DATABASE_URL if you only set one.
+  directUrl = env("DIRECT_URL")
 }
 
 // ----------------------------------------------------------------------------

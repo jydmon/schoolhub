@@ -2,7 +2,7 @@ import { requireAuth } from "@/lib/session";
 import { assertTenantAccess } from "@/lib/tenant";
 import { assertCan } from "@/lib/rbac";
 import { PERMISSIONS } from "@/lib/constants";
-import { eventUpdateSchema } from "@/lib/validation";
+import { tripEventUpdateSchema } from "@/lib/validation";
 import { postEventUpdate, tripTimeline, getTripUpdateButtons } from "@/lib/event-updates";
 import { handleError, ok, AppError } from "@/lib/http";
 
@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: Params) {
     const ctx = await requireAuth();
     assertTenantAccess(ctx, params.id);
     assertCan(ctx, PERMISSIONS.MANAGE_TRIPS, params.id);
-    const body = eventUpdateSchema.parse(await req.json());
+    const body = tripEventUpdateSchema.parse(await req.json());
     return ok(await postEventUpdate({ ...body, schoolId: params.id, byUserId: ctx.userId }), 201);
   } catch (err) { return handleError(err); }
 }

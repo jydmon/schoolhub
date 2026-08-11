@@ -817,7 +817,7 @@ export const announcementSchema = z.object({
   }),
   channels: z.array(z.enum(["inapp", "email", "whatsapp", "sms"])).optional(),
 });
-export const eventUpdateSchema = z.object({
+export const tripEventUpdateSchema = z.object({
   tripId: z.string().min(1),
   type: z.string().min(1).max(60),
   note: z.string().max(1000).optional(),
