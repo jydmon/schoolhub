@@ -204,11 +204,21 @@ function Tenants() {
   const [schools, setSchools] = useState<School[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
-  const [form, setForm] = useState({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "trial", groupId: "" });
+  const [form, setForm] = useState({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "", groupId: "" });
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; run: () => void }>(null);
+  // Packages available on the create-tenant form come from the Packages list.
+  const plansQ = useJson<any>("/api/plans");
+  const planList: any[] = (plansQ.data?.plans ?? []).filter((p: any) => p.isActive !== false);
+  const defaultPlanKey = () => planList.find((p) => p.key === "trial")?.key ?? planList[0]?.key ?? "";
   const dirty = !!(form.schoolName || form.slug || form.adminName || form.adminEmail || form.adminPassword);
   useDirty(dirty);
+  // Default (or repair) the selected package once packages have loaded.
+  useEffect(() => {
+    if (planList.length && !planList.some((p) => p.key === form.planKey)) {
+      setForm((prev) => ({ ...prev, planKey: defaultPlanKey() }));
+    }
+  }, [plansQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
   const load = useCallback(async () => {
     const [s, g] = await Promise.all([fetch("/api/schools").then((r) => r.json()), fetch("/api/groups").then((r) => r.json())]);
     setSchools(s.schools ?? []); setGroups(g.groups ?? []); setSel({});
@@ -216,7 +226,8 @@ function Tenants() {
   useEffect(() => { load(); }, [load]);
   async function onboard(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    try { await send("/api/schools", { ...form, groupId: form.groupId || null }); setMsg({ k: "ok", t: `Created "${form.schoolName}" and its administrator.` }); setForm({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "trial", groupId: "" }); load(); }
+    if (!form.planKey) { setMsg({ k: "err", t: "Select a package. If none appear, create one in Packages first." }); return; }
+    try { await send("/api/schools", { ...form, groupId: form.groupId || null }); setMsg({ k: "ok", t: `Created "${form.schoolName}" on the "${planList.find((p) => p.key === form.planKey)?.name ?? form.planKey}" package.` }); setForm({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: defaultPlanKey(), groupId: "" }); load(); }
     catch (e: any) { setMsg({ k: "err", t: e.message || "Failed to onboard school" }); }
   }
   async function setStatus(id: string, status: string) { await send(`/api/schools/${id}`, { status }, "PATCH"); load(); }
@@ -277,7 +288,7 @@ function Tenants() {
             <div><label>Slug (subdomain)</label><input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} required /></div>
           </div>
           <div className="row">
-            <div><label>Plan</label><select value={form.planKey} onChange={(e) => setForm({ ...form, planKey: e.target.value })}>{["trial", "basic", "standard", "premium"].map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+            <div><label>Package</label><select value={form.planKey} onChange={(e) => setForm({ ...form, planKey: e.target.value })} required>{planList.length === 0 && <option value="">— no packages yet, create one in Packages —</option>}{planList.map((p) => <option key={p.key} value={p.key}>{p.name}{p.pricePerSchool ? ` — £${(p.pricePerSchool / 100).toFixed(0)}/yr` : ""}</option>)}</select></div>
             <div><label>Trust / group (optional)</label><select value={form.groupId} onChange={(e) => setForm({ ...form, groupId: e.target.value })}><option value="">— none —</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
           </div>
           <div className="row">

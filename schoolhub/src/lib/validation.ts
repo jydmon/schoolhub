@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SCHOOL_ROLES, PLAN_KEYS, SUBSCRIPTION_STATUSES } from "./constants";
+import { SCHOOL_ROLES, SUBSCRIPTION_STATUSES } from "./constants";
 
 export const loginSchema = z.object({
   email: z.string().email(),
@@ -16,7 +16,8 @@ export const onboardSchoolSchema = z.object({
   adminName: z.string().min(2),
   adminEmail: z.string().email(),
   adminPassword: z.string().min(8),
-  planKey: z.enum(PLAN_KEYS),
+  // Any package key defined in the Packages list (validated against the DB in the route).
+  planKey: z.string().min(2).max(40),
   groupId: z.string().optional().nullable(),
   timezone: z.string().default("Europe/London"),
 });
@@ -50,7 +51,7 @@ export const updateConfigSchema = z.object({
 });
 
 export const updateSubscriptionSchema = z.object({
-  planKey: z.enum(PLAN_KEYS).optional(),
+  planKey: z.string().min(2).max(40).optional(),
   status: z.enum(SUBSCRIPTION_STATUSES as unknown as [string, ...string[]]).optional(),
   renewalDate: z.string().optional(),
   studentLimit: z.number().int().min(0).optional(),
