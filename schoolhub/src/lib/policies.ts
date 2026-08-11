@@ -29,6 +29,20 @@ export async function setPolicyPublished(id: string, published: boolean, actor?:
   await recordAudit({ action: AUDIT.POLICY_PUBLISHED, schoolId: p.schoolId, actorUserId: actor?.userId, targetType: "Policy", targetId: id, metadata: { published } });
 }
 
+/** Update a policy's editable fields (title/category/audience/version/summary/body/fileUrl/requireAck/published). */
+export async function updatePolicy(id: string, patch: {
+  title?: string; category?: string; audience?: string; version?: string; summary?: string;
+  body?: string; fileUrl?: string; requireAck?: boolean; effectiveDate?: string; published?: boolean;
+}, actor?: { userId?: string | null }): Promise<void> {
+  const data: any = {};
+  for (const k of ["title", "category", "audience", "version", "summary", "body", "fileUrl", "requireAck", "published"] as const) {
+    if (patch[k] !== undefined) data[k] = patch[k];
+  }
+  if (patch.effectiveDate !== undefined) data.effectiveDate = patch.effectiveDate ? new Date(patch.effectiveDate) : null;
+  const p = await prisma.policy.update({ where: { id }, data });
+  await recordAudit({ action: AUDIT.POLICY_PUBLISHED, schoolId: p.schoolId, actorUserId: actor?.userId, targetType: "Policy", targetId: id, metadata: { updated: Object.keys(data) } });
+}
+
 export async function deletePolicy(id: string, actor?: { userId?: string | null }): Promise<void> {
   const p = await prisma.policy.delete({ where: { id } });
   await recordAudit({ action: AUDIT.POLICY_REMOVED, schoolId: p.schoolId, actorUserId: actor?.userId, targetType: "Policy", targetId: id });

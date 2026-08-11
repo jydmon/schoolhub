@@ -23,6 +23,37 @@ export async function listRoles() {
   return roles.map((r) => ({ key: r.key, name: r.name, areas: safeArr(r.areasJson), isSystem: r.isSystem }));
 }
 
+/** Create (or update) a custom platform staff role from a name + area list. */
+export async function createPlatformRole(input: {
+  name: string; key?: string; areas: string[]; actorUserId?: string | null;
+}): Promise<{ key: string; name: string; areas: string[] }> {
+  const name = (input.name || "").trim();
+  if (name.length < 2) throw new Error("Role name is required");
+  const key = (input.key?.trim() || name).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+  if (!key) throw new Error("Could not derive a valid role key from the name");
+  const areas = normalizeAreas(input.areas);
+  if (!areas.length) throw new Error("Select at least one area for the role");
+  const existing = await prisma.platformRole.findUnique({ where: { key } });
+  if (existing?.isSystem) throw new Error("A built-in role already uses that name — choose another");
+  const r = await prisma.platformRole.upsert({
+    where: { key },
+    update: { name, areasJson: JSON.stringify(areas) },
+    create: { key, name, areasJson: JSON.stringify(areas), isSystem: false },
+  });
+  await recordAudit({ action: AUDIT.STAFF_UPDATED, actorUserId: input.actorUserId, targetType: "PlatformRole", targetId: r.id, metadata: { key, name, areas, action: "role_saved" } });
+  return { key: r.key, name: r.name, areas };
+}
+
+/** Delete a custom platform role (built-in roles and in-use roles are protected). */
+export async function deletePlatformRole(key: string, actor?: { userId?: string | null }): Promise<void> {
+  const role = await prisma.platformRole.findUnique({ where: { key }, include: { staff: true } });
+  if (!role) throw new Error("Role not found");
+  if (role.isSystem) throw new Error("Built-in roles cannot be deleted");
+  if (role.staff.length) throw new Error("Reassign staff off this role before deleting it");
+  await prisma.platformRole.delete({ where: { key } });
+  await recordAudit({ action: AUDIT.STAFF_REMOVED, actorUserId: actor?.userId, targetType: "PlatformRole", targetId: role.id, metadata: { key, action: "role_deleted" } });
+}
+
 export async function listStaff() {
   const staff = await prisma.platformStaff.findMany({ orderBy: { createdAt: "asc" }, include: { role: true } });
   return staff.map((s) => ({
@@ -36,10 +67,10 @@ export async function listStaff() {
 export async function upsertStaff(input: {
   userId: string; email: string; name?: string; roleKey: string; status?: string; actorUserId?: string | null;
 }): Promise<{ id: string }> {
-  const roleKeys = PLATFORM_ROLES.map((r) => r.key);
+  await ensurePlatformRoles();
+  const roleKeys = (await prisma.platformRole.findMany({ select: { key: true } })).map((r) => r.key);
   const check = validateStaff(input, roleKeys);
   if (!check.ok) throw new Error(check.reason);
-  await ensurePlatformRoles();
   const s = await prisma.platformStaff.upsert({
     where: { userId: input.userId },
     update: { email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active" },

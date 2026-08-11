@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { assertCan } from "@/lib/rbac";
 import { PERMISSIONS } from "@/lib/constants";
-import { setVideoPublished, removeVideo, recordVideoView } from "@/lib/cms";
+import { setVideoPublished, removeVideo, recordVideoView, updateVideo } from "@/lib/cms";
 import { handleError, ok, AppError } from "@/lib/http";
 import { PermissionError } from "@/lib/rbac";
 
@@ -22,7 +22,16 @@ export async function PATCH(req: Request, { params }: Params) {
     const body = await req.json();
     if (body.action === "view") { await recordVideoView(params.id); return ok({ ok: true }); }
     await assertManage(ctx, video.schoolId);
-    if (typeof body.published === "boolean") await setVideoPublished(params.id, body.published, { userId: ctx.userId });
+    const fields = ["title", "description", "category", "audience", "url"] as const;
+    const hasContent = fields.some((k) => body[k] !== undefined);
+    if (hasContent) {
+      const patch: any = {};
+      for (const k of fields) if (typeof body[k] === "string") patch[k] = body[k];
+      if (typeof body.published === "boolean") patch.published = body.published;
+      await updateVideo(params.id, patch, { userId: ctx.userId });
+    } else if (typeof body.published === "boolean") {
+      await setVideoPublished(params.id, body.published, { userId: ctx.userId });
+    }
     return ok({ ok: true });
   } catch (err) { return handleError(err); }
 }

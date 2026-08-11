@@ -204,6 +204,8 @@ td strong { font-weight: 650; }
 .bulkbar { display: flex; align-items: center; gap: 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; padding: 9px 13px; margin-bottom: 12px; font-size: 13.5px; font-weight: 500; color: var(--brand-ink); }
 .checkbox-cell { width: 30px; }
 .checkbox-cell input, td .rowcheck { width: auto; }
+td.nowrap, th.nowrap { white-space: nowrap; }
+td.nowrap .small { margin-bottom: 2px; }
 
 @media (max-width: 860px) {
   .sidebar { width: 74px; padding: 14px 8px; }

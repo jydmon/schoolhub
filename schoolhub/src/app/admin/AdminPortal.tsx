@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, createContext, useContext } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog, useBeforeUnload } from "@/components/ConfirmDialog";
+import { PLATFORM_AREAS, AREA_LABELS } from "@/lib/platform-staff-logic";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
 const DirtyCtx = createContext<{ setDirty: (v: boolean) => void }>({ setDirty: () => {} });
@@ -47,6 +48,49 @@ function Empty({ cols, text }: { cols: number; text: string }) {
   return <tr><td colSpan={cols} className="muted">{text}</td></tr>;
 }
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
+
+// ---- shared content-table controls: filter + sort + bulk selection ----
+function matchQ(q: string, ...fields: any[]): boolean {
+  const s = q.trim().toLowerCase();
+  if (!s) return true;
+  return fields.some((f) => String(f ?? "").toLowerCase().includes(s));
+}
+function useSel() {
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const ids = Object.keys(sel).filter((k) => sel[k]);
+  return {
+    ids,
+    on: (id: string) => !!sel[id],
+    toggle: (id: string) => setSel((p) => ({ ...p, [id]: !p[id] })),
+    setMany: (list: string[], v: boolean) => setSel(v ? Object.fromEntries(list.map((i) => [i, true])) : {}),
+    clear: () => setSel({}),
+  };
+}
+function useSort<T>(accessors: Record<string, (r: T) => any>, initial = "") {
+  const [key, setKey] = useState(initial);
+  const [dir, setDir] = useState<1 | -1>(1);
+  function click(k: string) { if (key === k) setDir((d) => (d === 1 ? -1 : 1)); else { setKey(k); setDir(1); } }
+  function apply(rows: T[]): T[] {
+    const a = accessors[key];
+    if (!key || !a) return rows;
+    return [...rows].sort((x, y) => { const xv = a(x) ?? ""; const yv = a(y) ?? ""; return xv < yv ? -dir : xv > yv ? dir : 0; });
+  }
+  return { key, dir, click, apply };
+}
+function SortTh({ label, k, sort, className }: { label: string; k: string; sort: { key: string; dir: 1 | -1; click: (k: string) => void }; className?: string }) {
+  const on = sort.key === k;
+  return <th className={className} style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }} onClick={() => sort.click(k)}>{label}{on ? (sort.dir === 1 ? " ▲" : " ▼") : ""}</th>;
+}
+function TableTools({ q, setQ, count, total, children }: { q: string; setQ: (v: string) => void; count: number; total: number; children?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
+      <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+      <span className="muted" style={{ fontSize: 12 }}>{q ? `${count} of ${total}` : `${total} item${total === 1 ? "" : "s"}`}</span>
+      <span style={{ flex: 1 }} />
+      {children}
+    </div>
+  );
+}
 
 // ---- tab registry ----
 const TABS: { key: string; label: string }[] = [
@@ -276,16 +320,35 @@ function Team() {
   const roles = useJson<any>("/api/platform/staff/roles");
   const [f, setF] = useState({ userId: "", email: "", name: "", roleKey: "" });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  // Custom-role builder
+  const [rf, setRf] = useState<{ name: string; areas: Record<string, boolean> }>({ name: "", areas: {} });
+  const [rmsg, setRmsg] = useState<{ k: string; t: string } | null>(null);
+  const [delRole, setDelRole] = useState<any | null>(null);
   const staff: any[] = data?.staff ?? [];
   const roleList: any[] = roles.data?.roles ?? [];
+  const roleDirty = rf.name.trim().length > 0 || Object.values(rf.areas).some(Boolean);
+  useDirty(roleDirty);
   async function add(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
     try { await send("/api/platform/staff", { ...f, roleKey: f.roleKey || roleList[0]?.key }); setMsg({ k: "ok", t: "Staff member saved." }); setF({ userId: "", email: "", name: "", roleKey: "" }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
   async function status(id: string, s: string) { try { await send(`/api/platform/staff/${id}`, { status: s }, "PATCH"); reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function createRole(e: React.FormEvent) {
+    e.preventDefault(); setRmsg(null);
+    const areas = Object.keys(rf.areas).filter((a) => rf.areas[a]);
+    try { await send("/api/platform/staff/roles", { name: rf.name, areas }); setRmsg({ k: "ok", t: `Role “${rf.name}” saved.` }); setRf({ name: "", areas: {} }); roles.reload(); }
+    catch (e: any) { setRmsg({ k: "err", t: e.message }); }
+  }
+  async function removeRole(key: string) {
+    setRmsg(null);
+    try { await send(`/api/platform/staff/roles?key=${encodeURIComponent(key)}`, {}, "DELETE"); setRmsg({ k: "ok", t: "Role deleted." }); roles.reload(); }
+    catch (e: any) { setRmsg({ k: "err", t: e.message }); }
+    finally { setDelRole(null); }
+  }
   return (
     <>
+      <ConfirmDialog open={delRole !== null} title="Delete this role?" message={`“${delRole?.name}” will be removed. Staff must be reassigned first.`} confirmLabel="Delete role" danger onConfirm={() => removeRole(delRole.key)} onCancel={() => setDelRole(null)} />
       <div className="panel">
         <h2>SIPlat team &amp; access</h2>
         <p className="sub">Platform staff and which super-admin areas each role can open. You (the owner) always have full access.</p>
@@ -307,6 +370,48 @@ function Team() {
           </tbody>
         </table>
       </div>
+
+      <div className="panel">
+        <h2>Team roles</h2>
+        <p className="sub">Built-in and custom roles. A role grants access to a chosen set of super-admin areas — assign staff to a role to give them exactly those areas and nothing more.</p>
+        {rmsg && <Notice msg={rmsg} />}
+        <table>
+          <thead><tr><th>Role</th><th>Areas</th><th>Type</th><th className="right">Actions</th></tr></thead>
+          <tbody>
+            {roleList.map((r) => (
+              <tr key={r.key}>
+                <td><strong>{r.name}</strong><div className="mono muted">{r.key}</div></td>
+                <td className="muted">{Array.isArray(r.areas) ? (r.areas.includes("*") ? "All areas" : r.areas.map((a: string) => AREA_LABELS[a] || a).join(", ")) : "—"}</td>
+                <td>{r.isSystem ? <span className="badge role">built-in</span> : <span className="badge active">custom</span>}</td>
+                <td className="right">{r.isSystem ? <span className="muted">—</span> : <button className="danger small" onClick={() => setDelRole(r)}>Delete</button>}</td>
+              </tr>
+            ))}
+            {roleList.length === 0 && <Empty cols={4} text="No roles yet." />}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="panel">
+        <h2>Create a team role</h2>
+        <p className="sub">Give the role a name (e.g. “Support”, “CRM”, “CMS”, “System admin”) and tick the areas its staff should be able to open.</p>
+        <form onSubmit={createRole}>
+          <div className="row">
+            <div><label>Role name</label><input value={rf.name} onChange={(e) => setRf({ ...rf, name: e.target.value })} placeholder="e.g. Support role" required /></div>
+            <div />
+          </div>
+          <label style={{ marginTop: 8 }}>Areas this role can access</label>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 8, marginTop: 6 }}>
+            {(PLATFORM_AREAS as readonly string[]).map((a) => (
+              <label key={a} className="consent" style={{ display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+                <input type="checkbox" checked={!!rf.areas[a]} onChange={(e) => setRf({ ...rf, areas: { ...rf.areas, [a]: e.target.checked } })} />
+                {AREA_LABELS[a] || a}
+              </label>
+            ))}
+          </div>
+          <button type="submit" style={{ marginTop: 14 }}>Create role</button>
+        </form>
+      </div>
+
       <div className="panel">
         <h2>Add / update a staff member</h2>
         <p className="sub">Grant an existing user platform-staff access with a role. Roles: {roleList.map((r) => r.name).join(", ") || "loading…"}</p>
@@ -471,32 +576,91 @@ function Reports() {
 }
 
 /* ============================ TEMPLATES ============================ */
+const BLANK_TPL = { kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true };
 function Templates() {
   const { data, err, reload } = useJson<any>("/api/platform/templates");
-  const [f, setF] = useState({ kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true });
+  const [f, setF] = useState<any>({ ...BLANK_TPL });
+  const [editId, setEditId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   const [view, setView] = useState<any | null>(null);
-  const templates: any[] = data?.templates ?? [];
-  async function create(e: React.FormEvent) {
+  const [q, setQ] = useState("");
+  const [confirm, setConfirm] = useState<{ mode: "one" | "bulk"; row?: any } | null>(null);
+  const sel = useSel();
+  const sort = useSort<any>({ name: (t) => (t.name || "").toLowerCase(), kind: (t) => t.kind, category: (t) => (t.category || "").toLowerCase(), shared: (t) => (t.sharedWithTenants ? 1 : 0) }, "name");
+  const all: any[] = data?.templates ?? [];
+  const rows = sort.apply(all.filter((t) => matchQ(q, t.name, t.kind, t.category, t.subject)));
+  const dirty = !!editId || f.name.trim().length > 0 || f.body.trim().length > 0;
+  useDirty(dirty);
+  const allOn = rows.length > 0 && rows.every((t) => sel.on(t.id));
+  function reset() { setF({ ...BLANK_TPL }); setEditId(null); }
+  async function submit(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    try { await send("/api/platform/templates", f); setMsg({ k: "ok", t: "Template created." }); setF({ ...f, name: "", subject: "", body: "" }); reload(); }
+    const body = { kind: f.kind, name: f.name, category: f.category || undefined, subject: f.subject || undefined, body: f.body || undefined, sharedWithTenants: !!f.sharedWithTenants };
+    try {
+      if (editId) { await send(`/api/platform/templates/${editId}`, body, "PATCH"); setMsg({ k: "ok", t: "Template updated." }); }
+      else { await send("/api/platform/templates", body); setMsg({ k: "ok", t: "Template created." }); }
+      reset(); reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  function edit(t: any) { setEditId(t.id); setF({ kind: t.kind || "email_campaign", name: t.name || "", category: t.category || "", subject: t.subject || "", body: t.body || "", sharedWithTenants: !!t.sharedWithTenants }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  async function duplicate(t: any) {
+    setMsg(null);
+    try { await send("/api/platform/templates", { kind: t.kind, name: `${t.name} (copy)`, category: t.category || undefined, subject: t.subject || undefined, body: t.body || undefined, sharedWithTenants: !!t.sharedWithTenants }); setMsg({ k: "ok", t: "Template duplicated." }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function doDelete() {
+    if (!confirm) return;
+    const ids = confirm.mode === "bulk" ? sel.ids : [confirm.row.id];
+    setMsg(null);
+    let ok = 0;
+    for (const id of ids) { try { await send(`/api/platform/templates/${id}`, {}, "DELETE"); ok++; } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+    setConfirm(null); sel.clear(); reload();
+    if (ok) setMsg({ k: "ok", t: `${ok} template${ok === 1 ? "" : "s"} deleted.` });
   }
   return (
     <>
       {view && <DocModal title={view.name} meta={`${view.kind}${view.subject ? " · " + view.subject : ""}`} onClose={() => setView(null)}>{view.body || "(no content)"}</DocModal>}
+      <ConfirmDialog open={confirm !== null} title={confirm?.mode === "bulk" ? "Delete selected templates?" : "Delete this template?"} message={confirm?.mode === "bulk" ? `${sel.ids.length} template(s) will be permanently deleted.` : `“${confirm?.row?.name}” will be permanently deleted.`} confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>Platform template library</h2>
-        <p className="sub">Reusable email / message templates. Mark as shared to make them available to every tenant admin. Click View to read the full template.</p>
+        <p className="sub">Reusable email / message templates. Mark as shared to make them available to every tenant admin.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
-        <table><thead><tr><th>Name</th><th>Kind</th><th>Category</th><th>Shared</th><th className="right"></th></tr></thead>
-          <tbody>{templates.map((t: any) => <tr key={t.id}><td><strong>{t.name}</strong></td><td className="muted">{t.kind}</td><td className="muted">{t.category || "—"}</td><td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td><td className="right"><button className="secondary small" onClick={() => setView(t)}>View</button></td></tr>)}{templates.length === 0 && <Empty cols={5} text="No templates yet — use “Load default content”." />}</tbody>
+        <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
+          {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
+        </TableTools>
+        <table>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((t) => t.id), e.target.checked)} /></th>
+            <SortTh label="Name" k="name" sort={sort} />
+            <SortTh label="Kind" k="kind" sort={sort} />
+            <SortTh label="Category" k="category" sort={sort} />
+            <SortTh label="Shared" k="shared" sort={sort} />
+            <th className="right">Actions</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((t: any) => (
+              <tr key={t.id}>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(t.id)} onChange={() => sel.toggle(t.id)} /></td>
+                <td><strong>{t.name}</strong></td>
+                <td className="muted">{t.kind}</td>
+                <td className="muted">{t.category || "—"}</td>
+                <td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td>
+                <td className="right nowrap">
+                  <button className="secondary small" onClick={() => setView(t)}>View</button>{" "}
+                  <button className="secondary small" onClick={() => edit(t)}>Edit</button>{" "}
+                  <button className="secondary small" onClick={() => duplicate(t)}>Duplicate</button>{" "}
+                  <button className="danger small" onClick={() => setConfirm({ mode: "one", row: t })}>Delete</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && <Empty cols={6} text={all.length ? "No templates match your filter." : "No templates yet — use “Load default content”."} />}
+          </tbody>
         </table>
       </div>
       <div className="panel">
-        <h2>New template</h2>
+        <h2>{editId ? "Edit template" : "New template"}</h2>
         <Notice msg={msg} />
-        <form onSubmit={create}>
+        <form onSubmit={submit}>
           <div className="row">
             <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
             <div><label>Kind</label><select value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>{["email_campaign", "message_board", "email_notification"].map((k) => <option key={k} value={k}>{k}</option>)}</select></div>
@@ -508,7 +672,10 @@ function Templates() {
           <label>Body</label>
           <textarea rows={4} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
           <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.sharedWithTenants} onChange={(e) => setF({ ...f, sharedWithTenants: e.target.checked })} /> Share with all tenants</label>
-          <button type="submit" style={{ marginTop: 12 }}>Create template</button>
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <button type="submit">{editId ? "Update template" : "Create template"}</button>
+            {editId && <button type="button" className="secondary" onClick={reset}>Cancel edit</button>}
+          </div>
         </form>
       </div>
     </>
@@ -516,17 +683,51 @@ function Templates() {
 }
 
 /* ============================ POLICIES ============================ */
+const BLANK_POL = { title: "", category: "data_protection", audience: "all", version: "", summary: "", body: "", fileUrl: "", requireAck: false, published: true };
 function Policies() {
   const { data, err, reload } = useJson<any>("/api/platform/policies");
-  const [f, setF] = useState({ title: "", category: "data_protection", audience: "all", version: "", summary: "", body: "", fileUrl: "", requireAck: false, published: true });
+  const [f, setF] = useState<any>({ ...BLANK_POL });
+  const [editId, setEditId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   const [view, setView] = useState<any | null>(null);
-  const policies: any[] = data?.policies ?? [];
-  async function create(e: React.FormEvent) {
+  const [q, setQ] = useState("");
+  const [confirm, setConfirm] = useState<{ mode: "one" | "bulk"; row?: any } | null>(null);
+  const sel = useSel();
+  const sort = useSort<any>({ title: (p) => (p.title || "").toLowerCase(), category: (p) => p.category || "", audience: (p) => p.audience || "", version: (p) => p.version || "", status: (p) => (p.published ? 1 : 0) }, "title");
+  const all: any[] = data?.policies ?? [];
+  const rows = sort.apply(all.filter((p) => matchQ(q, p.title, p.category, p.audience, p.summary)));
+  const dirty = !!editId || f.title.trim().length > 0 || f.body.trim().length > 0;
+  useDirty(dirty);
+  const allOn = rows.length > 0 && rows.every((p) => sel.on(p.id));
+  function reset() { setF({ ...BLANK_POL }); setEditId(null); }
+  async function submit(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
     const body: any = { ...f }; if (!body.fileUrl) delete body.fileUrl;
-    try { await send("/api/platform/policies", body); setMsg({ k: "ok", t: "Policy published." }); setF({ ...f, title: "", version: "", summary: "", body: "", fileUrl: "" }); reload(); }
+    try {
+      if (editId) { await send(`/api/platform/policies/${editId}`, body, "PATCH"); setMsg({ k: "ok", t: "Policy updated." }); }
+      else { await send("/api/platform/policies", body); setMsg({ k: "ok", t: "Policy saved." }); }
+      reset(); reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  function edit(p: any) { setEditId(p.id); setF({ title: p.title || "", category: p.category || "general", audience: p.audience || "all", version: p.version || "", summary: p.summary || "", body: p.body || "", fileUrl: p.fileUrl || "", requireAck: !!p.requireAck, published: !!p.published }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  async function duplicate(p: any) {
+    setMsg(null);
+    try { await send("/api/platform/policies", { title: `${p.title} (copy)`, category: p.category || undefined, audience: p.audience || undefined, version: p.version || undefined, summary: p.summary || undefined, body: p.body || undefined, ...(p.fileUrl ? { fileUrl: p.fileUrl } : {}), requireAck: !!p.requireAck, published: false }); setMsg({ k: "ok", t: "Policy duplicated (as draft)." }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function togglePublish(p: any) {
+    setMsg(null);
+    try { await send(`/api/platform/policies/${p.id}`, { published: !p.published }, "PATCH"); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function doDelete() {
+    if (!confirm) return;
+    const ids = confirm.mode === "bulk" ? sel.ids : [confirm.row.id];
+    setMsg(null);
+    let ok = 0;
+    for (const id of ids) { try { await send(`/api/platform/policies/${id}`, {}, "DELETE"); ok++; } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+    setConfirm(null); sel.clear(); reload();
+    if (ok) setMsg({ k: "ok", t: `${ok} polic${ok === 1 ? "y" : "ies"} deleted.` });
   }
   return (
     <>
@@ -535,18 +736,50 @@ function Policies() {
         {view.body || (view.fileUrl ? "" : "(no content)")}
         {view.fileUrl ? <p style={{ marginTop: 12 }}><a href={view.fileUrl} target="_blank" rel="noreferrer">Open attached document</a></p> : null}
       </DocModal>}
+      <ConfirmDialog open={confirm !== null} title={confirm?.mode === "bulk" ? "Delete selected policies?" : "Delete this policy?"} message={confirm?.mode === "bulk" ? `${sel.ids.length} policy(ies) will be permanently deleted.` : `“${confirm?.row?.title}” will be permanently deleted.`} confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>Platform policies</h2>
-        <p className="sub">Data-protection, safeguarding and general policies pushed to all tenants. Click View to read the full policy.</p>
+        <p className="sub">Data-protection, safeguarding and general policies pushed to all tenants. Toggle Publish to move a policy between draft and published.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
-        <table><thead><tr><th>Title</th><th>Category</th><th>Audience</th><th>Version</th><th>Status</th><th className="right"></th></tr></thead>
-          <tbody>{policies.map((p: any) => <tr key={p.id}><td><strong>{p.title}</strong></td><td className="muted">{p.category || "—"}</td><td className="muted">{p.audience || "all"}</td><td className="muted">{p.version || "—"}</td><td>{p.published ? <span className="badge published">published</span> : <span className="badge draft">draft</span>}</td><td className="right"><button className="secondary small" onClick={() => setView(p)}>View</button></td></tr>)}{policies.length === 0 && <Empty cols={6} text="No policies yet — use “Load default content”." />}</tbody>
+        <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
+          {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
+        </TableTools>
+        <table>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((p) => p.id), e.target.checked)} /></th>
+            <SortTh label="Title" k="title" sort={sort} />
+            <SortTh label="Category" k="category" sort={sort} />
+            <SortTh label="Audience" k="audience" sort={sort} />
+            <SortTh label="Version" k="version" sort={sort} />
+            <SortTh label="Status" k="status" sort={sort} />
+            <th className="right">Actions</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((p: any) => (
+              <tr key={p.id}>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(p.id)} onChange={() => sel.toggle(p.id)} /></td>
+                <td><strong>{p.title}</strong></td>
+                <td className="muted">{p.category || "—"}</td>
+                <td className="muted">{p.audience || "all"}</td>
+                <td className="muted">{p.version || "—"}</td>
+                <td>{p.published ? <span className="badge published">published</span> : <span className="badge draft">draft</span>}</td>
+                <td className="right nowrap">
+                  <button className="secondary small" onClick={() => setView(p)}>View</button>{" "}
+                  <button className="secondary small" onClick={() => edit(p)}>Edit</button>{" "}
+                  <button className="secondary small" onClick={() => togglePublish(p)}>{p.published ? "Unpublish" : "Publish"}</button>{" "}
+                  <button className="secondary small" onClick={() => duplicate(p)}>Duplicate</button>{" "}
+                  <button className="danger small" onClick={() => setConfirm({ mode: "one", row: p })}>Delete</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && <Empty cols={7} text={all.length ? "No policies match your filter." : "No policies yet — use “Load default content”."} />}
+          </tbody>
         </table>
       </div>
       <div className="panel">
-        <h2>New policy</h2>
+        <h2>{editId ? "Edit policy" : "New policy"}</h2>
         <Notice msg={msg} />
-        <form onSubmit={create}>
+        <form onSubmit={submit}>
           <div className="row">
             <div><label>Title</label><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required /></div>
             <div><label>Version</label><input value={f.version} onChange={(e) => setF({ ...f, version: e.target.value })} placeholder="1.0" /></div>
@@ -561,8 +794,12 @@ function Policies() {
           <textarea rows={6} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
           <label>Or link to an uploaded document (URL)</label>
           <input type="url" value={f.fileUrl} onChange={(e) => setF({ ...f, fileUrl: e.target.value })} placeholder="https://…" />
-          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Require acknowledgement</label>
-          <button type="submit" style={{ marginTop: 12 }}>Publish policy</button>
+          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.published} onChange={(e) => setF({ ...f, published: e.target.checked })} /> Published (untick to save as draft)</label>
+          <label className="consent" style={{ display: "block", marginTop: 6 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Require acknowledgement</label>
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <button type="submit">{editId ? "Update policy" : "Save policy"}</button>
+            {editId && <button type="button" className="secondary" onClick={reset}>Cancel edit</button>}
+          </div>
         </form>
       </div>
     </>
@@ -622,30 +859,100 @@ function Crm() {
 }
 
 /* ============================ HELP VIDEOS (CMS) ============================ */
+const BLANK_VID = { title: "", url: "", category: "getting_started", audience: "all", description: "", published: true };
 function Videos() {
   const { data, err, reload } = useJson<any>("/api/cms/videos?admin=1");
-  const [f, setF] = useState({ title: "", url: "", category: "getting_started", audience: "all", description: "", published: true });
+  const [f, setF] = useState<any>({ ...BLANK_VID });
+  const [editId, setEditId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
-  const videos: any[] = data?.videos ?? [];
-  async function create(e: React.FormEvent) {
+  const [view, setView] = useState<any | null>(null);
+  const [q, setQ] = useState("");
+  const [confirm, setConfirm] = useState<{ mode: "one" | "bulk"; row?: any } | null>(null);
+  const sel = useSel();
+  const sort = useSort<any>({ title: (v) => (v.title || "").toLowerCase(), category: (v) => v.category || "", audience: (v) => v.audience || "", status: (v) => (v.published ? 1 : 0) }, "title");
+  const all: any[] = data?.videos ?? [];
+  const rows = sort.apply(all.filter((v) => matchQ(q, v.title, v.category, v.audience, v.description)));
+  const dirty = !!editId || f.title.trim().length > 0 || f.url.trim().length > 0;
+  useDirty(dirty);
+  const allOn = rows.length > 0 && rows.every((v) => sel.on(v.id));
+  function reset() { setF({ ...BLANK_VID }); setEditId(null); }
+  async function submit(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    try { await send("/api/cms/videos", f); setMsg({ k: "ok", t: "Video added." }); setF({ ...f, title: "", url: "", description: "" }); reload(); }
+    const body = { title: f.title, url: f.url, category: f.category, audience: f.audience, description: f.description || undefined, published: !!f.published };
+    try {
+      if (editId) { await send(`/api/cms/videos/${editId}`, body, "PATCH"); setMsg({ k: "ok", t: "Video updated." }); }
+      else { await send("/api/cms/videos", body); setMsg({ k: "ok", t: "Video added." }); }
+      reset(); reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  function edit(v: any) { setEditId(v.id); setF({ title: v.title || "", url: v.url || "", category: v.category || "getting_started", audience: v.audience || "all", description: v.description || "", published: !!v.published }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  async function duplicate(v: any) {
+    setMsg(null);
+    try { await send("/api/cms/videos", { title: `${v.title} (copy)`, url: v.url, category: v.category || "getting_started", audience: v.audience || "all", description: v.description || undefined, published: false }); setMsg({ k: "ok", t: "Video duplicated (as draft)." }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function togglePublish(v: any) {
+    setMsg(null);
+    try { await send(`/api/cms/videos/${v.id}`, { published: !v.published }, "PATCH"); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function doDelete() {
+    if (!confirm) return;
+    const ids = confirm.mode === "bulk" ? sel.ids : [confirm.row.id];
+    setMsg(null);
+    let ok = 0;
+    for (const id of ids) { try { await send(`/api/cms/videos/${id}`, {}, "DELETE"); ok++; } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+    setConfirm(null); sel.clear(); reload();
+    if (ok) setMsg({ k: "ok", t: `${ok} video${ok === 1 ? "" : "s"} deleted.` });
   }
   return (
     <>
+      {view && <DocModal title={view.title} meta={`${view.category || "general"} · ${view.audience || "all"}`} onClose={() => setView(null)}>
+        {view.description || "(no description)"}
+        {view.url ? <p style={{ marginTop: 12 }}><a href={view.url} target="_blank" rel="noreferrer">Open video</a></p> : null}
+      </DocModal>}
+      <ConfirmDialog open={confirm !== null} title={confirm?.mode === "bulk" ? "Delete selected videos?" : "Delete this video?"} message={confirm?.mode === "bulk" ? `${sel.ids.length} video(s) will be permanently deleted.` : `“${confirm?.row?.title}” will be permanently deleted.`} confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>Help Centre videos</h2>
-        <p className="sub">How-to videos shown across the platform Help Centre.</p>
+        <p className="sub">How-to videos shown across the platform Help Centre. Toggle Publish to move a video between draft and published.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
-        <table><thead><tr><th>Title</th><th>Category</th><th>Audience</th><th>Status</th></tr></thead>
-          <tbody>{videos.map((v: any) => <tr key={v.id}><td><strong>{v.title}</strong></td><td className="muted">{v.category || "—"}</td><td className="muted">{v.audience || "all"}</td><td>{v.published ? <span className="badge active">published</span> : <span className="muted">draft</span>}</td></tr>)}{videos.length === 0 && <Empty cols={4} text="No videos yet." />}</tbody>
+        <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
+          {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
+        </TableTools>
+        <table>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((v) => v.id), e.target.checked)} /></th>
+            <SortTh label="Title" k="title" sort={sort} />
+            <SortTh label="Category" k="category" sort={sort} />
+            <SortTh label="Audience" k="audience" sort={sort} />
+            <SortTh label="Status" k="status" sort={sort} />
+            <th className="right">Actions</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((v: any) => (
+              <tr key={v.id}>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(v.id)} onChange={() => sel.toggle(v.id)} /></td>
+                <td><strong>{v.title}</strong></td>
+                <td className="muted">{v.category || "—"}</td>
+                <td className="muted">{v.audience || "all"}</td>
+                <td>{v.published ? <span className="badge published">published</span> : <span className="badge draft">draft</span>}</td>
+                <td className="right nowrap">
+                  <button className="secondary small" onClick={() => setView(v)}>View</button>{" "}
+                  <button className="secondary small" onClick={() => edit(v)}>Edit</button>{" "}
+                  <button className="secondary small" onClick={() => togglePublish(v)}>{v.published ? "Unpublish" : "Publish"}</button>{" "}
+                  <button className="secondary small" onClick={() => duplicate(v)}>Duplicate</button>{" "}
+                  <button className="danger small" onClick={() => setConfirm({ mode: "one", row: v })}>Delete</button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && <Empty cols={6} text={all.length ? "No videos match your filter." : "No videos yet — use “Load default content”."} />}
+          </tbody>
         </table>
       </div>
       <div className="panel">
-        <h2>Add a video</h2>
+        <h2>{editId ? "Edit video" : "Add a video"}</h2>
         <Notice msg={msg} />
-        <form onSubmit={create}>
+        <form onSubmit={submit}>
           <div className="row">
             <div><label>Title</label><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required /></div>
             <div><label>Video URL</label><input type="url" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} required /></div>
@@ -656,7 +963,11 @@ function Videos() {
           </div>
           <label>Description</label>
           <textarea rows={3} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
-          <button type="submit" style={{ marginTop: 12 }}>Add video</button>
+          <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.published} onChange={(e) => setF({ ...f, published: e.target.checked })} /> Published (untick to save as draft)</label>
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+            <button type="submit">{editId ? "Update video" : "Add video"}</button>
+            {editId && <button type="button" className="secondary" onClick={reset}>Cancel edit</button>}
+          </div>
         </form>
       </div>
     </>
@@ -762,19 +1073,29 @@ function AuditTab() {
 
 /* ============================ STARTER CONTENT + PACKAGES ============================ */
 function SeedRow() {
+  const plans = useJson<any>("/api/plans");
+  const pol = useJson<any>("/api/platform/policies");
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [justLoaded, setJustLoaded] = useState(false);
+  // Consider default content already present once packages AND policies exist.
+  const hasContent = (plans.data?.plans?.length ?? 0) > 0 && (pol.data?.policies?.length ?? 0) > 0;
+  const loaded = justLoaded || hasContent;
   async function load() {
     setBusy(true); setMsg(null);
-    try { const r = await send("/api/platform/seed-defaults", {}); setMsg({ k: "ok", t: `Starter content ready — ${r.policies} policies, ${r.videos} videos, ${r.templates} templates, ${r.plans} packages. Open the tabs to view.` }); }
+    try {
+      const r = await send("/api/platform/seed-defaults", {});
+      setMsg({ k: "ok", t: `Starter content ready — ${r.policies} policies, ${r.videos} videos, ${r.templates} templates, ${r.plans} packages. Open the tabs to view.` });
+      setJustLoaded(true); plans.reload(); pol.reload();
+    }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
     finally { setBusy(false); }
   }
   return (
     <div className="panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-      <div><strong>Starter content</strong><div className="muted" style={{ fontSize: 13 }}>Load default packages, policies, help videos and templates. Safe to run anytime — existing items are kept.</div></div>
+      <div><strong>Starter content</strong><div className="muted" style={{ fontSize: 13 }}>{loaded ? "Default packages, policies, help videos and templates are loaded. Manage them from the Content tabs." : "Load default packages, policies, help videos and templates to get started. This runs once."}</div></div>
       <div style={{ textAlign: "right" }}>
-        <button disabled={busy} onClick={load}>{busy ? "Loading…" : "Load default content"}</button>
+        <button disabled={busy || loaded} onClick={load}>{loaded ? "Default content loaded ✓" : busy ? "Loading…" : "Load default content"}</button>
         {msg && <div className={`notice ${msg.k === "ok" ? "ok" : "err"}`} style={{ marginTop: 8, maxWidth: 540 }}>{msg.t}</div>}
       </div>
     </div>

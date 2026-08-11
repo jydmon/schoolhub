@@ -42,6 +42,18 @@ export async function removeVideo(id: string, actor?: { userId?: string | null }
   await recordAudit({ action: AUDIT.VIDEO_REMOVED, schoolId: v.schoolId, actorUserId: actor?.userId, targetType: "HelpVideo", targetId: id });
 }
 
+/** Update an existing video's editable fields. */
+export async function updateVideo(id: string, patch: {
+  title?: string; description?: string; category?: string; audience?: string; url?: string; published?: boolean;
+}, actor?: { userId?: string | null }): Promise<void> {
+  const data: any = {};
+  for (const k of ["title", "description", "category", "audience", "url", "published"] as const) {
+    if (patch[k] !== undefined) data[k] = patch[k];
+  }
+  const v = await prisma.helpVideo.update({ where: { id }, data });
+  await recordAudit({ action: AUDIT.VIDEO_PUBLISHED, schoolId: v.schoolId, actorUserId: actor?.userId, targetType: "HelpVideo", targetId: id, metadata: { updated: Object.keys(data) } });
+}
+
 /** Videos visible to a viewer: this school's own videos + platform-wide ones.
  *  When forAdmin is false, only published videos are returned. */
 export async function listVideos(opts: { schoolId?: string | null; category?: string; audience?: string; forAdmin?: boolean } = {}) {
