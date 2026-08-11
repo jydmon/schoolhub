@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { SiplatMark } from "@/components/TopBar";
 
 // Password reset confirmation. The emailed link is /reset?token=... — we read
 // the token on the client (avoids static-render constraints) and PUT the new
@@ -45,9 +46,9 @@ export default function ResetPage() {
 
   return (
     <div className="narrow">
-      <div className="brand" style={{ justifyContent: "center", marginBottom: 20, fontSize: 20 }}>
-        <span className="logo-dot" />
-        <span style={{ fontWeight: 700 }}>SIPlat</span>
+      <div className="brand" style={{ justifyContent: "center", marginBottom: 22 }}>
+        <SiplatMark size={34} />
+        <span className="wordmark" style={{ fontSize: 24 }}>SIPlat</span>
       </div>
       <div className="panel">
         <h2>Set a new password</h2>

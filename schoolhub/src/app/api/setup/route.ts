@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
+import { seedDefaultContent } from "@/lib/defaults";
 
 // One-time, browser-only bootstrap of the FIRST platform super admin — for
 // no-terminal deploys (e.g. Vercel). Safe by construction:
@@ -37,6 +38,9 @@ export async function GET(req: Request) {
   const user = await prisma.user.create({
     data: { email, fullName, passwordHash: await hashPassword(password), isPlatformAdmin: true, status: "active", emailVerified: true },
   });
+
+  // Seed starter content (packages, policies, help videos, templates) for a fresh platform.
+  try { await seedDefaultContent(user.id); } catch { /* non-fatal — can be re-run from the admin console */ }
 
   return NextResponse.json({
     ok: true,

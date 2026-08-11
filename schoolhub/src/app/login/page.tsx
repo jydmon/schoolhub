@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { SiplatMark } from "@/components/TopBar";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -68,9 +69,9 @@ export default function LoginPage() {
 
   return (
     <div className="narrow">
-      <div className="brand" style={{ justifyContent: "center", marginBottom: 20, fontSize: 20 }}>
-        <span className="logo-dot" />
-        <span style={{ fontWeight: 700 }}>SIPlat</span>
+      <div className="brand" style={{ justifyContent: "center", marginBottom: 22 }}>
+        <SiplatMark size={34} />
+        <span className="wordmark" style={{ fontSize: 24 }}>SIPlat</span>
       </div>
 
       {mode === "login" ? (

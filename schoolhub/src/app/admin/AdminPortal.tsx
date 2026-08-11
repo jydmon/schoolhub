@@ -45,6 +45,7 @@ const TABS: { key: string; label: string }[] = [
   { key: "groups", label: "Trusts & Groups" },
   { key: "team", label: "Team & Access" },
   { key: "subs", label: "Subscriptions" },
+  { key: "packages", label: "Packages" },
   { key: "revenue", label: "Parent Revenue" },
   { key: "usage", label: "Usage" },
   { key: "reports", label: "Reports" },
@@ -61,6 +62,7 @@ export default function AdminPortal() {
   const [tab, setTab] = useState<string>("tenants");
   return (
     <>
+      <SeedRow />
       <div className="tabs" style={{ flexWrap: "wrap" }}>
         {TABS.map((t) => (
           <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>{t.label}</button>
@@ -70,6 +72,7 @@ export default function AdminPortal() {
       {tab === "groups" && <Groups />}
       {tab === "team" && <Team />}
       {tab === "subs" && <Subscriptions />}
+      {tab === "packages" && <Packages />}
       {tab === "revenue" && <ParentRevenue />}
       {tab === "usage" && <Usage />}
       {tab === "reports" && <Reports />}
@@ -656,5 +659,98 @@ function AuditTab() {
         <tbody>{entries.map((e) => <tr key={e.id}><td className="mono muted">{dt(e.createdAt)}</td><td><span className="badge role">{e.action}</span></td><td>{e.actorEmail ?? <span className="muted">system</span>}</td><td>{e.school?.name ?? <span className="muted">platform</span>}</td></tr>)}{entries.length === 0 && <Empty cols={4} text="No audit entries." />}</tbody>
       </table>
     </div>
+  );
+}
+
+/* ============================ STARTER CONTENT + PACKAGES ============================ */
+function SeedRow() {
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function load() {
+    setBusy(true); setMsg(null);
+    try { const r = await send("/api/platform/seed-defaults", {}); setMsg({ k: "ok", t: `Starter content ready — ${r.policies} policies, ${r.videos} videos, ${r.templates} templates, ${r.plans} packages. Open the tabs to view.` }); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+    finally { setBusy(false); }
+  }
+  return (
+    <div className="panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+      <div><strong>Starter content</strong><div className="muted" style={{ fontSize: 13 }}>Load default packages, policies, help videos and templates. Safe to run anytime — existing items are kept.</div></div>
+      <div style={{ textAlign: "right" }}>
+        <button disabled={busy} onClick={load}>{busy ? "Loading…" : "Load default content"}</button>
+        {msg && <div className={`notice ${msg.k === "ok" ? "ok" : "err"}`} style={{ marginTop: 8, maxWidth: 540 }}>{msg.t}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Packages() {
+  const { data, err, reload } = useJson<any>("/api/plans");
+  const [f, setF] = useState({ key: "", name: "", perStudentGBP: "", perSchoolGBP: "", perVehicleGBP: "", aiQueryLimit: "0", features: "", isActive: true });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const plans: any[] = data?.plans ?? [];
+  const gbp = (pence: number) => !pence ? "—" : `£${(pence / 100).toFixed(2)}`;
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    try {
+      await send("/api/plans", {
+        key: f.key.trim().toLowerCase(), name: f.name,
+        pricePerStudent: Math.round(parseFloat(f.perStudentGBP || "0") * 100),
+        pricePerSchool: Math.round(parseFloat(f.perSchoolGBP || "0") * 100),
+        pricePerVehicle: Math.round(parseFloat(f.perVehicleGBP || "0") * 100),
+        aiQueryLimit: parseInt(f.aiQueryLimit || "0", 10),
+        features: f.features, isActive: f.isActive,
+      });
+      setMsg({ k: "ok", t: `Package "${f.name}" saved.` });
+      setF({ key: "", name: "", perStudentGBP: "", perSchoolGBP: "", perVehicleGBP: "", aiQueryLimit: "0", features: "", isActive: true });
+      reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function toggle(key: string, isActive: boolean) { try { await send(`/api/plans?key=${encodeURIComponent(key)}`, { isActive }, "PATCH"); reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  function edit(p: any) { setF({ key: p.key, name: p.name, perStudentGBP: p.pricePerStudent ? (p.pricePerStudent / 100).toString() : "", perSchoolGBP: p.pricePerSchool ? (p.pricePerSchool / 100).toString() : "", perVehicleGBP: p.pricePerVehicle ? (p.pricePerVehicle / 100).toString() : "", aiQueryLimit: String(p.aiQueryLimit ?? 0), features: p.features || "", isActive: p.isActive }); if (typeof window !== "undefined") window.scrollTo({ top: 9999, behavior: "smooth" }); }
+  return (
+    <>
+      <div className="panel">
+        <h2>Subscription packages</h2>
+        <p className="sub">The plans schools can subscribe to. Prices shown per year. Edit a package to change its price or features.</p>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <table>
+          <thead><tr><th>Package</th><th>Per pupil</th><th>Per school</th><th>Per vehicle</th><th>AI limit</th><th>Status</th><th className="right">Actions</th></tr></thead>
+          <tbody>
+            {plans.map((p: any) => (
+              <tr key={p.key}>
+                <td><strong>{p.name}</strong><div className="mono muted">{p.key}</div></td>
+                <td>{gbp(p.pricePerStudent)}</td><td>{gbp(p.pricePerSchool)}</td><td>{gbp(p.pricePerVehicle)}</td>
+                <td className="muted">{p.aiQueryLimit === -1 ? "Unlimited" : p.aiQueryLimit}</td>
+                <td>{p.isActive ? <span className="badge active">active</span> : <span className="badge archived">inactive</span>}</td>
+                <td className="right"><button className="secondary small" onClick={() => edit(p)}>Edit</button> <button className="secondary small" onClick={() => toggle(p.key, !p.isActive)}>{p.isActive ? "Deactivate" : "Activate"}</button></td>
+              </tr>
+            ))}
+            {plans.length === 0 && <Empty cols={7} text="No packages yet — create one below or use “Load default content”." />}
+          </tbody>
+        </table>
+      </div>
+      <div className="panel">
+        <h2>Create / edit a package</h2>
+        <p className="sub">Use a short lowercase key (e.g. premium). Saving an existing key updates it. Prices in £; AI limit −1 = unlimited.</p>
+        <Notice msg={msg} />
+        <form onSubmit={save}>
+          <div className="row">
+            <div><label>Key</label><input value={f.key} onChange={(e) => setF({ ...f, key: e.target.value })} placeholder="premium" required /></div>
+            <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Premium" required /></div>
+          </div>
+          <div className="row">
+            <div><label>£ per pupil / year</label><input type="number" step="0.01" value={f.perStudentGBP} onChange={(e) => setF({ ...f, perStudentGBP: e.target.value })} /></div>
+            <div><label>£ per school / year</label><input type="number" step="0.01" value={f.perSchoolGBP} onChange={(e) => setF({ ...f, perSchoolGBP: e.target.value })} /></div>
+            <div><label>£ per vehicle / year</label><input type="number" step="0.01" value={f.perVehicleGBP} onChange={(e) => setF({ ...f, perVehicleGBP: e.target.value })} /></div>
+          </div>
+          <div className="row">
+            <div><label>AI query limit / month</label><input type="number" value={f.aiQueryLimit} onChange={(e) => setF({ ...f, aiQueryLimit: e.target.value })} /></div>
+            <div><label>Features (comma-separated)</label><input value={f.features} onChange={(e) => setF({ ...f, features: e.target.value })} placeholder="core,messaging,transport" /></div>
+          </div>
+          <label className="consent" style={{ marginTop: 10 }}><input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} /> Active (available for new subscriptions)</label>
+          <button type="submit" style={{ marginTop: 12 }}>Save package</button>
+        </form>
+      </div>
+    </>
   );
 }
