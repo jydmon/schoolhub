@@ -220,3 +220,110 @@ export function ParentPreferences() {
     </div>
   );
 }
+
+/* ---- School reports (Phase 15) — released reports for a parent's children ---- */
+function renderVal(v: any): any {
+  if (v == null) return "—";
+  if (Array.isArray(v)) return v.map((x, i) => <div key={i}>{typeof x === "object" ? JSON.stringify(x) : String(x)}</div>);
+  if (typeof v === "object") return Object.entries(v).map(([k, x]: any) => <div key={k}><strong>{k}:</strong> {typeof x === "object" ? JSON.stringify(x) : String(x)}</div>);
+  return String(v);
+}
+export function ParentReports() {
+  const [reports, setReports] = useState<any[]>([]);
+  const [open, setOpen] = useState<any | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try { const d = await fetch(`/api/parent/reports`).then((r) => r.json()); if (d.error) throw new Error(d.error); setReports(d.reports ?? []); }
+    catch (e: any) { setErr(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  async function view(id: string) {
+    setErr(null);
+    try { const d = await fetch(`/api/parent/reports/${id}`).then((r) => r.json()); if (d.error) throw new Error(d.error); setOpen(d.report); load(); }
+    catch (e: any) { setErr(e.message); }
+  }
+  const nm = (s: any) => (s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "");
+  return (
+    <div className="panel">
+      <h2>School reports</h2>
+      <p className="sub">Your children&apos;s released reports. Opening a report is recorded for the school.</p>
+      {err && <div className="notice err">{err}</div>}
+      {open ? (
+        <div>
+          <button className="secondary small" onClick={() => setOpen(null)}>← Back to list</button>
+          <h3 style={{ marginTop: 12 }}>{open.title} <span className="muted">· {nm(open.student)}</span></h3>
+          <div className="mono muted">{open.term || open.type}</div>
+          {open.summary && <p style={{ marginTop: 8 }}>{open.summary}</p>}
+          {open.body && typeof open.body === "object" && Object.keys(open.body).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {Object.entries(open.body).map(([k, v]: any) => (
+                <div key={k} style={{ borderTop: "1px solid var(--line)", padding: "8px 0" }}>
+                  <strong style={{ textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</strong>
+                  <div className="muted">{renderVal(v)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {open.fileUrl && <p style={{ marginTop: 10 }}><a href={open.fileUrl} target="_blank" rel="noreferrer">Download attached report file</a></p>}
+        </div>
+      ) : (
+        <table>
+          <thead><tr><th>Child</th><th>Report</th><th>Term</th><th>Released</th><th className="right"></th></tr></thead>
+          <tbody>
+            {reports.map((r) => (
+              <tr key={r.id}>
+                <td>{nm(r.student)}</td>
+                <td><strong>{r.title}</strong>{!r.viewed && <span className="badge suspended" style={{ marginLeft: 6 }}>new</span>}</td>
+                <td className="muted">{r.term || r.type}</td>
+                <td className="mono muted">{r.releasedAt ? new Date(r.releasedAt).toLocaleDateString() : "—"}</td>
+                <td className="right"><button className="small" onClick={() => view(r.id)}>View</button></td>
+              </tr>
+            ))}
+            {reports.length === 0 && <tr><td colSpan={5} className="muted">No reports available yet.</td></tr>}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/* ---- Messaging & contact consent (SMS / WhatsApp) ---- */
+export function ParentMessaging() {
+  const [s, setS] = useState<any>(null);
+  const [phone, setPhone] = useState("");
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const load = useCallback(async () => { const d = await fetch(`/api/parent/messaging`).then((r) => r.json()); setS(d); }, []);
+  useEffect(() => { load(); }, [load]);
+  async function setChannel(channel: string, optIn: boolean) {
+    setMsg(null);
+    const body: any = { channel, optIn };
+    if (phone) body.phone = phone;
+    const res = await fetch(`/api/parent/messaging`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await res.json();
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; }
+    setMsg({ kind: "ok", text: "Saved." }); setPhone(""); load();
+  }
+  if (!s) return <div className="panel"><h2>Messaging &amp; contact</h2><p className="muted">Loading…</p></div>;
+  return (
+    <div className="panel">
+      <h2>Messaging &amp; contact preferences</h2>
+      <p className="sub">Choose how the school may contact you. WhatsApp needs your explicit opt-in; SMS is on unless you opt out.</p>
+      {msg && <div className={`notice ${msg.kind === "ok" ? "ok" : "err"}`}>{msg.text}</div>}
+      <p>Mobile on file: <strong>{s.phone || "none"}</strong></p>
+      {!s.hasPhone && (
+        <div style={{ marginBottom: 10 }}>
+          <label>Mobile number (E.164, e.g. +447700900123)</label>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+44…" />
+        </div>
+      )}
+      <div style={{ borderTop: "1px solid var(--line)", padding: "10px 0" }}>
+        <strong>SMS</strong> — {s.sms?.optedOut ? <span className="muted">opted out</span> : <span className="badge active">receiving</span>}
+        <div style={{ marginTop: 6 }}>{s.sms?.optedOut ? <button className="small" onClick={() => setChannel("sms", true)}>Turn SMS on</button> : <button className="danger small" onClick={() => setChannel("sms", false)}>Opt out of SMS</button>}</div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--line)", padding: "10px 0" }}>
+        <strong>WhatsApp</strong> — {s.whatsapp?.optedIn ? <span className="badge active">opted in</span> : <span className="muted">not opted in</span>}
+        <div style={{ marginTop: 6 }}>{s.whatsapp?.optedIn ? <button className="danger small" onClick={() => setChannel("whatsapp", false)}>Opt out of WhatsApp</button> : <button className="small" onClick={() => setChannel("whatsapp", true)}>Opt in to WhatsApp</button>}</div>
+      </div>
+    </div>
+  );
+}

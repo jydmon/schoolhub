@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import AssistantChat from "@/components/AssistantChat";
-import { ParentNotifications, ParentTransport, ParentTrips, ParentRewards, ParentPreferences } from "./ParentExtra";
+import { ParentNotifications, ParentTransport, ParentTrips, ParentRewards, ParentPreferences, ParentReports, ParentMessaging } from "./ParentExtra";
 
 const PARENT_EXAMPLES = ["What does my child need tomorrow?", "When is Sports Day?", "What is the uniform policy?", "How do I report an absence?", "What did the latest newsletter say?", "When is Parents' Evening?"];
 
@@ -183,6 +183,8 @@ export default function ParentDashboard() {
         ) : <p className="muted">Loading subscription link…</p>}
       </div>
 
+      <ParentReports />
+      <ParentMessaging />
       <ParentPreferences />
       <AssistantChat examples={PARENT_EXAMPLES} />
     </>
