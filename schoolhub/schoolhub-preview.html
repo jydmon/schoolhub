@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SchoolHub — Web & Mobile Preview</title>
+<style>
+  :root{
+    --bg:#f6f8fb; --panel:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --brand:#2563eb; --brand2:#0ea5e9; --ok:#16a34a; --okbg:#dcfce7; --oktext:#166534;
+    --warn:#d97706; --warnbg:#fef3c7; --warntext:#92400e;
+    --danger:#dc2626; --dangerbg:#fee2e2; --dangertext:#991b1b;
+    --neutralbg:#eef2ff; --neutraltext:#3730a3; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5}
+  a{color:inherit}
+  .wrap{max-width:1240px;margin:0 auto;padding:22px}
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+  .lead{color:var(--muted);font-size:13.5px;max-width:720px;margin:2px 0 18px}
+  .seg{display:inline-flex;background:#e9eef6;border-radius:12px;padding:4px;gap:4px}
+  .seg button{border:none;background:transparent;padding:9px 18px;border-radius:9px;font-weight:700;font-size:14px;color:var(--muted);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--brand);box-shadow:0 1px 3px rgba(15,23,42,.12)}
+  .view{display:none}.view.on{display:block}
+  .note{font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:8px;padding:10px 13px;margin:16px 0}
+
+  /* ---------- WEB APP (browser chrome) ---------- */
+  .browser{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:0 24px 60px -30px rgba(15,23,42,.35)}
+  .chrome{display:flex;align-items:center;gap:8px;padding:11px 14px;background:#eef1f6;border-bottom:1px solid var(--line)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .dot.r{background:#f87171}.dot.y{background:#fbbf24}.dot.g{background:#34d399}
+  .url{flex:1;margin-left:8px;background:#fff;border:1px solid var(--line);border-radius:7px;padding:5px 12px;font-size:12.5px;color:var(--muted)}
+  .app{display:grid;grid-template-columns:210px 1fr;min-height:560px}
+  .side{background:#0f1b33;color:#c7d2e5;padding:16px 12px}
+  .side .brand{color:#fff;font-size:15px;margin-bottom:4px}
+  .side .org{font-size:11.5px;color:#8ea3c4;margin:0 0 16px 41px}
+  .nav a{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;font-size:13.5px;color:#c7d2e5;text-decoration:none;cursor:pointer;margin-bottom:2px}
+  .nav a.on{background:#1e2f52;color:#fff}
+  .nav a:hover{background:#18263f}
+  .nav .ic{width:16px;text-align:center;opacity:.9}
+  .nav .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#6f83a6;margin:14px 8px 6px}
+  .main{padding:22px 24px;overflow:auto}
+  .wtab{display:none}.wtab.on{display:block}
+  .hrow{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  h1{font-size:21px;margin:0 0 3px}.h-sub{color:var(--muted);font-size:13px;margin:0}
+  .pill{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--neutralbg);color:var(--neutraltext)}
+  .tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+  .tile{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px}
+  .tile .k{font-size:12px;color:var(--muted)}
+  .tile .v{font-size:26px;font-weight:800;margin-top:2px}
+  .tile .h{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .tile.warn .v{color:var(--warn)} .tile.danger .v{color:var(--danger)} .tile.ok .v{color:var(--ok)}
+  .cards2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card h3{margin:0 0 10px;font-size:14.5px}
+  .li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .li:first-of-type{border-top:none}
+  .li .t{font-size:13.5px}.li .m{font-size:12px;color:var(--muted)}
+  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .b-ok{background:var(--okbg);color:var(--oktext)} .b-warn{background:var(--warnbg);color:var(--warntext)}
+  .b-danger{background:var(--dangerbg);color:var(--dangertext)} .b-neutral{background:var(--neutralbg);color:var(--neutraltext)}
+  .btn{display:inline-block;border:none;border-radius:8px;padding:8px 13px;font-size:13px;font-weight:700;background:var(--brand);color:#fff;cursor:pointer}
+  .btn.sec{background:#eef2f9;color:var(--brand)}
+  .ask{border:1px solid var(--line);border-radius:10px;padding:12px;background:#fbfcfe}
+  .ask .q{font-weight:700;font-size:13.5px}
+  .ask .a{font-size:13px;margin-top:6px}
+  .ask .src{font-size:11.5px;color:var(--muted);margin-top:6px}
+  .inp{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:13.5px}
+
+  /* ---------- MOBILE (phones) ---------- */
+  .phones{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;padding:8px 0 4px}
+  .phone-wrap{width:270px}
+  .phone-label{text-align:center;font-weight:800;font-size:14px;margin-bottom:10px}
+  .phone-label span{display:block;font-size:11.5px;color:var(--muted);font-weight:600}
+  .phone{width:270px;height:560px;background:#000;border-radius:38px;padding:11px;box-shadow:0 26px 60px -26px rgba(15,23,42,.5);position:relative}
+  .screen{background:var(--bg);width:100%;height:100%;border-radius:28px;overflow:hidden;display:flex;flex-direction:column;position:relative}
+  .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:120px;height:22px;background:#000;border-bottom-left-radius:14px;border-bottom-right-radius:14px;z-index:5}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:7px 18px 3px;font-size:11px;font-weight:700;color:var(--ink)}
+  .mhead{padding:6px 15px 10px}
+  .mhead h2{margin:0;font-size:17px}
+  .mhead .s{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .mbody{flex:1;overflow:auto;padding:4px 13px 12px}
+  .mcard{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px}
+  .mrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .mtitle{font-weight:700;font-size:13.5px}
+  .mmuted{color:var(--muted);font-size:11.5px}
+  .mbadge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px}
+  .mbtn{display:inline-block;border:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:700;background:var(--brand);color:#fff;margin:3px 5px 0 0}
+  .mbtn.sec{background:#eef2f9;color:var(--brand)}
+  .mbtn.dng{background:var(--danger);color:#fff}
+  .mbtn.wide{display:block;text-align:center;margin-top:8px}
+  .mnotice{font-size:11px;padding:8px 10px;border-radius:8px;background:var(--neutralbg);color:var(--neutraltext);margin-bottom:10px}
+  .mnotice.warn{background:var(--warnbg);color:var(--warntext)}
+  .mfield{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fff;margin-top:4px}
+  .tabbar{display:flex;border-top:1px solid var(--line);background:#fff}
+  .tabbar .tb{flex:1;text-align:center;padding:8px 2px 10px;font-size:10px;color:var(--muted);cursor:pointer}
+  .tabbar .tb .ic{font-size:16px;display:block;margin-bottom:2px}
+  .tabbar .tb.on{color:var(--brand);font-weight:700}
+  .mscreen{display:none}.mscreen.on{display:block}
+  .biglogo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--brand),var(--brand2));margin:26px auto 12px}
+  .center{text-align:center}
+  @media(max-width:900px){.app{grid-template-columns:1fr}.side{display:none}.tiles{grid-template-columns:repeat(2,1fr)}.cards2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><div class="logo"></div> SchoolHub</div>
+    <div class="seg">
+      <button id="segWeb" class="on" onclick="showView('web')">🖥️ Web app</button>
+      <button id="segMob" onclick="showView('mob')">📱 Mobile apps</button>
+    </div>
+  </header>
+  <p class="lead">A visual preview of the SchoolHub design — the responsive web platform and the four native mobile role apps (Parent, Teacher, Driver, School Administrator) built from one shared codebase. This is a static design mockup so you can see the look and flow; the running platform is in the code zip.</p>
+
+  <!-- ============ WEB APP ============ -->
+  <section id="viewWeb" class="view on">
+    <div class="browser">
+      <div class="chrome">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="url">https://northwind.schoolhub.app/school/operations</span>
+      </div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><div class="logo" style="width:26px;height:26px"></div> SchoolHub</div>
+          <p class="org">Northwind Academy</p>
+          <nav class="nav">
+            <a class="on" onclick="webTab('ops',this)"><span class="ic">📊</span> Operations</a>
+            <a onclick="webTab('parent',this)"><span class="ic">👪</span> Parent view</a>
+            <a onclick="webTab('transport',this)"><span class="ic">🚌</span> Transport</a>
+            <a onclick="webTab('assistant',this)"><span class="ic">✨</span> AI Assistant</a>
+            <div class="grp">Manage</div>
+            <a onclick="webTab('ops',this)"><span class="ic">🎒</span> Students</a>
+            <a onclick="webTab('ops',this)"><span class="ic">🧑‍🏫</span> Staff</a>
+            <a onclick="webTab('ops',this)"><span class="ic">🗺️</span> Trips</a>
+            <a onclick="webTab('ops',this)"><span class="ic">🏅</span> Behaviour</a>
+            <a onclick="webTab('ops',this)"><span class="ic">💬</span> Communications</a>
+            <a onclick="webTab('ops',this)"><span class="ic">📚</span> Knowledge Hub</a>
+            <a onclick="webTab('ops',this)"><span class="ic">⚙️</span> Settings</a>
+          </nav>
+        </aside>
+        <main class="main">
+          <!-- Operations -->
+          <div id="w-ops" class="wtab on">
+            <div class="hrow">
+              <div><h1>Operations</h1><p class="h-sub">Live snapshot — Wed 5 Aug, 09:14</p></div>
+              <span class="pill">School leader</span>
+            </div>
+            <div class="tiles">
+              <div class="tile ok"><div class="k">Students present</div><div class="v">612</div><div class="h">of 640 · 96%</div></div>
+              <div class="tile"><div class="k">Buses active</div><div class="v">7</div><div class="h">of 8 routes</div></div>
+              <div class="tile warn"><div class="k">Delayed routes</div><div class="v">2</div><div class="h">+8 min avg</div></div>
+              <div class="tile"><div class="k">Trips running</div><div class="v">3</div><div class="h">1 residential</div></div>
+            </div>
+            <div class="cards2">
+              <div>
+                <div class="card">
+                  <h3>Needs attention</h3>
+                  <div class="li"><div><div class="t">Year 6 Ecomuseum trip — 4 consents outstanding</div><div class="m">Departs Fri · chase guardians</div></div><span class="badge b-warn">review</span></div>
+                  <div class="li"><div><div class="t">Route B running +11 min (traffic on A-road)</div><div class="m">Families auto-notified</div></div><span class="badge b-warn">delayed</span></div>
+                  <div class="li"><div><div class="t">Safeguarding note flagged for DSL review</div><div class="m">Redacted for non-senior staff</div></div><span class="badge b-danger">high</span></div>
+                  <div class="li"><div><div class="t">MIS sync (SIMS) last night — 2 records skipped</div><div class="m">Invalid date of birth format</div></div><span class="badge b-warn">integration</span></div>
+                </div>
+                <div class="card">
+                  <h3>Today's communications</h3>
+                  <div class="li"><div><div class="t">Sports Day — reminder</div><div class="m">512 guardians · push · email · 78% read</div></div><span class="badge b-ok">delivered</span></div>
+                  <div class="li"><div><div class="t">Route B delay</div><div class="m">18 families · SMS + WhatsApp</div></div><span class="badge b-ok">delivered</span></div>
+                  <div class="li"><div><div class="t">Menu change (allergen notice)</div><div class="m">Targeted: 34 families · WhatsApp</div></div><span class="badge b-ok">delivered</span></div>
+                  <div class="m" style="margin-top:8px">Channels: in-app · push · email · SMS · WhatsApp — WhatsApp opt-in, SMS opt-out honoured per parent.</div>
+                </div>
+                <div class="card">
+                  <h3>Delivery report — last 30 days <span class="badge b-ok" style="float:right">SMS · WhatsApp</span></h3>
+                  <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px">
+                    <thead>
+                      <tr style="text-align:right;color:var(--muted)">
+                        <th style="text-align:left;padding:4px 0">Channel</th><th>Sent</th><th>Deliv.</th><th>Read</th><th>Failed</th><th>Deliv.%</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr style="text-align:right"><td style="text-align:left;padding:3px 0">SMS</td><td>1,204</td><td>1,166</td><td>—</td><td>38</td><td>96.8%</td></tr>
+                      <tr style="text-align:right"><td style="text-align:left;padding:3px 0">WhatsApp</td><td>842</td><td>811</td><td>639</td><td>31</td><td>96.3%</td></tr>
+                      <tr style="text-align:right"><td style="text-align:left;padding:3px 0">Email</td><td>3,318</td><td>3,290</td><td>2,571</td><td>28</td><td>99.2%</td></tr>
+                      <tr style="text-align:right"><td style="text-align:left;padding:3px 0">Push</td><td>2,960</td><td>2,904</td><td>2,110</td><td>56</td><td>98.1%</td></tr>
+                    </tbody>
+                  </table>
+                  <div class="m" style="margin-top:8px">Consent (guardians): 508 with mobile · 214 WhatsApp opt-in · 31 SMS opt-out. Failures reconcile from provider delivery receipts + consent blocks. <b>Export CSV</b> · <b>Bulk opt-in import</b>.</div>
+                </div>
+                <div class="card">
+                  <h3>Pupil reports <span class="badge b-ok" style="float:right">teacher → SLT → parents</span></h3>
+                  <div class="m" style="margin-bottom:8px">Teachers write reports; school leadership approves and sets a release time; parents are notified through the notification centre. Parents can't see a report until it's released.</div>
+                  <div class="li"><div><div class="t">Summer 2026 — Year 4 annual reports</div><div class="m">30 reports · approved by A. Turner · released 5 Aug · 22/30 viewed</div></div><span class="badge b-ok">released</span></div>
+                  <div class="li"><div><div class="t">Autumn 2026 — Year 4 progress reports</div><div class="m">30 reports · embargoed until Fri 09:00 · auto-publishes + notifies</div></div><span class="badge b-warn">scheduled</span></div>
+                  <div class="li"><div><div class="t">Attendance &amp; behaviour — Autumn half-term</div><div class="m">28 reports · awaiting leadership approval</div></div><span class="badge b-warn">to approve</span></div>
+                  <div class="m" style="margin-top:8px">Types: annual · termly/progress · attendance &amp; behaviour · custom. Release now, or schedule an embargo. Every step audited; parent first-view recorded.</div>
+                </div>
+                <div class="card">
+                  <h3>Integration Hub <span class="badge b-ok" style="float:right">multi-tenant framework</span></h3>
+                  <div class="m" style="margin-bottom:8px">Connect your MIS, calendars, docs, GPS &amp; payments — without replacing them. Encrypted credentials, AI field mapping, validation, provenance, source-of-truth.</div>
+                  <div class="li"><div><div class="t">Connectors</div><div class="m">28 templates · Arbor/iSAMS/SIMS/Bromcom shells · Google/MS · SFTP · S3 · Stripe · webhooks</div></div><span class="badge b-ok">catalog</span></div>
+                  <div class="li"><div><div class="t">Manual import (S-1001, S-1002…)</div><div class="m">AI-mapped · validated · 2 imported, provenance recorded</div></div><span class="badge b-ok">synced</span></div>
+                  <div class="li"><div><div class="t">Credential vault</div><div class="m">AES-256-GCM · masked · never returned in plain text</div></div><span class="badge b-ok">encrypted</span></div>
+                  <div class="li"><div><div class="t">Source of truth</div><div class="m">MIS owns identity/attendance · SchoolHub owns journeys — no overwrite without write-back</div></div><span class="badge b-warn">enforced</span></div>
+                  <div class="m" style="margin-top:8px">Errors, conflicts &amp; duplicates queued for review · webhooks signed + idempotent · every action audited.</div>
+                </div>
+              </div>
+              <div>
+                <div class="card">
+                  <h3>Attendance by year</h3>
+                  <div class="li"><div class="t">Reception</div><span class="m">98%</span></div>
+                  <div class="li"><div class="t">Year 3</div><span class="m">97%</span></div>
+                  <div class="li"><div class="t">Year 6</div><span class="m">94%</span></div>
+                  <div class="li"><div class="t">Year 9</div><span class="m">95%</span></div>
+                </div>
+                <div class="card">
+                  <h3>Quick actions</h3>
+                  <button class="btn" style="margin:4px 6px 0 0">Send announcement</button>
+                  <button class="btn sec" style="margin:4px 6px 0 0">Run report</button>
+                  <button class="btn sec" style="margin:4px 6px 0 0">Emergency alert</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Parent view -->
+          <div id="w-parent" class="wtab">
+            <div class="hrow"><div><h1>Family dashboard</h1><p class="h-sub">Ayesha Khan · 2 children</p></div><span class="pill">Parent</span></div>
+            <div class="cards2">
+              <div>
+                <div class="card">
+                  <div class="mrow"><h3 style="margin:0">Maya Khan · Year 4</h3><span class="badge b-ok">Present</span></div>
+                  <div class="li"><div><div class="t">09:00 · Swimming (bring kit)</div><div class="m">Sports Hall</div></div></div>
+                  <div class="li"><div><div class="t">15:20 · Bus Route B home</div><div class="m">ETA 15:41 · +11 min today</div></div><span class="badge b-warn">delayed</span></div>
+                </div>
+                <div class="card">
+                  <div class="mrow"><h3 style="margin:0">Sam Khan · Year 6</h3><span class="badge b-ok">On trip</span></div>
+                  <div class="li"><div><div class="t">Ecomuseum residential — Day 1</div><div class="m">Arrived safely 11:02 · welfare check done</div></div><span class="badge b-ok">safe</span></div>
+                </div>
+              </div>
+              <div>
+                <div class="card" style="border-color:var(--warn)">
+                  <h3>Outstanding actions</h3>
+                  <div class="li"><div><div class="t">Consent — Year 6 Ecomuseum (Sam)</div><div class="m">Due Friday</div></div><button class="btn">Give consent</button></div>
+                  <div class="li"><div><div class="t">Update dietary preferences</div></div><button class="btn sec">Open</button></div>
+                </div>
+                <div class="card">
+                  <h3>Rewards this week</h3>
+                  <div class="li"><div class="t">Maya — 12 house points</div><span class="badge b-ok">+3 today</span></div>
+                  <div class="li"><div class="t">Sam — 8 house points</div><span class="badge b-neutral">steady</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Transport -->
+          <div id="w-transport" class="wtab">
+            <div class="hrow"><div><h1>Transport</h1><p class="h-sub">Live routes & journeys</p></div><span class="pill">Operations</span></div>
+            <div class="card">
+              <h3>Afternoon routes</h3>
+              <div class="li"><div><div class="t">Route A — Willow Estate loop</div><div class="m">Driver: J. Obi · 22 students onboard</div></div><span class="badge b-ok">on time</span></div>
+              <div class="li"><div><div class="t">Route B — Riverside</div><div class="m">Driver: P. Shah · 18 onboard · A-road traffic</div></div><span class="badge b-warn">+11 min</span></div>
+              <div class="li"><div><div class="t">Route C — Town centre</div><div class="m">Driver: M. Lnewis · 15 onboard</div></div><span class="badge b-ok">on time</span></div>
+            </div>
+            <div class="card">
+              <h3>Boarding — Route B (live)</h3>
+              <div class="li"><div class="t">Maya Khan</div><span class="badge b-ok">boarded 15:22</span></div>
+              <div class="li"><div class="t">Leo Martins</div><span class="badge b-ok">boarded 15:22</span></div>
+              <div class="li"><div class="t">Aiden Cross ⚕️</div><span class="badge b-warn">not boarded</span></div>
+            </div>
+          </div>
+          <!-- Assistant -->
+          <div id="w-assistant" class="wtab">
+            <div class="hrow"><div><h1>AI Assistant</h1><p class="h-sub">Grounded in your school's data · every answer cited · permission-scoped</p></div><span class="pill">All staff</span></div>
+            <div class="card">
+              <input class="inp" value="Which trips are missing consent this week?" />
+              <button class="btn" style="margin-top:10px">Ask</button>
+              <div class="ask" style="margin-top:14px">
+                <div class="q">Which trips are missing consent this week?</div>
+                <div class="a">Two trips have outstanding consent this week. <b>Year 6 Ecomuseum residential</b> (departs Fri 7 Aug) is missing 4 of 30 consents — Sam Khan, Leo Ross, Priya Nair and Tom Webb. <b>Year 4 Swimming gala</b> (Thu) is missing 1 of 24 — Ellie Board. All other trips are fully consented.</div>
+                <div class="src">Sources: Trips · Ecomuseum residential · Swimming gala · Consent register</div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+    <div class="note">The web app is fully responsive (flex/grid, reflowing tiles and tabs) so the same portal works on a laptop or a phone browser. Beyond responsive web, the four role apps below are native iOS/Android builds.</div>
+  </section>
+
+  <!-- ============ MOBILE APPS ============ -->
+  <section id="viewMob" class="view">
+    <div class="phones">
+
+      <!-- PARENT -->
+      <div class="phone-wrap">
+        <div class="phone-label">Parent app <span>multi-child · transport · consent</span></div>
+        <div class="phone"><div class="screen"><div class="notch"></div>
+          <div class="statusbar"><span>9:14</span><span>SchoolHub</span><span>5G ▚</span></div>
+          <div class="mscreen on" data-app="parent" data-s="home">
+            <div class="mhead"><h2>Hi Ayesha 👋</h2><div class="s">2 children</div></div>
+            <div class="mbody">
+              <div class="mcard"><div class="mrow"><span class="mtitle">Maya Khan</span><span class="mbadge b-ok">Year 4</span></div></div>
+              <div class="mcard"><div class="mrow"><span class="mtitle">Sam Khan</span><span class="mbadge b-ok">Year 6</span></div></div>
+              <div class="mcard">
+                <div class="mtitle" style="margin-bottom:6px">Today</div>
+                <div class="mmuted">09:00 · Swimming (bring kit)</div>
+                <div class="mmuted">15:20 · Bus Route B — ETA 15:41 (+11 min)</div>
+              </div>
+              <div class="mcard" style="border-color:var(--warn)">
+                <div class="mtitle">Outstanding actions</div>
+                <div class="mmuted" style="margin-top:4px">• Consent for Sam — Ecomuseum trip</div>
+                <a class="mbtn wide">Give consent</a>
+              </div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="parent" data-s="transport">
+            <div class="mhead"><h2>Transport</h2><div class="s">You only see your own child's journey</div></div>
+            <div class="mbody">
+              <div class="mnotice">Showing live location</div>
+              <div class="mcard"><div class="mrow"><span class="mtitle">Maya Khan</span><span class="mbadge b-warn">on bus</span></div>
+                <div class="mmuted" style="margin-top:4px">Afternoon · Route B</div>
+                <div class="mmuted">Near Riverside Park · ETA 15:41 · +11 min</div></div>
+              <div class="mcard"><div class="mrow"><span class="mtitle">Sam Khan</span><span class="mbadge b-ok">on trip</span></div>
+                <div class="mmuted" style="margin-top:4px">Ecomuseum residential · arrived safely</div></div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="parent" data-s="assistant">
+            <div class="mhead"><h2>Assistant</h2><div class="s">Answers only what you're allowed to see. Sources cited.</div></div>
+            <div class="mbody">
+              <input class="mfield" value="What does Maya need tomorrow?" />
+              <a class="mbtn wide">Ask</a>
+              <div class="mcard" style="margin-top:10px">
+                <div class="mtitle">What does Maya need tomorrow?</div>
+                <div class="mmuted" style="color:var(--ink);margin-top:5px">Maya has Forest School tomorrow — bring wellies and a waterproof. PE kit is not needed. Reading record is due back.</div>
+                <div class="mmuted" style="margin-top:6px">Sources: Year 4 calendar · Homework</div>
+              </div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="parent" data-s="alerts">
+            <div class="mhead"><div class="mrow"><h2>Notifications</h2><span class="mbadge b-danger">2</span></div></div>
+            <div class="mbody">
+              <a class="mbtn sec wide">Mark all read</a>
+              <div class="mcard" style="margin-top:10px"><div class="mtitle">Route B delayed +11 min</div><div class="mmuted">New ETA 15:41 · 3 min ago</div></div>
+              <div class="mcard"><div class="mtitle">Sam arrived safely 🏕️</div><div class="mmuted">Welfare check complete · 11:02</div></div>
+              <div class="mcard" style="opacity:.6"><div class="mtitle">Sports Day reminder</div><div class="mmuted">Yesterday</div></div>
+            </div>
+          </div>
+          <div class="tabbar" data-app="parent">
+            <div class="tb on" onclick="mtab('parent','home',this)"><span class="ic">🏠</span>Home</div>
+            <div class="tb" onclick="mtab('parent','transport',this)"><span class="ic">🚌</span>Transport</div>
+            <div class="tb" onclick="mtab('parent','assistant',this)"><span class="ic">✨</span>Assistant</div>
+            <div class="tb" onclick="mtab('parent','alerts',this)"><span class="ic">🔔</span>Alerts</div>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- TEACHER -->
+      <div class="phone-wrap">
+        <div class="phone-label">Teacher app <span>trips · welfare · one-tap</span></div>
+        <div class="phone"><div class="screen"><div class="notch"></div>
+          <div class="statusbar"><span>9:14</span><span>SchoolHub</span><span>5G ▚</span></div>
+          <div class="mscreen on" data-app="teacher" data-s="trips">
+            <div class="mhead"><h2>Ecomuseum trip</h2><div class="s">Day 1 · residential · 30 students</div></div>
+            <div class="mbody">
+              <div class="mnotice warn">Offline — updates queued, will sync automatically (2 pending)</div>
+              <div class="mcard">
+                <div class="mtitle">One-tap updates</div>
+                <div><a class="mbtn sec">Assembled</a><a class="mbtn sec">All accounted</a><a class="mbtn sec">Arrived</a><a class="mbtn sec">Running late</a></div>
+                <div style="margin-top:6px"><a class="mbtn sec">At accommodation</a><a class="mbtn sec">Welfare check</a></div>
+              </div>
+              <div class="mcard">
+                <div class="mtitle">Headcount / welfare</div>
+                <div class="mrow" style="gap:8px"><input class="mfield" value="30" style="width:48%"/><input class="mfield" value="30" style="width:48%"/></div>
+                <div><a class="mbtn">Headcount</a><a class="mbtn sec">Welfare check</a></div>
+              </div>
+              <div class="mcard">
+                <div class="mtitle" style="margin-bottom:4px">Participants (30)</div>
+                <div class="mrow"><span class="mmuted" style="color:var(--ink)">Sam Khan</span><span class="mbadge b-ok">given</span></div>
+                <div class="mrow"><span class="mmuted" style="color:var(--ink)">Leo Ross</span><span class="mbadge b-warn">pending</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="teacher" data-s="assistant">
+            <div class="mhead"><h2>Assistant</h2><div class="s">Today's trips, policies, consent status…</div></div>
+            <div class="mbody">
+              <input class="mfield" value="Which policies are due for review?" />
+              <a class="mbtn wide">Ask</a>
+              <div class="mcard" style="margin-top:10px"><div class="mtitle">Which policies are due for review?</div>
+                <div class="mmuted" style="color:var(--ink);margin-top:5px">Three policies are due this term: Behaviour (review by 12 Aug), Educational Visits (overdue by 3 days), and Online Safety (due 30 Aug).</div>
+                <div class="mmuted" style="margin-top:6px">Sources: Policy register</div></div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="teacher" data-s="account">
+            <div class="mhead"><h2>Account</h2></div>
+            <div class="mbody"><div class="mcard"><div class="mmuted">t.reed@northwind.sch.uk</div><div class="mmuted">Role: Teacher</div><a class="mbtn sec wide">Sign out</a></div></div>
+          </div>
+          <div class="tabbar" data-app="teacher">
+            <div class="tb on" onclick="mtab('teacher','trips',this)"><span class="ic">🗺️</span>Trips</div>
+            <div class="tb" onclick="mtab('teacher','assistant',this)"><span class="ic">✨</span>Assistant</div>
+            <div class="tb" onclick="mtab('teacher','account',this)"><span class="ic">👤</span>Account</div>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- DRIVER -->
+      <div class="phone-wrap">
+        <div class="phone-label">Driver app <span>journeys · boarding · offline</span></div>
+        <div class="phone"><div class="screen"><div class="notch"></div>
+          <div class="statusbar"><span>15:20</span><span>SchoolHub</span><span>4G ▚</span></div>
+          <div class="mscreen on" data-app="driver" data-s="journeys">
+            <div class="mhead"><div class="mrow"><h2>Route B</h2><span class="mbadge b-neutral">in progress</span></div><div class="s">Afternoon · +11 min</div></div>
+            <div class="mbody">
+              <div class="mnotice">Offline — actions queued, sync on reconnect (1 pending)</div>
+              <div class="mcard">
+                <div><a class="mbtn sec">Approaching</a><a class="mbtn">Complete</a></div>
+              </div>
+              <div class="mcard">
+                <div class="mtitle" style="margin-bottom:4px">Students (18)</div>
+                <div style="border-top:1px solid var(--line);padding-top:7px">
+                  <div class="mrow"><span class="mmuted" style="color:var(--ink);font-weight:700">Maya Khan</span><span class="mbadge b-ok">boarded</span></div>
+                  <div><a class="mbtn">Boarded</a><a class="mbtn sec">Dropped</a><a class="mbtn dng">Absent</a></div>
+                </div>
+                <div style="border-top:1px solid var(--line);padding-top:7px;margin-top:8px">
+                  <div class="mrow"><span class="mmuted" style="color:var(--ink);font-weight:700">Aiden Cross ⚕️</span></div>
+                  <div><a class="mbtn">Boarded</a><a class="mbtn sec">Dropped</a><a class="mbtn dng">Absent</a></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="driver" data-s="account">
+            <div class="mhead"><h2>Account</h2></div>
+            <div class="mbody"><div class="mcard"><div class="mmuted">Signed in as p.shah@driver</div><a class="mbtn sec wide">Sign out</a></div>
+            <div class="mcard"><div class="mtitle">Access</div><div class="mmuted" style="margin-top:4px">Limited to your active assignments only. No access to other routes or student records.</div></div></div>
+          </div>
+          <div class="tabbar" data-app="driver">
+            <div class="tb on" onclick="mtab('driver','journeys',this)"><span class="ic">🚌</span>Journeys</div>
+            <div class="tb" onclick="mtab('driver','account',this)"><span class="ic">👤</span>Account</div>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- ADMIN -->
+      <div class="phone-wrap">
+        <div class="phone-label">Administrator app <span>operations · emergency</span></div>
+        <div class="phone"><div class="screen"><div class="notch"></div>
+          <div class="statusbar"><span>9:14</span><span>SchoolHub</span><span>5G ▚</span></div>
+          <div class="mscreen on" data-app="admin" data-s="ops">
+            <div class="mhead"><h2>Operations</h2><div class="s">Live snapshot across the school</div></div>
+            <div class="mbody">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <div class="mcard" style="flex:1;min-width:44%"><div class="mmuted">Present</div><div style="font-size:22px;font-weight:800;color:var(--ok)">612</div></div>
+                <div class="mcard" style="flex:1;min-width:44%"><div class="mmuted">Buses</div><div style="font-size:22px;font-weight:800">7</div></div>
+                <div class="mcard" style="flex:1;min-width:44%"><div class="mmuted">Delayed</div><div style="font-size:22px;font-weight:800;color:var(--warn)">2</div></div>
+                <div class="mcard" style="flex:1;min-width:44%"><div class="mmuted">Trips</div><div style="font-size:22px;font-weight:800">3</div></div>
+              </div>
+              <div class="mcard" style="border-color:var(--warn)">
+                <div class="mtitle">Needs attention</div>
+                <div class="mrow" style="margin-top:5px"><span class="mmuted" style="color:var(--ink)">Ecomuseum — 4 consents due</span><span class="mbadge b-warn">review</span></div>
+                <div class="mrow" style="margin-top:5px"><span class="mmuted" style="color:var(--ink)">Safeguarding note for DSL</span><span class="mbadge b-danger">high</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="admin" data-s="emergency">
+            <div class="mhead"><h2>Emergency broadcast</h2><div class="s">Overrides quiet hours & preferences</div></div>
+            <div class="mbody">
+              <div class="mcard">
+                <input class="mfield" value="School closure — burst pipe" />
+                <textarea class="mfield" rows="3" style="margin-top:8px">School is closed today. Please do not travel in. Buses are cancelled. More info by 11am.</textarea>
+                <div class="mnotice warn" style="margin-top:10px">Sends immediately to every guardian and staff member, all channels, bypassing quiet hours.</div>
+                <a class="mbtn dng wide">Send now</a>
+              </div>
+            </div>
+          </div>
+          <div class="mscreen" data-app="admin" data-s="assistant">
+            <div class="mhead"><h2>Assistant</h2><div class="s">Operational questions, grounded & cited</div></div>
+            <div class="mbody">
+              <input class="mfield" value="How many messages need attention?" />
+              <a class="mbtn wide">Ask</a>
+              <div class="mcard" style="margin-top:10px"><div class="mtitle">How many messages need attention?</div>
+                <div class="mmuted" style="color:var(--ink);margin-top:5px">3 messages need attention: 2 guardian replies unanswered over 24h and 1 flagged for safeguarding review.</div>
+                <div class="mmuted" style="margin-top:6px">Sources: Communications</div></div>
+            </div>
+          </div>
+          <div class="tabbar" data-app="admin">
+            <div class="tb on" onclick="mtab('admin','ops',this)"><span class="ic">📊</span>Ops</div>
+            <div class="tb" onclick="mtab('admin','emergency',this)"><span class="ic">🚨</span>Emergency</div>
+            <div class="tb" onclick="mtab('admin','assistant',this)"><span class="ic">✨</span>Assistant</div>
+          </div>
+        </div></div>
+      </div>
+
+    </div>
+    <div class="note">One shared Expo / React Native codebase renders all four apps — the active experience is chosen from the signed-in user's role. Every screen is offline-first (cache-first reads, an auto-syncing write queue) and secured with Face ID / fingerprint unlock, calling the same backend APIs as the web app.</div>
+  </section>
+</div>
+
+<script>
+  function showView(v){
+    document.getElementById('viewWeb').classList.toggle('on', v==='web');
+    document.getElementById('viewMob').classList.toggle('on', v==='mob');
+    document.getElementById('segWeb').classList.toggle('on', v==='web');
+    document.getElementById('segMob').classList.toggle('on', v==='mob');
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  function webTab(id, el){
+    document.querySelectorAll('.wtab').forEach(t=>t.classList.remove('on'));
+    document.getElementById('w-'+id).classList.add('on');
+    document.querySelectorAll('.side .nav a').forEach(a=>a.classList.remove('on'));
+    if(el) el.classList.add('on');
+    document.querySelector('.main').scrollTop=0;
+  }
+  function mtab(app, s, el){
+    document.querySelectorAll('.mscreen[data-app="'+app+'"]').forEach(x=>x.classList.toggle('on', x.dataset.s===s));
+    el.parentElement.querySelectorAll('.tb').forEach(t=>t.classList.remove('on'));
+    el.classList.add('on');
+  }
+</script>
+</body>
+</html>

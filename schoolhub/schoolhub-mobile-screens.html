@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SchoolHub Mobile — Screen Designs</title>
+<style>
+  :root{
+    --bg:#f6f8fb; --panel:#fff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --brand:#2563eb; --brand2:#0ea5e9; --ok:#16a34a; --okbg:#dcfce7; --oktext:#166534;
+    --warn:#d97706; --warnbg:#fef3c7; --warntext:#92400e;
+    --danger:#dc2626; --dangerbg:#fee2e2; --dangertext:#991b1b;
+    --neutralbg:#eef2ff; --neutraltext:#3730a3;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5}
+  .wrap{max-width:1280px;margin:0 auto;padding:24px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;font-size:19px}
+  .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+  .lead{color:var(--muted);font-size:13.5px;max-width:760px;margin:8px 0 4px}
+  h2.group{font-size:15px;margin:30px 0 4px;display:flex;align-items:center;gap:8px}
+  h2.group .chip{font-size:11px;font-weight:700;color:var(--brand);background:var(--neutralbg);padding:3px 10px;border-radius:999px}
+  .rowsub{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+  .gallery{display:flex;gap:26px;flex-wrap:wrap}
+  .item{width:274px}
+  .cap{font-weight:700;font-size:13px;margin:0 0 9px;text-align:center}
+  .cap span{display:block;font-weight:500;color:var(--muted);font-size:11px}
+
+  /* phone */
+  .phone{width:274px;height:576px;background:#0b0b0f;border-radius:40px;padding:11px;box-shadow:0 26px 60px -26px rgba(15,23,42,.5)}
+  .screen{background:var(--bg);width:100%;height:100%;border-radius:30px;overflow:hidden;display:flex;flex-direction:column;position:relative}
+  .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:118px;height:22px;background:#0b0b0f;border-bottom-left-radius:14px;border-bottom-right-radius:14px;z-index:9}
+  .sb{display:flex;justify-content:space-between;align-items:center;padding:7px 18px 2px;font-size:11px;font-weight:700}
+  .hd{padding:5px 15px 8px}
+  .hd h3{margin:0;font-size:16.5px}
+  .hd .s{font-size:11px;color:var(--muted);margin-top:1px}
+  .body{flex:1;overflow:auto;padding:2px 13px 14px}
+  .body.nopad{padding:0}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:10px}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .t{font-weight:700;font-size:13px}
+  .m{color:var(--muted);font-size:11.5px}
+  .bd{font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px}
+  .b-ok{background:var(--okbg);color:var(--oktext)} .b-warn{background:var(--warnbg);color:var(--warntext)}
+  .b-danger{background:var(--dangerbg);color:var(--dangertext)} .b-neutral{background:var(--neutralbg);color:var(--neutraltext)}
+  .btn{display:inline-block;border:none;border-radius:8px;padding:7px 11px;font-size:11.5px;font-weight:700;background:var(--brand);color:#fff;margin:4px 5px 0 0}
+  .btn.sec{background:#eef2f9;color:var(--brand)} .btn.dng{background:var(--danger)} .btn.wide{display:block;text-align:center}
+  .field{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:11.5px;background:#fff;margin-top:5px}
+  .notice{font-size:10.5px;padding:8px 10px;border-radius:8px;background:var(--neutralbg);color:var(--neutraltext);margin-bottom:10px}
+  .notice.warn{background:var(--warnbg);color:var(--warntext)}
+  .notice.ok{background:var(--okbg);color:var(--oktext)}
+  .tabbar{display:flex;border-top:1px solid var(--line);background:#fff}
+  .tabbar .tb{flex:1;text-align:center;padding:7px 2px 9px;font-size:9.5px;color:var(--muted)}
+  .tabbar .tb .ic{font-size:15px;display:block;margin-bottom:1px}
+  .tabbar .tb.on{color:var(--brand);font-weight:700}
+
+  /* map */
+  .map{position:relative;height:250px;background:linear-gradient(160deg,#eaf2ff,#eef7f0);overflow:hidden}
+  .road{position:absolute;background:#dbe4f0}
+  .bus{position:absolute;width:26px;height:26px;border-radius:8px;background:var(--brand);display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:0 4px 10px rgba(37,99,235,.5);z-index:4;animation:drive 6s ease-in-out infinite alternate}
+  @keyframes drive{from{transform:translate(0,0)}to{transform:translate(56px,-70px)}}
+  .pulse{position:absolute;width:26px;height:26px;border-radius:50%;background:rgba(37,99,235,.35);z-index:3;animation:pulse 2s ease-out infinite}
+  @keyframes pulse{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.6);opacity:0}}
+  .stop{position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;border:3px solid var(--brand);z-index:4}
+  .stop.done{background:var(--brand)} .stop.you{border-color:var(--ok);width:16px;height:16px}
+  .eta{position:absolute;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:10.5px;box-shadow:0 6px 16px -6px rgba(15,23,42,.4);z-index:6}
+  .eta b{font-size:12px}
+  .maptag{position:absolute;top:9px;left:9px;background:rgba(255,255,255,.9);border-radius:8px;padding:4px 9px;font-size:10px;font-weight:700;z-index:6}
+  .live{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:5px;animation:blink 1.4s infinite}
+  @keyframes blink{50%{opacity:.3}}
+
+  /* chat */
+  .chat{padding:10px 12px}
+  .bub{max-width:80%;padding:8px 11px;border-radius:14px;font-size:11.5px;margin-bottom:9px;line-height:1.45}
+  .bub.u{background:var(--brand);color:#fff;margin-left:auto;border-bottom-right-radius:5px}
+  .bub.a{background:#fff;border:1px solid var(--line);border-bottom-left-radius:5px}
+  .cite{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+  .cite span{font-size:9.5px;background:var(--neutralbg);color:var(--neutraltext);padding:2px 7px;border-radius:999px}
+  .typing{display:inline-flex;gap:3px;align-items:center}
+  .typing i{width:5px;height:5px;border-radius:50%;background:var(--muted);display:inline-block;animation:bounce 1.2s infinite}
+  .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;padding:2px 12px 8px}
+  .chips span{font-size:10px;border:1px solid var(--line);background:#fff;color:var(--brand);padding:5px 9px;border-radius:999px}
+  .inbar{display:flex;align-items:center;gap:8px;border-top:1px solid var(--line);background:#fff;padding:9px 12px}
+  .inbar .box{flex:1;background:var(--bg);border-radius:999px;padding:8px 12px;font-size:11px;color:var(--muted)}
+  .inbar .send{width:30px;height:30px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
+
+  /* misc rows */
+  .liln{padding:8px 0;border-top:1px solid var(--line)} .liln:first-child{border-top:none}
+  .toggle{width:36px;height:20px;border-radius:999px;background:var(--brand);position:relative;flex:none}
+  .toggle.off{background:#cbd5e1}
+  .toggle::after{content:"";position:absolute;top:2px;left:18px;width:16px;height:16px;border-radius:50%;background:#fff}
+  .toggle.off::after{left:2px}
+  .seg{display:flex;background:#eef2f7;border-radius:9px;padding:3px;margin:4px 0 10px}
+  .seg span{flex:1;text-align:center;font-size:10.5px;font-weight:700;color:var(--muted);padding:5px;border-radius:7px}
+  .seg span.on{background:#fff;color:var(--brand)}
+  .step{display:flex;gap:9px;padding:8px 0}
+  .step .dot{width:11px;height:11px;border-radius:50%;background:var(--brand);margin-top:3px;flex:none}
+  .step.mut .dot{background:#cbd5e1}
+  .biglogo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--brand),var(--brand2));margin:34px auto 12px}
+  .face{width:66px;height:66px;border-radius:50%;border:3px solid var(--brand);margin:16px auto;display:flex;align-items:center;justify-content:center;font-size:30px}
+  .center{text-align:center}
+  .note{font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:8px;padding:11px 14px;margin:26px 0 4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><div class="logo"></div> SchoolHub Mobile — screen designs</div>
+  <p class="lead">Detailed page designs across the mobile apps: live bus tracking, the full AI assistant conversation, consent flows, rewards, notification controls, driver and staff screens, and sign-in with biometrics. Static visual mockups of the design; the running apps are in the code.</p>
+
+  <!-- ===== PARENT ===== -->
+  <h2 class="group">Parent app <span class="chip">most screens</span></h2>
+  <p class="rowsub">Multi-child, offline-first. A parent only ever sees their own child's data.</p>
+  <div class="gallery">
+
+    <!-- Live bus tracking -->
+    <div class="item">
+      <p class="cap">Live bus tracking<span>map · moving bus · ETA · stops</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>15:24</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Maya's bus</h3><div class="s">Afternoon · Route B home</div></div>
+        <div class="body nopad">
+          <div class="map">
+            <div class="maptag"><span class="live"></span>Live · updates every 10s</div>
+            <!-- roads -->
+            <div class="road" style="top:70px;left:-10px;width:230px;height:8px;transform:rotate(8deg)"></div>
+            <div class="road" style="top:120px;left:60px;width:8px;height:150px"></div>
+            <div class="road" style="top:150px;left:60px;width:180px;height:8px;transform:rotate(-10deg)"></div>
+            <!-- stops -->
+            <div class="stop done" style="top:196px;left:40px"></div>
+            <div class="stop done" style="top:150px;left:120px"></div>
+            <div class="stop you" style="top:60px;left:196px" title="Your stop"></div>
+            <!-- bus + pulse -->
+            <div class="pulse" style="top:150px;left:150px"></div>
+            <div class="bus" style="top:150px;left:150px">🚌</div>
+            <div class="eta" style="top:22px;left:150px">Your stop<br><b>ETA 15:41</b> · +11 min</div>
+          </div>
+          <div style="padding:10px 13px 14px">
+            <div class="card">
+              <div class="row"><span class="t">Route B · P. Shah</span><span class="bd b-warn">+11 min</span></div>
+              <div class="m" style="margin-top:4px">Delay: traffic on the A-road. You'll be notified if it changes.</div>
+            </div>
+            <div class="card">
+              <div class="t" style="margin-bottom:4px">Upcoming stops</div>
+              <div class="row liln"><span class="m" style="color:var(--ink)">✓ Willow Estate</span><span class="m">15:22</span></div>
+              <div class="row liln"><span class="m" style="color:var(--ink)">✓ High Street</span><span class="m">15:33</span></div>
+              <div class="row liln"><span class="m" style="color:var(--ink);font-weight:700">● Maple Close (your stop)</span><span class="bd b-ok">15:41</span></div>
+            </div>
+            <div class="card ok" style="background:var(--okbg);border-color:#bbf7d0">
+              <div class="row"><span class="t" style="color:var(--oktext)">Maya is onboard</span><span class="bd b-ok">boarded 15:22</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tb"><span class="ic">🏠</span>Home</div><div class="tb on"><span class="ic">🚌</span>Transport</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">🔔</span>Alerts</div></div>
+      </div></div>
+    </div>
+
+    <!-- Full AI assistant -->
+    <div class="item">
+      <p class="cap">AI Assistant — full conversation<span>grounded · cited · follow-ups</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>19:02</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Assistant</h3><div class="s">Answers only what you're allowed to see</div></div>
+        <div class="body nopad" style="display:flex;flex-direction:column">
+          <div class="chat" style="flex:1;overflow:auto">
+            <div class="bub u">What does Maya need for tomorrow?</div>
+            <div class="bub a">Maya has <b>Forest School</b> tomorrow (Thu). Please send wellies and a waterproof coat. No PE kit needed. Her reading record is due back.
+              <div class="cite"><span>📅 Year 4 calendar</span><span>📖 Homework</span></div>
+            </div>
+            <div class="bub u">Is Sam's trip consent sorted?</div>
+            <div class="bub a">Not yet — the <b>Ecomuseum residential</b> (departs Fri) still needs your consent for Sam. It takes about a minute. Want me to open the form?
+              <div class="cite"><span>🗺️ Trips</span><span>✅ Consent register</span></div>
+            </div>
+            <div class="bub u">Did Sam arrive safely?</div>
+            <div class="bub a"><span class="typing"><i></i><i></i><i></i></span></div>
+          </div>
+          <div class="chips"><span>Open consent form</span><span>Term dates</span><span>Menu this week</span></div>
+          <div class="inbar"><span style="font-size:15px">🎙️</span><div class="box">Ask about your children…</div><div class="send">↑</div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Child dashboard / timeline -->
+    <div class="item">
+      <p class="cap">Child day timeline<span>schedule · attendance · alerts</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>08:12</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Maya Khan</h3><div class="s">Year 4 · Oak class</div></div>
+        <div class="body">
+          <div class="seg"><span class="on">Today</span><span>Week</span><span>Rewards</span></div>
+          <div class="card"><div class="row"><span class="t">Attendance</span><span class="bd b-ok">Present · registered 08:47</span></div></div>
+          <div class="card">
+            <div class="t" style="margin-bottom:4px">Schedule</div>
+            <div class="step"><div class="dot"></div><div><div class="m" style="color:var(--ink)">09:00 · Swimming</div><div class="m">Bring kit · Sports Hall</div></div></div>
+            <div class="step"><div class="dot"></div><div><div class="m" style="color:var(--ink)">12:15 · Lunch</div><div class="m">Vegetarian selected</div></div></div>
+            <div class="step mut"><div class="dot"></div><div><div class="m" style="color:var(--ink)">15:20 · Bus Route B home</div><div class="m">ETA 15:41 · +11 min</div></div></div>
+          </div>
+          <div class="card" style="border-color:var(--warn)"><div class="t">Reminder</div><div class="m" style="margin-top:3px">Forest School tomorrow — wellies & waterproof.</div></div>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">🏠</span>Home</div><div class="tb"><span class="ic">🚌</span>Transport</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">🔔</span>Alerts</div></div>
+      </div></div>
+    </div>
+
+    <!-- Consent form -->
+    <div class="item">
+      <p class="cap">Consent & forms<span>trip consent · one tap</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>19:05</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Trip consent</h3><div class="s">Year 6 Ecomuseum residential</div></div>
+        <div class="body">
+          <div class="card">
+            <div class="t">Sam Khan · Year 6</div>
+            <div class="m" style="margin-top:4px">Departs Fri 7 Aug 08:30 · returns Sat 8 Aug 16:00. Overnight at Ecomuseum Lodge. Cost £45 (paid).</div>
+          </div>
+          <div class="card">
+            <div class="t" style="margin-bottom:6px">Confirm</div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">I give consent for Sam to attend</span><div class="toggle"></div></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Photos may be used in school comms</span><div class="toggle off"></div></div>
+            <label class="m" style="margin-top:8px;display:block">Medical / dietary notes</label>
+            <textarea class="field" rows="2">No nuts. Inhaler in bag.</textarea>
+          </div>
+          <div class="notice">Emergency contact on file: Ayesha Khan · 07•• ••• ••2. Tap to update.</div>
+          <a class="btn wide">Submit consent</a>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Rewards -->
+    <div class="item">
+      <p class="cap">Rewards & behaviour<span>house points · trend</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>17:40</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Rewards</h3><div class="s">This term · both children</div></div>
+        <div class="body">
+          <div class="card center">
+            <div class="m">Maya — house points</div>
+            <div style="font-size:34px;font-weight:800;color:var(--brand)">128</div>
+            <div style="display:flex;gap:3px;align-items:flex-end;justify-content:center;height:44px;margin-top:8px">
+              <div style="width:12px;height:22px;background:#c7d7fb;border-radius:3px"></div>
+              <div style="width:12px;height:30px;background:#a9c4fa;border-radius:3px"></div>
+              <div style="width:12px;height:18px;background:#c7d7fb;border-radius:3px"></div>
+              <div style="width:12px;height:38px;background:#7aa7f7;border-radius:3px"></div>
+              <div style="width:12px;height:44px;background:var(--brand);border-radius:3px"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row liln"><span class="m" style="color:var(--ink)">🌟 Kindness — helped a friend</span><span class="bd b-ok">+3 today</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">📚 Great reading</span><span class="bd b-ok">+2</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">🎯 Effort in maths</span><span class="bd b-ok">+2</span></div>
+          </div>
+          <div class="card"><div class="row"><span class="t">Sam</span><span class="m">86 points · steady</span></div></div>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">🏠</span>Home</div><div class="tb"><span class="ic">🚌</span>Transport</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">🔔</span>Alerts</div></div>
+      </div></div>
+    </div>
+
+    <!-- Notification preferences -->
+    <div class="item">
+      <p class="cap">Notification controls<span>categories · quiet hours · per-child</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>20:15</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Notifications</h3><div class="s">You're in control of what & when</div></div>
+        <div class="body">
+          <div class="card">
+            <div class="t" style="margin-bottom:4px">Categories</div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">🚨 Emergencies (always on)</span><div class="toggle"></div></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">🚌 Transport & delays</span><div class="toggle"></div></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">🏅 Rewards & behaviour</span><div class="toggle off"></div></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">📣 General announcements</span><div class="toggle"></div></div>
+          </div>
+          <div class="card">
+            <div class="row"><span class="t">Quiet hours</span><div class="toggle"></div></div>
+            <div class="m" style="margin-top:4px">21:00 – 07:00 · emergencies still come through</div>
+          </div>
+          <div class="card">
+            <div class="t" style="margin-bottom:4px">Per child</div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Maya — all channels</span><span class="bd b-neutral">push · email</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Sam — push only</span><span class="bd b-neutral">push</span></div>
+          </div>
+          <div class="card"><div class="row"><span class="t">Language</span><span class="m">English ⌄</span></div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Login + biometric -->
+    <div class="item">
+      <p class="cap">Sign in + biometric<span>keychain session · Face ID</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>07:58</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="body center">
+          <div class="biglogo"></div>
+          <div style="font-weight:800;font-size:19px">SchoolHub</div>
+          <div class="m" style="margin-bottom:6px">Access your school on the go</div>
+          <div class="face">🙂</div>
+          <a class="btn wide" style="margin:0 24px">Unlock with Face ID</a>
+          <div class="m" style="margin:14px 0 6px">or sign in</div>
+          <div style="padding:0 20px">
+            <input class="field" value="ayesha.khan@email.com"/>
+            <input class="field" value="••••••••"/>
+            <a class="btn sec wide" style="margin-top:10px">Sign in</a>
+          </div>
+          <div class="m" style="margin-top:16px;font-size:10px">Google & Microsoft sign-in planned</div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Messaging: SMS & WhatsApp -->
+    <div class="item">
+      <p class="cap">Messaging — SMS & WhatsApp<span>opt-in · opt-out · from school</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>20:22</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Messaging</h3><div class="s">How the school reaches you</div></div>
+        <div class="body">
+          <div class="card"><div class="row"><span class="t">Mobile number</span><span class="bd b-ok">•••• •••123</span></div></div>
+          <div class="card">
+            <div class="row"><div><span class="t">💬 WhatsApp</span><div class="m">Updates on WhatsApp · requires opt-in</div></div><div class="toggle"></div></div>
+            <div class="m" style="margin-top:5px;color:var(--oktext)">✓ Opted in — messages use approved templates</div>
+          </div>
+          <div class="card">
+            <div class="row"><div><span class="t">✉️ Text messages (SMS)</span><div class="m">On by default · reply STOP anytime</div></div><div class="toggle"></div></div>
+          </div>
+          <div class="card">
+            <div class="row"><div><span class="t">📱 Push</span><div class="m">In-app alerts on this device</div></div><div class="toggle"></div></div>
+            <div class="row liln" style="margin-top:6px"><div><span class="t">📧 Email</span></div><div class="toggle"></div></div>
+          </div>
+          <div class="notice ok">Emergency alerts are always delivered, whatever you choose here.</div>
+        </div>
+        <div class="tabbar"><div class="tb"><span class="ic">🏠</span>Home</div><div class="tb"><span class="ic">🚌</span>Transport</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">🔔</span>Alerts</div><div class="tb on"><span class="ic">⚙️</span>Messaging</div></div>
+      </div></div>
+    </div>
+
+    <!-- WhatsApp conversation -->
+    <div class="item">
+      <p class="cap">WhatsApp from school<span>how a parent sees it</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>15:41</span><span>WhatsApp</span><span>5G ▚</span></div>
+        <div class="hd" style="background:#075e54;color:#fff;padding:10px 15px"><h3 style="color:#fff">Northwind Academy</h3><div class="s" style="color:#cfeee7">Business account · school updates</div></div>
+        <div class="body" style="background:#e5ddd5">
+          <div style="max-width:82%;background:#fff;border-radius:12px;border-top-left-radius:3px;padding:8px 10px;font-size:11.5px;margin:10px 0">
+            🚌 Route B is running about 11 min late. New ETA 15:41.<div class="m" style="text-align:right;margin-top:3px">15:30 ✓✓</div>
+          </div>
+          <div style="max-width:82%;background:#fff;border-radius:12px;border-top-left-radius:3px;padding:8px 10px;font-size:11.5px;margin:10px 0">
+            Action needed: please give consent for Sam (Ecomuseum trip) by Fri.<div class="m" style="text-align:right;margin-top:3px">18:04 ✓✓</div>
+          </div>
+          <div style="max-width:70%;background:#dcf8c6;border-radius:12px;border-top-right-radius:3px;padding:8px 10px;font-size:11.5px;margin:10px 0 10px auto">
+            STOP<div class="m" style="text-align:right;margin-top:3px">18:06 ✓✓</div>
+          </div>
+          <div style="max-width:82%;background:#fff;border-radius:12px;border-top-left-radius:3px;padding:8px 10px;font-size:11.5px;margin:10px 0">
+            You've been unsubscribed from WhatsApp updates. Reply START to re-enable. <div class="m" style="text-align:right;margin-top:3px">18:06</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- Reports (parent) -->
+    <div class="item">
+      <p class="cap">School reports<span>released to parents</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>08:12</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Reports</h3><div class="s">Ella &amp; Max Blake</div></div>
+        <div class="body">
+          <div class="card">
+            <div class="row"><div><div class="t">Annual report — Ella Blake</div><div class="m">Summer 2026 · Year 4</div></div><span class="bd b-warn">new</span></div>
+            <a class="btn wide">View report</a>
+          </div>
+          <div class="card">
+            <div class="row"><div><div class="t">Annual report — Max Blake</div><div class="m">Summer 2026 · Year 2</div></div><span class="bd b-ok">read</span></div>
+            <a class="btn sec wide">View report</a>
+          </div>
+          <div class="card" style="border-color:var(--warn)"><div class="t">Report card — Ella Blake</div><div class="m" style="margin-top:4px">A strong year with excellent progress in reading.</div>
+            <div class="row liln" style="margin-top:6px"><span class="m" style="color:var(--ink)">English</span><span class="bd b-ok">Exceeding</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Maths</span><span class="bd b-ok">Meeting</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Attendance</span><span class="bd b-ok">97%</span></div>
+          </div>
+          <div class="notice">🔔 You were notified the moment the school released these — reports stay hidden until then.</div>
+        </div>
+        <div class="tabbar"><div class="tb"><span class="ic">🏠</span>Home</div><div class="tb"><span class="ic">🚌</span>Transport</div><div class="tb on"><span class="ic">📄</span>Reports</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">🔔</span>Alerts</div></div>
+      </div></div>
+    </div>
+
+  </div>
+
+  <!-- ===== TEACHER ===== -->
+  <h2 class="group">Teacher app <span class="chip">trips & welfare</span></h2>
+  <p class="rowsub">One-tap trip and residential updates, headcounts, welfare — all work offline and sync automatically.</p>
+  <div class="gallery">
+    <div class="item">
+      <p class="cap">Residential welfare<span>overnight trip · timeline</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>20:40</span><span>SchoolHub</span><span>4G ▚</span></div>
+        <div class="hd"><h3>Ecomuseum · Day 1</h3><div class="s">Residential · 30 students</div></div>
+        <div class="body">
+          <div class="notice warn">Offline — updates queued (2 pending), will sync automatically</div>
+          <div class="card">
+            <div class="t" style="margin-bottom:2px">Residential updates</div>
+            <a class="btn sec">At accommodation</a><a class="btn sec">Evening update</a><a class="btn sec">Lights out</a>
+          </div>
+          <div class="card">
+            <div class="t" style="margin-bottom:4px">Welfare timeline</div>
+            <div class="step"><div class="dot"></div><div><div class="m" style="color:var(--ink)">11:02 · Arrived safely</div><div class="m">Headcount 30/30</div></div></div>
+            <div class="step"><div class="dot"></div><div><div class="m" style="color:var(--ink)">18:30 · Evening welfare check</div><div class="m">All well · 30/30</div></div></div>
+            <div class="step mut"><div class="dot"></div><div><div class="m" style="color:var(--ink)">21:00 · Lights out check</div><div class="m">Queued offline</div></div></div>
+          </div>
+          <div class="card"><div class="row"><span class="t">Headcount now</span><span class="bd b-ok">30 / 30</span></div></div>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">🗺️</span>Trips</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">👤</span>Account</div></div>
+      </div></div>
+    </div>
+    <div class="item">
+      <p class="cap">Trip register<span>consent · medical flags</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>08:20</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Register</h3><div class="s">Swimming gala · 24 students</div></div>
+        <div class="body">
+          <div class="card"><div class="row"><span class="t">Present</span><span class="bd b-ok">23 / 24</span></div></div>
+          <div class="card">
+            <div class="row liln"><span class="m" style="color:var(--ink)">Aiden Cross ⚕️</span><span class="bd b-ok">✓ present</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Ellie Board</span><span class="bd b-warn">consent due</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Leo Martins</span><span class="bd b-ok">✓ present</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Priya Nair</span><span class="bd b-danger">absent</span></div>
+          </div>
+          <div class="notice">⚕️ Medical flags are visible to trip staff only, and hidden from other roles.</div>
+          <a class="btn wide">Confirm headcount</a>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">🗺️</span>Trips</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">👤</span>Account</div></div>
+      </div></div>
+    </div>
+    <div class="item">
+      <p class="cap">Write reports<span>author · submit for approval</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>16:05</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Autumn progress reports</h3><div class="s">Year 4 · draft · 28/30 written</div></div>
+        <div class="body">
+          <div class="card">
+            <div class="t" style="margin-bottom:4px">Write a report</div>
+            <div class="field">Ella Blake · Year 4</div>
+            <div class="field">Summary: Confident, curious and kind</div>
+            <div class="field" style="min-height:46px">Ella has made strong progress in reading this term…</div>
+            <a class="btn wide" style="margin-top:8px">Save report</a>
+          </div>
+          <div class="card">
+            <div class="row liln"><span class="m" style="color:var(--ink)">Ella Blake</span><span class="bd b-ok">written</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Max Blake</span><span class="bd b-ok">written</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Leo Ross</span><span class="bd b-warn">to do</span></div>
+          </div>
+          <a class="btn wide">Submit for approval</a>
+          <div class="notice">School leadership approves and sets the release time — parents can't see reports until then.</div>
+        </div>
+        <div class="tabbar"><div class="tb"><span class="ic">🗺️</span>Trips</div><div class="tb on"><span class="ic">📄</span>Reports</div><div class="tb"><span class="ic">✨</span>Assistant</div><div class="tb"><span class="ic">👤</span>Account</div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ===== DRIVER ===== -->
+  <h2 class="group">Driver app <span class="chip">journeys & boarding</span></h2>
+  <p class="rowsub">Route map, one-tap boarding, offline-safe. Access is limited to today's assigned journeys only.</p>
+  <div class="gallery">
+    <div class="item">
+      <p class="cap">Journey map<span>route · next stop · GPS</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>15:33</span><span>SchoolHub</span><span>4G ▚</span></div>
+        <div class="hd"><h3>Route B · Afternoon</h3><div class="s">18 onboard · +11 min</div></div>
+        <div class="body nopad">
+          <div class="map">
+            <div class="maptag"><span class="live"></span>Sharing location</div>
+            <div class="road" style="top:80px;left:-10px;width:240px;height:8px;transform:rotate(6deg)"></div>
+            <div class="road" style="top:110px;left:80px;width:8px;height:130px"></div>
+            <div class="stop done" style="top:86px;left:20px"></div>
+            <div class="stop" style="top:150px;left:76px"></div>
+            <div class="stop" style="top:210px;left:76px"></div>
+            <div class="pulse" style="top:110px;left:110px"></div>
+            <div class="bus" style="top:110px;left:110px">🚌</div>
+            <div class="eta" style="top:150px;left:120px">Next: <b>Maple Close</b><br>2 to drop off</div>
+          </div>
+          <div style="padding:10px 13px 14px">
+            <div class="card"><a class="btn sec">Approaching next stop</a><a class="btn">Complete journey</a></div>
+            <div class="card">
+              <div class="t" style="margin-bottom:4px">Next drop — Maple Close</div>
+              <div class="row liln"><span class="m" style="color:var(--ink);font-weight:700">Maya Khan</span><span class="bd b-ok">boarded</span></div>
+              <div class="row liln"><span class="m" style="color:var(--ink);font-weight:700">Aiden Cross ⚕️</span><span class="bd b-ok">boarded</span></div>
+              <div style="margin-top:4px"><a class="btn">Dropped off</a><a class="btn sec">No-show</a></div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">🚌</span>Journeys</div><div class="tb"><span class="ic">👤</span>Account</div></div>
+      </div></div>
+    </div>
+    <div class="item">
+      <p class="cap">Boarding board<span>optimistic · offline queue</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>07:44</span><span>SchoolHub</span><span>3G ▚</span></div>
+        <div class="hd"><h3>Willow Estate</h3><div class="s">Morning pickup · Route B</div></div>
+        <div class="body">
+          <div class="notice warn">Offline — 3 boardings queued, syncing when back online</div>
+          <div class="card">
+            <div style="border-top:none;padding-bottom:6px">
+              <div class="row"><span class="t">Leo Martins</span><span class="bd b-ok">boarded ✓</span></div>
+              <div style="margin-top:3px"><a class="btn">Boarded</a><a class="btn sec">Absent</a></div>
+            </div>
+            <div class="liln" style="padding-top:8px">
+              <div class="row"><span class="t">Maya Khan</span><span class="bd b-ok">boarded ✓</span></div>
+            </div>
+            <div class="liln" style="padding-top:8px">
+              <div class="row"><span class="t">Aiden Cross ⚕️</span></div>
+              <div class="m">Medical: inhaler in bag</div>
+              <div style="margin-top:3px"><a class="btn">Boarded</a><a class="btn dng">Absent</a></div>
+            </div>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">🚌</span>Journeys</div><div class="tb"><span class="ic">👤</span>Account</div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ===== ADMIN ===== -->
+  <h2 class="group">Administrator app <span class="chip">oversight</span></h2>
+  <p class="rowsub">Whole-school operations snapshot, emergency broadcast, and the grounded assistant.</p>
+  <div class="gallery">
+    <div class="item">
+      <p class="cap">Emergency broadcast<span>override · confirm-to-send</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>07:10</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Emergency broadcast</h3><div class="s">Overrides quiet hours & preferences</div></div>
+        <div class="body">
+          <div class="card">
+            <input class="field" value="School closure — burst pipe"/>
+            <textarea class="field" rows="3" style="margin-top:8px">School is closed today. Please do not travel in. Buses are cancelled. More information by 11am.</textarea>
+            <div class="seg" style="margin-top:10px"><span class="on">Push</span><span class="on">SMS</span><span class="on">Email</span></div>
+            <div class="notice warn">Sends immediately to all 640 guardians and 84 staff, on every channel, bypassing quiet hours.</div>
+            <a class="btn dng wide">Send now</a>
+            <a class="btn sec wide" style="margin-top:6px">Cancel</a>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tb"><span class="ic">📊</span>Ops</div><div class="tb on"><span class="ic">🚨</span>Emergency</div><div class="tb"><span class="ic">✨</span>Assistant</div></div>
+      </div></div>
+    </div>
+    <div class="item">
+      <p class="cap">Operations snapshot<span>tiles · attention feed</span></p>
+      <div class="phone"><div class="screen"><div class="notch"></div>
+        <div class="sb"><span>09:14</span><span>SchoolHub</span><span>5G ▚</span></div>
+        <div class="hd"><h3>Operations</h3><div class="s">Live · Northwind Academy</div></div>
+        <div class="body">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <div class="card" style="flex:1;min-width:44%"><div class="m">Present</div><div style="font-size:22px;font-weight:800;color:var(--ok)">612</div><div class="m">96%</div></div>
+            <div class="card" style="flex:1;min-width:44%"><div class="m">Buses active</div><div style="font-size:22px;font-weight:800">7</div><div class="m">of 8</div></div>
+            <div class="card" style="flex:1;min-width:44%"><div class="m">Delayed</div><div style="font-size:22px;font-weight:800;color:var(--warn)">2</div><div class="m">+8 min avg</div></div>
+            <div class="card" style="flex:1;min-width:44%"><div class="m">Trips</div><div style="font-size:22px;font-weight:800">3</div><div class="m">1 residential</div></div>
+          </div>
+          <div class="card" style="border-color:var(--warn)">
+            <div class="t">Needs attention</div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Ecomuseum — 4 consents due</span><span class="bd b-warn">review</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Route B +11 min</span><span class="bd b-warn">delayed</span></div>
+            <div class="row liln"><span class="m" style="color:var(--ink)">Safeguarding note for DSL</span><span class="bd b-danger">high</span></div>
+          </div>
+        </div>
+        <div class="tabbar"><div class="tb on"><span class="ic">📊</span>Ops</div><div class="tb"><span class="ic">🚨</span>Emergency</div><div class="tb"><span class="ic">✨</span>Assistant</div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="note">These are static design mockups so you can see how each page looks and feels. Live maps use the Phase 3 Google Maps connector and real GPS/telematics in production; the AI assistant is grounded in your school's data with every answer permission-scoped and cited. All screens come from one shared React Native codebase reusing the same backend as the web app.</div>
+</div>
+</body>
+</html>

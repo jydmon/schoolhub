@@ -1,0 +1,29 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "SchoolHub Integration Hub API", "version": "0.1.0", "description": "Tenant-scoped Integration Hub endpoints. All require a valid session; RBAC permission manage_integration_hub; and enforce tenant context + audit logging. Secrets are never returned." },
+  "servers": [{ "url": "/api/schools/{id}", "variables": { "id": { "default": "schoolId" } } }],
+  "security": [{ "sessionCookie": [] }],
+  "components": {
+    "securitySchemes": { "sessionCookie": { "type": "apiKey", "in": "cookie", "name": "schoolhub_session" } },
+    "responses": {
+      "Unauthorized": { "description": "Not authenticated" },
+      "Forbidden": { "description": "Missing tenant access or manage_integration_hub" }
+    }
+  },
+  "paths": {
+    "/integration-hub/dashboard": { "get": { "summary": "Connector health, queues, processing counts", "responses": { "200": { "description": "Dashboard" }, "401": { "$ref": "#/components/responses/Unauthorized" }, "403": { "$ref": "#/components/responses/Forbidden" } } } },
+    "/integration-hub/catalog": { "get": { "summary": "Connector marketplace (search/filter)", "parameters": [ { "name": "q", "in": "query", "schema": { "type": "string" } }, { "name": "category", "in": "query", "schema": { "type": "string" } }, { "name": "status", "in": "query", "schema": { "type": "string" } } ], "responses": { "200": { "description": "Connector templates" } } } },
+    "/integration-hub/credentials": { "post": { "summary": "Store an encrypted credential bundle (returns masked hint only)", "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["integrationId", "authMethod", "secret"], "properties": { "integrationId": { "type": "string" }, "authMethod": { "type": "string" }, "secret": { "type": "string" }, "expiresAt": { "type": "string", "format": "date-time", "nullable": true } } } } } }, "responses": { "201": { "description": "Stored", "content": { "application/json": { "schema": { "type": "object", "properties": { "maskedHint": { "type": "string" }, "rotated": { "type": "boolean" } } } } } } } } },
+    "/integration-hub/test": { "post": { "summary": "Test connector configuration + credentials", "responses": { "200": { "description": "Test result" } } } },
+    "/integration-hub/mappings/suggest": { "post": { "summary": "AI-assisted mapping recommendations (no import)", "responses": { "200": { "description": "Recommendations with confidence" } } } },
+    "/integration-hub/import": { "post": { "summary": "End-to-end import: parse -> map+transform -> validate -> persist with provenance", "responses": { "200": { "description": "Import result" }, "409": { "description": "A sync is already running for this connector" } } } },
+    "/integration-hub/errors": {
+      "get": { "summary": "Integration error queue", "parameters": [ { "name": "status", "in": "query", "schema": { "type": "string" } } ], "responses": { "200": { "description": "Errors" } } },
+      "patch": { "summary": "Resolve/ignore/assign/retry an error", "responses": { "200": { "description": "Updated" } } }
+    },
+    "/integration-hub/source-of-truth": {
+      "get": { "summary": "Ownership model + data objects", "responses": { "200": { "description": "Ownership" } } },
+      "patch": { "summary": "Approve connector config / set auto-merge", "responses": { "200": { "description": "Updated" } } }
+    }
+  }
+}

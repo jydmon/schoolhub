@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "SchoolHub",
+    "slug": "schoolhub",
+    "scheme": "schoolhub",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.schoolhub.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Use Face ID to sign in securely.",
+        "NSLocationWhenInUseUsageDescription": "Share your location while driving a route (Driver app only).",
+        "NSCameraUsageDescription": "Scan QR codes and attach photos on trips."
+      }
+    },
+    "android": {
+      "package": "com.schoolhub.app",
+      "permissions": ["NOTIFICATIONS", "ACCESS_FINE_LOCATION", "CAMERA", "USE_BIOMETRIC", "USE_FINGERPRINT"]
+    },
+    "plugins": ["expo-secure-store", "expo-local-authentication", "expo-notifications"],
+    "extra": {
+      "apiUrl": "http://localhost:3000"
+    }
+  }
+}

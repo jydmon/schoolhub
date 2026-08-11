@@ -1,0 +1,2010 @@
+// SchoolHub — Phase 1 multi-tenant data model
+//
+// Multi-tenancy strategy: shared database, shared schema, with a `schoolId`
+// tenant discriminator on every tenant-scoped table. Isolation is enforced at
+// the data-access layer (see src/lib/tenant.ts) so no query can cross tenants.
+// Platform-level entities (User identity, School, SchoolGroup, Plan, platform
+// AuditLog) sit above the tenant boundary.
+//
+// Dev uses SQLite for zero-setup local runs. For production, change `provider`
+// to "postgresql" and point DATABASE_URL at Postgres — the schema is written to
+// be portable (no SQLite-only features; enums are modelled as validated strings
+// so the same schema works on both engines).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Tenancy: school groups (academy trusts) -> schools -> campuses
+// ----------------------------------------------------------------------------
+
+/// An academy trust or school group overseeing multiple schools.
+model SchoolGroup {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schools School[]
+}
+
+/// A school = one secure tenant. All tenant-scoped rows reference this via schoolId.
+model School {
+  id           String  @id @default(cuid())
+  name         String
+  slug         String  @unique
+  status       String  @default("trial") // active | suspended | trial | archived
+
+  // Branding
+  logoUrl      String?
+  colorPrimary String  @default("#2563eb")
+  colorAccent  String  @default("#0ea5e9")
+
+  // Address & contact
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  postcode     String?
+  country      String  @default("United Kingdom")
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+
+  groupId String?
+  group   SchoolGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  config       SchoolConfig?
+  subscription Subscription?
+  campuses     Campus[]
+  memberships  Membership[]
+  students     Student[]
+  guardianLinks GuardianLink[]
+  auditLogs    AuditLog[]
+  classes      SchoolClass[]
+  staffProfiles StaffProfile[]
+  emergencyContacts EmergencyContact[]
+  approvedCollectors ApprovedCollector[]
+  importBatches ImportBatch[]
+  integrations Integration[]
+  sources      SourceOfTruth[]
+  events       CalendarEvent[]
+  homeworks    Homework[]
+  documents    Document[]
+  mailboxes    SharedMailbox[]
+  aiQueries    AiQuery[]
+  aiDrafts     AiDraft[]
+  vehicles     Vehicle[]
+  routes       Route[]
+  journeys     Journey[]
+  transportRequests TransportRequest[]
+  trips        Trip[]
+  rewards      RewardRecord[]
+  messages     Message[]
+  scheduledReports ScheduledReport[]
+  dataRequests DataRequest[]
+  reportReleases ReportRelease[]
+  studentReports StudentReport[]
+  integrationCredentials IntegrationCredential[]
+  integrationErrors      IntegrationError[]
+  syncConflicts          SyncConflict[]
+  duplicateCandidates    DuplicateCandidate[]
+  externalRecordLinks    ExternalRecordLink[]
+  webhookDeliveries      WebhookDelivery[]
+
+  @@index([status])
+  @@index([groupId])
+}
+
+/// Operational configuration for a school (1:1 with School).
+model SchoolConfig {
+  id       String @id @default(cuid())
+  schoolId String @unique
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  timezone            String  @default("Europe/London")
+  academicYear        String? // e.g. "2025/2026"
+  schoolStartTime     String  @default("08:45") // HH:MM, shown on the parent dashboard
+  termDates           String  @default("[]")  // JSON: [{name,start,end}]
+  notificationSettings String @default("{}")  // JSON: channel toggles
+  dataRetentionDays   Int     @default(365)
+  enabledModules      String  @default("dashboard,calendar,transport,trips,comms,ai") // CSV
+
+  // Compliance & privacy (Phase 14)
+  complianceRegime    String  @default("UK_GDPR") // UK_GDPR | FERPA
+  restrictMedical     Boolean @default(true)  // medical info shown only to authorised roles
+  restrictSend        Boolean @default(true)  // SEND info restricted
+  restrictLocation    Boolean @default(true)  // precise student location restricted
+  childLocationPrivacy Boolean @default(true) // approximate location only + stop sharing after journey
+
+  updatedAt DateTime @updatedAt
+}
+
+/// A physical campus belonging to a school (schools may have several).
+model Campus {
+  id           String  @id @default(cuid())
+  schoolId     String
+  school       School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name         String
+  addressLine1 String?
+  city         String?
+  postcode     String?
+  isPrimary    Boolean @default(false)
+  createdAt    DateTime @default(now())
+
+  students Student[]
+
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Identity, roles & tenant memberships
+// ----------------------------------------------------------------------------
+
+/// A global user identity. A user may belong to several schools via Membership.
+/// Platform super administrators have isPlatformAdmin = true and need no membership.
+model User {
+  id            String  @id @default(cuid())
+  email         String  @unique
+  fullName      String
+  passwordHash  String? // null for pure-SSO accounts
+  authProvider  String  @default("local") // local | google | microsoft | saml
+  isPlatformAdmin Boolean @default(false)
+  status        String  @default("active") // active | invited | suspended
+  emailVerified Boolean @default(false)
+
+  // MFA (TOTP)
+  mfaEnabled Boolean @default(false)
+  mfaSecret  String?
+
+  // Contact details (used for parents/guardians and staff)
+  phone            String? // E.164 mobile number — used for SMS and WhatsApp
+  // Messaging consent. SMS is opt-OUT (lawful basis: school↔home contact) with a
+  // STOP keyword honoured via the inbound webhook. WhatsApp Business requires
+  // explicit opt-IN before the school may message a parent, per Meta policy.
+  smsOptOut        Boolean  @default(false)
+  whatsappOptIn    Boolean  @default(false)
+  whatsappOptInAt  DateTime?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  postcode         String?
+  preferredLanguage String @default("en")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastLoginAt DateTime?
+
+  // Personal ICS subscription token (parent family calendar feed)
+  calendarToken String? @unique
+
+  // Session management: bumping this invalidates all existing sessions (Phase 14)
+  sessionVersion Int @default(0)
+
+  memberships   Membership[]
+  guardianLinks GuardianLink[]
+  tokens        VerificationToken[]
+  staffProfiles StaffProfile[]
+  importBatches ImportBatch[]
+  eventStaffLinks EventStaff[]
+  tripStaffLinks TripStaff[]
+  devices       Device[]
+  reportReleasesCreated  ReportRelease[] @relation("ReportReleaseCreatedBy")
+  reportReleasesApproved ReportRelease[] @relation("ReportReleaseApprovedBy")
+  studentReportsAuthored StudentReport[] @relation("StudentReportAuthor")
+  studentReportsApproved StudentReport[] @relation("StudentReportApprovedBy")
+
+  @@index([status])
+}
+
+/// A registered mobile device for push notifications & app context (Phase 1 mobile).
+model Device {
+  id         String  @id @default(cuid())
+  userId     String
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform   String  // ios | android | web
+  pushToken  String  @unique
+  appRole    String  @default("parent") // parent | teacher | driver | admin
+  appVersion String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// Ties a user to a school with a specific role. This is the tenant membership.
+model Membership {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  role      String   // SchoolAdministrator | SchoolLeader | Teacher | TransportManager | Driver | Parent | SupportStaff
+  createdAt DateTime @default(now())
+
+  @@unique([userId, schoolId, role])
+  @@index([schoolId])
+  @@index([userId])
+}
+
+// ----------------------------------------------------------------------------
+// Students & guardian relationships (needed for RBAC scoping in later phases)
+// ----------------------------------------------------------------------------
+
+model Student {
+  id            String  @id @default(cuid())
+  schoolId      String
+  school        School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  reference     String  // human-facing Student ID (school-scoped unique)
+  firstName     String
+  lastName      String
+  preferredName String?
+  dateOfBirth   DateTime?
+  photoUrl      String?
+
+  campusId      String?
+  campus        Campus? @relation(fields: [campusId], references: [id], onDelete: SetNull)
+  yearGroup     String?
+  classId       String?
+  class         SchoolClass? @relation(fields: [classId], references: [id], onDelete: SetNull)
+  house         String?
+
+  status        String  @default("enrolled") // applicant | enrolled | leaver | archived
+  admissionDate DateTime?
+
+  // Indicators / eligibility
+  medicalAlert       Boolean @default(false)
+  sendIndicator      Boolean @default(false) // Special Educational Needs & Disabilities
+  transportEligible  Boolean @default(false)
+
+  externalMisId String? // link to school MIS (Phase 3+)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  guardianLinks      GuardianLink[]
+  emergencyContacts  EmergencyContact[]
+  approvedCollectors ApprovedCollector[]
+  eventLinks         EventStudent[]
+  transportProfile   StudentTransportProfile?
+  boardings          BoardingRecord[]
+  tripLinks          TripStudent[]
+  transportRequests  TransportRequest[]
+  rewards            RewardRecord[]
+  reports            StudentReport[]
+
+  @@unique([schoolId, reference])
+  @@index([schoolId])
+  @@index([classId])
+}
+
+/// A teaching class / form group within a school.
+model SchoolClass {
+  id        String  @id @default(cuid())
+  schoolId  String
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name      String
+  yearGroup String?
+  campusId  String?
+  createdAt DateTime @default(now())
+
+  students Student[]
+  staff    StaffClass[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+}
+
+/// Links a parent/guardian (User) to a Student within a school. Carries the
+/// per-guardian relationship settings: custody, notification prefs, info
+/// restrictions, collection authorisation and emergency-contact status.
+model GuardianLink {
+  id           String  @id @default(cuid())
+  schoolId     String
+  school       School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  parentUserId String
+  parent       User    @relation(fields: [parentUserId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  relationship         String  @default("Parent") // Mother | Father | Guardian | Carer | ...
+  isPrimaryContact     Boolean @default(false)
+  isEmergencyContact   Boolean @default(false)
+  collectionAuthorised Boolean @default(false)
+  hasParentalResponsibility Boolean @default(true)
+  custodyArrangement   String? // e.g. "Shared", "Sole", "Weekends"
+  // Per-guardian notification channel toggles, JSON e.g. {"email":true,"sms":false}.
+  // Defaults to "{}" (callers set explicit prefs); an empty object means "use school defaults".
+  notificationPrefs    String  @default("{}")
+  // Categories this guardian must NOT receive, JSON array e.g. ["medical","behaviour"]
+  infoRestrictions     String  @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([parentUserId, studentId])
+  @@index([schoolId])
+  @@index([studentId])
+}
+
+/// A non-user emergency contact for a student (someone without a login).
+model EmergencyContact {
+  id           String  @id @default(cuid())
+  schoolId     String
+  school       School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name         String
+  relationship String?
+  phone        String?
+  email        String?
+  priority     Int     @default(1) // 1 = call first
+  createdAt    DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([studentId])
+}
+
+/// A person authorised to collect a student. May reference a guardian user, or
+/// be a standalone named person (e.g. a grandparent, childminder).
+model ApprovedCollector {
+  id           String  @id @default(cuid())
+  schoolId     String
+  school       School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name         String
+  relationship String?
+  phone        String?
+  photoUrl     String?
+  linkedUserId String? // optional link to an existing guardian user
+  active       Boolean @default(true)
+  createdAt    DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([studentId])
+}
+
+/// Employment / role profile for a staff member within a school (1 per school).
+model StaffProfile {
+  id         String  @id @default(cuid())
+  schoolId   String
+  school     School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reference  String  // human-facing Staff ID (school-scoped unique)
+  jobTitle   String?
+  department String?
+  campusId   String?
+  // Extracurricular activities and trips led, JSON arrays of names (proper trip
+  // linkage arrives with the Trips module in a later phase).
+  activities String  @default("[]")
+  trips      String  @default("[]")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  classes StaffClass[]
+
+  @@unique([schoolId, userId])
+  @@unique([schoolId, reference])
+  @@index([schoolId])
+}
+
+/// Join: which classes a staff member teaches.
+model StaffClass {
+  id             String  @id @default(cuid())
+  staffProfileId String
+  staff          StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  classId        String
+  class          SchoolClass  @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([staffProfileId, classId])
+}
+
+/// A CSV import run and its outcome (import history + error report).
+model ImportBatch {
+  id            String  @id @default(cuid())
+  schoolId      String
+  school        School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  type          String  // students | parents | staff
+  filename      String?
+  status        String  @default("completed") // completed | partial | failed
+  totalRows     Int     @default(0)
+  createdRows   Int     @default(0)
+  updatedRows   Int     @default(0)
+  skippedRows   Int     @default(0)
+  errorRows     Int     @default(0)
+  errorReport   String  @default("[]") // JSON: [{row, field, message, data}]
+  createdById   String?
+  createdBy     User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([type])
+}
+
+// ----------------------------------------------------------------------------
+// Subscriptions & plans
+// ----------------------------------------------------------------------------
+
+model Plan {
+  id             String  @id @default(cuid())
+  key            String  @unique // trial | basic | standard | premium
+  name           String
+  pricePerSchool Int     @default(0) // minor units (pence)
+  pricePerStudent Int    @default(0)
+  pricePerVehicle Int    @default(0)
+  aiQueryLimit   Int     @default(0) // monthly AI queries; 0 = none, -1 = unlimited
+  features       String  @default("") // CSV of enabled module keys
+  isActive       Boolean @default(true)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id         String  @id @default(cuid())
+  schoolId   String  @unique
+  school     School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  planId     String
+  plan       Plan    @relation(fields: [planId], references: [id])
+  status     String  @default("trialing") // trialing | active | past_due | canceled | suspended
+
+  startedAt    DateTime  @default(now())
+  renewalDate  DateTime?
+  studentLimit Int       @default(0) // 0 = unlimited
+  vehicleLimit Int       @default(0)
+  aiUsageLimit Int       @default(0)
+  aiUsageCount Int       @default(0)
+
+  // Renewal approval workflow (Phase 17b). approvalMode "auto" renews without
+  // intervention; "manual" holds the renewal for a platform admin to approve.
+  approvalMode     String   @default("auto") // auto | manual
+  approvalStatus   String   @default("approved") // approved | pending | rejected
+  approvedByUserId String?
+  approvedAt       DateTime?
+  reminderSentAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ----------------------------------------------------------------------------
+// Audit trail
+// ----------------------------------------------------------------------------
+
+/// Append-only audit log. schoolId is null for platform-level events.
+model AuditLog {
+  id         String  @id @default(cuid())
+  schoolId   String?
+  school     School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  actorUserId String?
+  actorEmail String?
+  action     String  // e.g. USER_LOGIN, TENANT_SUSPENDED, DATA_CHANGE, AI_QUERY
+  targetType String?
+  targetId   String?
+  ip         String?
+  metadata   String  @default("{}") // JSON
+  createdAt  DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// Auth tokens (email verification & password reset)
+// ----------------------------------------------------------------------------
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  type      String   // email_verify | password_reset
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 3 — Integration framework
+// ----------------------------------------------------------------------------
+
+/// A configured connection between a school and an external system. The
+/// connector *catalog* (iSAMS, Arbor, Google Workspace, …) lives in code
+/// (src/lib/connectors.ts); this table holds a school's live instances.
+model Integration {
+  id           String  @id @default(cuid())
+  schoolId     String
+  school       School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  connectorKey String  // matches a key in the connector catalog
+  name         String  // display name (defaults to the connector name)
+  category     String  // mis | identity | calendar | docs | maps | gps | email | behaviour
+  method       String  @default("rest") // rest | webhook | scheduled | sftp | csv | manual
+
+  status       String  @default("pending") // pending | connected | error | disabled
+  enabled      Boolean @default(true)
+  writeBackEnabled Boolean @default(false) // SchoolHub will not write back unless true
+
+  // Non-secret connection config as JSON (baseUrl, scheduleCron, notes, ...).
+  // Real credentials belong in a secrets manager, referenced by id — never store
+  // plaintext secrets here in production.
+  config       String  @default("{}")
+  webhookToken String? @unique // inbound webhook path segment when method = webhook
+
+  lastSyncAt    DateTime?
+  lastSuccessAt DateTime?
+  lastError     String?
+
+  // --- Integration Hub framework fields (Phase 16, additive) ---
+  provider          String? // provider name from the connector template
+  connectionType    String? // rest | webhook | sftp | cloud_files | file_upload | oauth_api
+  authMethod        String? // none | api_key | bearer | basic | oauth2 | client_credentials | custom_header | sftp_key | signature
+  supportedObjects   String @default("[]") // JSON array of SchoolHub objects
+  supportedOperations String @default("[]") // JSON array: read|import|export|create|update|delete|webhook|write_back
+  syncFrequency     String @default("manual") // realtime|15min|hourly|daily|weekly|custom|manual
+  lastFailedAt      DateTime?
+  errorStatus       String @default("none") // none | warning | error | auth_required
+  approved          Boolean @default(false) // school has approved this connector's configuration
+  autoMerge         Boolean @default(false) // allow auto-merge of unambiguous duplicates
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mappings FieldMapping[]
+  runs     SyncRun[]
+  sources  SourceOfTruth[]
+  credential        IntegrationCredential?
+  errors            IntegrationError[]
+  conflicts         SyncConflict[]
+  duplicates        DuplicateCandidate[]
+  recordLinks       ExternalRecordLink[]
+  webhookDeliveries WebhookDelivery[]
+
+  @@unique([schoolId, connectorKey])
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// Maps an external system field to a SchoolHub field for one integration.
+model FieldMapping {
+  id            String  @id @default(cuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  schoolId      String
+  domain        String  // identity | attendance | homework | rewards | calendar | docs | gps
+  externalField String
+  internalField String
+  direction     String  @default("in") // in | out | both
+  createdAt     DateTime @default(now())
+
+  @@index([integrationId])
+}
+
+/// One execution of a synchronisation (manual, scheduled, webhook or CSV).
+model SyncRun {
+  id            String  @id @default(cuid())
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  schoolId      String
+
+  trigger    String  // manual | scheduled | webhook | csv
+  status     String  @default("running") // running | success | failed | partial
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  recordsIn      Int @default(0)
+  recordsUpdated Int @default(0)
+  recordsFailed  Int @default(0)
+  message    String?
+  log        String  @default("[]") // JSON array of log lines
+
+  createdAt DateTime @default(now())
+
+  @@index([integrationId])
+  @@index([schoolId])
+}
+
+/// Source-of-truth registry: which system owns each data domain for a school.
+/// SchoolHub does not overwrite an integrated domain unless write-back is enabled
+/// on the owning integration.
+model SourceOfTruth {
+  id            String  @id @default(cuid())
+  schoolId      String
+  school        School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  domain        String  // identity | attendance | homework | rewards | journey | gps | calendar | docs
+  sourceLabel   String  // e.g. "School MIS", "Behaviour system", "SchoolHub", "Tracking provider"
+  integrationId String? // null => SchoolHub-native
+  writeBack     Boolean @default(false)
+  updatedAt     DateTime @updatedAt
+
+  integration Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, domain])
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 4 — School calendar & daily activities
+// ----------------------------------------------------------------------------
+
+/// A calendar event / daily activity. Audience is resolved by scope + optional
+/// year/class/house/club, plus any explicitly listed participating students.
+model CalendarEvent {
+  id          String  @id @default(cuid())
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  category    String  @default("event") // academic|term|holiday|inset|exam|parents_evening|sports_day|trip|assembly|club|performance|photos|fundraiser|early_closure|timetable_change|event
+
+  startsAt    DateTime
+  endsAt      DateTime?
+  allDay      Boolean  @default(false)
+  location    String?
+
+  // Audience
+  audienceScope String @default("school") // school|year|class|house|club|students
+  campusId    String?
+  yearGroup   String?
+  classId     String?
+  house       String?
+  club        String?
+
+  // Logistics
+  equipment         String?
+  clothing          String?
+  packedLunch       Boolean @default(false)
+  transportRequired Boolean @default(false)
+  collectionAt      DateTime?
+  collectionLocation String?
+
+  // Actions & admin
+  attachments     String  @default("[]") // JSON [{name,url}]
+  reminderOffsets String  @default("[]") // JSON minutes-before e.g. [1440,60]
+  consentRequired Boolean @default(false)
+  paymentRef      String?
+  status          String  @default("published") // draft|published|cancelled
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  students EventStudent[]
+  staff    EventStaff[]
+  consents EventConsent[]
+
+  @@index([schoolId])
+  @@index([startsAt])
+  @@index([category])
+}
+
+/// Explicit participating student on an event.
+model EventStudent {
+  id        String @id @default(cuid())
+  eventId   String
+  event     CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, studentId])
+  @@index([studentId])
+}
+
+/// Participating staff member on an event.
+model EventStaff {
+  id      String @id @default(cuid())
+  eventId String
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+/// A homework item with a deadline, surfaced on the parent dashboard.
+model Homework {
+  id          String  @id @default(cuid())
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  subject     String?
+  dueAt       DateTime
+  classId     String?
+  yearGroup   String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([dueAt])
+}
+
+/// A guardian's response to an event that requires consent / payment.
+/// Absence of a row for a consentRequired event = an outstanding action.
+model EventConsent {
+  id             String  @id @default(cuid())
+  eventId        String
+  event          CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  studentId      String
+  guardianUserId String
+  decision       String  @default("given") // given|declined
+  paymentAck     Boolean @default(false)
+  respondedAt    DateTime @default(now())
+
+  @@unique([eventId, studentId, guardianUserId])
+  @@index([guardianUserId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 5 — Knowledge Hub & document management
+// ----------------------------------------------------------------------------
+
+/// A knowledge-hub document. `bodyText` holds the searchable plain text
+/// (extracted from the source or pasted); binary files (PDF/Word/images) store
+/// fileName + bodyText, with real extraction/OCR left as a plug-in point.
+model Document {
+  id          String  @id @default(cuid())
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  category    String  @default("faq") // policy|handbook|uniform|behaviour|attendance|safeguarding|transport|trip|menu|term_dates|newsletter|emergency|faq|...
+  sourceType  String  @default("text") // pdf|docx|text|image|link|email|newsletter|letter
+
+  ownerUserId String?
+  createdById String?
+
+  // Audience & access: CSV of audiences — "parent","staff" or specific role names.
+  audienceRoles String @default("parent,staff")
+  campusId    String?
+  yearGroup   String?
+  classId     String?
+
+  effectiveDate DateTime?
+  reviewDate    DateTime?
+  expiryDate    DateTime?
+
+  version     Int     @default(1)
+  status      String  @default("draft") // draft|under_review|approved|published|superseded|archived
+  archived    Boolean @default(false)
+  supersedesId String?
+
+  fileName String?
+  linkUrl  String?
+  bodyText String  @default("")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([category])
+  @@index([status])
+}
+
+/// A connected shared mailbox whose messages can be ingested as documents.
+model SharedMailbox {
+  id        String  @id @default(cuid())
+  schoolId  String
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  address   String
+  label     String?
+  status    String  @default("connected") // connected|disconnected
+  createdAt DateTime @default(now())
+
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 6 — AI knowledge assistant
+// ----------------------------------------------------------------------------
+
+/// Audit + history of an AI question and its grounded answer.
+model AiQuery {
+  id         String  @id @default(cuid())
+  schoolId   String?
+  school     School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  userId     String
+  role       String?
+  question   String
+  lang       String  @default("en")
+  answer     String
+  citations  String  @default("[]") // JSON [{title,type,date,url}]
+  found      Boolean @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([userId])
+}
+
+/// An AI-generated draft awaiting human confirmation before anything is sent.
+model AiDraft {
+  id          String  @id @default(cuid())
+  schoolId    String?
+  school      School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  createdById String
+  type        String  // parent_notification|event_summary|transport_delay|consent_reminder|translation|policy_summary
+  title       String
+  body        String
+  status      String  @default("draft") // draft|confirmed|discarded
+  meta        String  @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 7/8 — Daily transport, routes, journeys, GPS
+// ----------------------------------------------------------------------------
+
+model Vehicle {
+  id        String  @id @default(cuid())
+  schoolId  String
+  school    School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  reference String  // registration / fleet number
+  label     String?
+  capacity  Int     @default(16)
+  type      String  @default("minibus") // minibus | coach | car
+  gpsSource String  @default("driver_phone") // driver_phone | vehicle_gps | telematics | tracking_link | device
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+
+  routes    Route[]
+  journeys  Journey[]
+  positions VehiclePosition[]
+
+  @@unique([schoolId, reference])
+  @@index([schoolId])
+}
+
+model Route {
+  id          String  @id @default(cuid())
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name        String
+  type        String  @default("fixed") // fixed | flexible
+  vehicleId   String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driverUserId String?
+  cutoffTime  String  @default("07:00") // HH:MM — late change cut-off
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  stops    RouteStop[]
+  journeys Journey[]
+  profiles StudentTransportProfile[]
+  drivers  RouteDriver[]
+
+  @@index([schoolId])
+}
+
+model RouteStop {
+  id             String @id @default(cuid())
+  routeId        String
+  route          Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name           String
+  kind           String @default("pickup") // pickup | dropoff | school | shared
+  address        String?
+  lat            Float?
+  lng            Float?
+  plannedArrival String? // HH:MM
+  sequence       Int    @default(0)
+
+  @@index([routeId])
+}
+
+model StudentTransportProfile {
+  id            String @id @default(cuid())
+  studentId     String @unique
+  student       Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schoolId      String
+
+  homeAddress   String?
+  homeLat       Float?
+  homeLng       Float?
+  morningStopId String?
+  afternoonStopId String?
+  routeId       String?
+  route         Route? @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  vehicleId     String?
+
+  transportDays String  @default("Mon,Tue,Wed,Thu,Fri")
+  morningOnly   Boolean @default(false)
+  afternoonOnly Boolean @default(false)
+  accessibility String?
+  emergencyContact String?
+  approvedDropoffs String @default("[]") // JSON
+  altLocations     String @default("[]") // JSON approved alternative locations
+
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([routeId])
+}
+
+/// A parent's daily transport change request (cancel/absence/temp address/collector/note).
+model TransportRequest {
+  id             String @id @default(cuid())
+  schoolId       String
+  school         School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianUserId String
+  date           String  // YYYY-MM-DD
+  session        String  @default("day") // day | am | pm
+  type           String  // cancel | absence | temp_address | change_collector | note
+  payload        String  @default("{}")
+  status         String  @default("pending") // pending | approved | auto | rejected
+  requiresApproval Boolean @default(false)
+  decidedByUserId String?
+  decidedAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([studentId])
+}
+
+/// A daily instance of a route (morning or afternoon).
+model Journey {
+  id          String  @id @default(cuid())
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  routeId     String
+  route       Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  date        String  // YYYY-MM-DD
+  session     String  // am | pm
+  status      String  @default("scheduled") // scheduled | started | approaching | completed | cancelled
+  driverUserId String?
+  vehicleId   String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  startedAt   DateTime?
+  completedAt DateTime?
+  delayMinutes Int    @default(0)
+  createdAt   DateTime @default(now())
+
+  boardings BoardingRecord[]
+  positions VehiclePosition[]
+
+  @@unique([routeId, date, session])
+  @@index([schoolId])
+  @@index([date])
+}
+
+model BoardingRecord {
+  id        String  @id @default(cuid())
+  journeyId String
+  journey   Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  stopId    String?
+  status    String  // boarded | absent | not_present | dropped_off
+  at        DateTime @default(now())
+
+  @@unique([journeyId, studentId])
+  @@index([journeyId])
+}
+
+model VehiclePosition {
+  id        String  @id @default(cuid())
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  journeyId String?
+  journey   Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  lat       Float
+  lng       Float
+  at        DateTime @default(now())
+  source    String  @default("driver_phone")
+
+  @@index([vehicleId])
+  @@index([journeyId])
+}
+
+/// Transport or trip incident.
+model Incident {
+  id               String  @id @default(cuid())
+  schoolId         String
+  journeyId        String?
+  tripId           String?
+  reportedByUserId String?
+  type             String  @default("other")
+  notes            String?
+  at               DateTime @default(now())
+
+  @@index([schoolId])
+}
+
+/// In-app notification (parent transport & trip updates). Delivery to push/SMS/email
+/// is a later worker; this is the durable feed those channels would fan out from.
+model Notification {
+  id        String  @id @default(cuid())
+  schoolId  String?
+  userId    String  // recipient
+  studentId String?
+  journeyId String?
+  tripId    String?
+  messageId String?
+  kind      String
+  title     String
+  body      String?
+  channel   String  @default("inapp") // inapp | push | email | sms | whatsapp
+  status    String  @default("delivered") // queued | sent | delivered | read | failed | acknowledged
+  providerId String? // external message id (SMS/WhatsApp) for delivery-receipt reconciliation
+  read      Boolean @default(false)
+  acknowledgedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([messageId])
+  @@index([createdAt])
+  @@index([providerId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 9 — Same-day trips & events
+// ----------------------------------------------------------------------------
+
+model Trip {
+  id          String  @id @default(cuid())
+  schoolId    String
+  school      School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  title       String
+  purpose     String?
+  date        String  // YYYY-MM-DD
+  destination String?
+  departurePoint String?
+  departureTime  String?
+  returnTime     String?
+  leadTeacherUserId String?
+  transportProvider String?
+  coachDetails String?
+  driverDetails String?
+  venue       String?
+  itinerary   String?
+  packingList String?
+  medicalRequirements String?
+  medicationReferences String?
+  consentRequired Boolean @default(true)
+  paymentStatus String? // free | required | collected
+  riskAssessmentRef String?
+  attachments String  @default("[]")
+  status      String  @default("planned") // planned | active | completed | cancelled
+
+  // Real-time event-update button config (Phase 17c): { removed:[], custom:[{key,label,icon}] }
+  updateConfigJson String @default("{}")
+
+  // Residential / overnight (Phase 10)
+  isResidential Boolean @default(false)
+  endDate       String?
+  accommodation String?
+  returnPlan    String?
+
+  // Hired coach temporary access
+  coachToken     String? @unique
+  coachExpiresAt DateTime?
+  coachDriverName String?
+
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  students   TripStudent[]
+  staff      TripStaff[]
+  updates    TripUpdate[]
+  days       TripDay[]
+  headcounts TripHeadcount[]
+  photos     TripPhoto[]
+
+  @@index([schoolId])
+  @@index([date])
+}
+
+model TripStudent {
+  id        String @id @default(cuid())
+  tripId    String
+  trip      Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  consent   String @default("pending") // pending | given | declined
+  attendance String? // present | absent | accounted
+
+  @@unique([tripId, studentId])
+  @@index([studentId])
+}
+
+model TripStaff {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   String @default("supervisor") // lead | supervisor
+
+  @@unique([tripId, userId])
+}
+
+model TripUpdate {
+  id       String @id @default(cuid())
+  tripId   String
+  trip     Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  byUserId String?
+  type     String
+  note     String?
+  at       DateTime @default(now())
+
+  @@index([tripId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 10 — Residential / overnight trips
+// ----------------------------------------------------------------------------
+
+model TripDay {
+  id        String @id @default(cuid())
+  tripId    String
+  trip      Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  date      String // YYYY-MM-DD
+  title     String?
+  itinerary String?
+  sequence  Int    @default(0)
+
+  @@index([tripId])
+}
+
+/// A teacher-recorded headcount / welfare snapshot during a residential trip.
+model TripHeadcount {
+  id       String @id @default(cuid())
+  tripId   String
+  trip     Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  byUserId String?
+  kind     String @default("headcount") // headcount | welfare | arrival | meal | activity | evening | emergency
+  expected Int    @default(0)
+  present  Int    @default(0)
+  note     String?
+  at       DateTime @default(now())
+
+  @@index([tripId])
+}
+
+/// A trip photo. Only photos with sharedWithParents = true are visible to parents.
+model TripPhoto {
+  id               String @id @default(cuid())
+  tripId           String
+  trip             Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  url              String
+  caption          String?
+  sharedWithParents Boolean @default(false)
+  at               DateTime @default(now())
+
+  @@index([tripId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 11 — Rewards & behaviour (received from external systems)
+// ----------------------------------------------------------------------------
+
+/// A reward or behaviour record ingested from an external behaviour system.
+/// SchoolHub displays these; it does not own them (see the source-of-truth model).
+model RewardRecord {
+  id          String @id @default(cuid())
+  schoolId    String
+  school      School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId   String
+  student     Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  type        String  // merit | house_point | badge | praise | incident | detention | sanction | comment | certificate | attendance_award
+  points      Int     @default(0)
+  category    String?
+  note        String?
+  teacherName String?
+  source      String  @default("Behaviour system")
+  positive    Boolean @default(true)
+  at          DateTime @default(now())
+
+  // Provenance for Integration Hub ingestion (Phase 16). externalId makes an
+  // ingested behaviour event idempotent per source; integrationId links it to
+  // the connector it arrived through.
+  externalId    String?
+  integrationId String?
+
+  @@unique([schoolId, source, externalId])
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([at])
+}
+
+/// A private, family-only home reward rule. Not visible to school staff.
+model HomeRewardRule {
+  id             String @id @default(cuid())
+  guardianUserId String
+  studentId      String
+  threshold      Int
+  reward         String
+  active         Boolean @default(true)
+  createdAt      DateTime @default(now())
+
+  @@index([guardianUserId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 12 — Communications & notification centre
+// ----------------------------------------------------------------------------
+
+/// Per-user notification preferences (channels, digest, quiet hours, reward prefs).
+model NotificationPreference {
+  id             String @id @default(cuid())
+  userId         String @unique
+  // Empty "{}" means "use system defaults" (see getPrefs, which merges over defaults).
+  channelsJson   String @default("{}")
+  digest         String @default("immediate") // immediate | daily | weekly
+  quietStart     String? // HH:MM
+  quietEnd       String? // HH:MM
+  preferredLanguage String @default("en")
+  perChildJson   String @default("{}")  // { studentId: {mute?:bool} }
+  rewardPrefsJson String @default("{}")
+  updatedAt      DateTime @updatedAt
+}
+
+/// A broadcast message composed in the notification centre. Fans out to
+/// per-recipient Notification rows across the selected channels.
+model Message {
+  id           String @id @default(cuid())
+  schoolId     String
+  school       School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  senderUserId String?
+  title        String
+  body         String?
+  channels     String @default("inapp") // CSV: inapp,push,email,sms
+  priority     String @default("normal") // normal | emergency
+  targeting    String @default("{}") // JSON targeting spec
+  recipientCount Int   @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 13 — reporting
+// ----------------------------------------------------------------------------
+
+/// A scheduled report (the runner that emails/exports them is a background job).
+model ScheduledReport {
+  id         String @id @default(cuid())
+  schoolId   String
+  school     School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  type       String  // transport | trips | engagement | ai | integrations | overview
+  cadence    String  @default("weekly") // daily | weekly | monthly
+  format     String  @default("csv") // csv | pdf
+  recipients String  @default("") // CSV of emails
+  scope      String  @default("school") // school | leader | trust
+  active     Boolean @default(true)
+  lastRunAt  DateTime?
+  createdById String?
+  createdAt  DateTime @default(now())
+
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 14 — data subject requests (GDPR/DPA/FERPA)
+// ----------------------------------------------------------------------------
+
+/// A data subject request (access/export or erasure) against a student or user.
+model DataRequest {
+  id           String @id @default(cuid())
+  schoolId     String
+  school       School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  subjectType  String  // student | user
+  subjectId    String
+  type         String  // export | deletion
+  status       String  @default("open") // open | fulfilled | rejected
+  note         String?
+  requestedById String?
+  createdAt    DateTime @default(now())
+  completedAt  DateTime?
+
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 15 — pupil reports (teacher-authored, SLT-approved, scheduled release)
+// ----------------------------------------------------------------------------
+
+/// A batch of pupil reports prepared together and released to parents at one
+/// controlled moment (e.g. "Summer 2026 — Year 6 annual reports"). The batch
+/// carries the approval + embargo so a whole year group is signed off and timed
+/// as a unit. Individual StudentReports may also stand alone (no release).
+model ReportRelease {
+  id             String  @id @default(cuid())
+  schoolId       String
+  school         School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  name           String
+  type           String  // annual | termly | attendance_behaviour | custom
+  term           String? // free label, e.g. "Summer 2026"
+  status         String  @default("draft") // draft | submitted | approved | scheduled | released | withdrawn
+  releaseAt      DateTime? // embargo — parents may see reports at/after this instant
+  releasedAt     DateTime?
+  notifyChannels String  @default("inapp,push,email") // CSV fan-out on release
+  createdById    String?
+  createdBy      User?   @relation("ReportReleaseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedById   String?
+  approvedBy     User?   @relation("ReportReleaseApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt     DateTime?
+  messageId      String? // notification-centre Message created on release
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  reports        StudentReport[]
+
+  @@index([schoolId])
+  @@index([status])
+  @@index([releaseAt])
+}
+
+/// A single pupil's report. Hidden from parents until effectively released
+/// (status "released", or "scheduled" with releaseAt in the past). Content is
+/// either structured (bodyJson: subjects/comments/attendance/behaviour) and/or
+/// an attached PDF (fileUrl).
+model StudentReport {
+  id            String  @id @default(cuid())
+  schoolId      String
+  school        School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  releaseId     String?
+  release       ReportRelease? @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+
+  type          String  // annual | termly | attendance_behaviour | custom
+  title         String
+  term          String?
+  summary       String? // short headline shown in lists
+  bodyJson      String  @default("{}")
+  fileUrl       String?
+
+  status        String  @default("draft") // draft | submitted | approved | scheduled | released | withdrawn
+  releaseAt     DateTime? // standalone embargo; if in a release, the release's timing wins
+  releasedAt    DateTime?
+
+  authorId      String?
+  author        User?   @relation("StudentReportAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  approvedById  String?
+  approvedBy    User?   @relation("StudentReportApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt    DateTime?
+
+  firstViewedAt DateTime? // parent read receipt
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([releaseId])
+  @@index([status])
+  @@index([releaseAt])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 16 — Integration Hub framework (additive)
+// ----------------------------------------------------------------------------
+
+/// Encrypted credential vault entry (1:1 with an Integration). The secret bundle
+/// is AES-256-GCM ciphertext (see src/lib/integration/crypto.ts); plaintext is
+/// never stored, logged, or returned to a client — only `maskedHint` is shown.
+model IntegrationCredential {
+  id            String @id @default(cuid())
+  integrationId String @unique
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  schoolId      String
+  school        School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  authMethod    String  // api_key | bearer | basic | oauth2 | client_credentials | custom_header | sftp_key | signature
+  ciphertext    String  // "v1:iv:tag:data" AES-256-GCM blob (may hold a JSON bundle)
+  maskedHint    String  @default("") // display-only, e.g. "••••abcd"
+  expiresAt     DateTime?
+  rotatedAt     DateTime?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+/// Integration error-management centre.
+model IntegrationError {
+  id               String @id @default(cuid())
+  schoolId         String
+  school           School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  integrationId    String?
+  integration      Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  category         String  // authentication|connection|validation|mapping|rate_limit|permission|duplicate|conflict|file_format|missing_record|provider_unavailable|internal
+  message          String
+  technical        String?
+  affectedObject   String?
+  externalRecordId String?
+  retryCount       Int @default(0)
+  status           String @default("open") // open | assigned | ignored | resolved
+  suggestedAction  String?
+  assignedToId     String?
+  resolutionNotes  String?
+  resolvedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([integrationId])
+  @@index([status])
+}
+
+/// A value conflict awaiting resolution (SchoolHub vs external).
+model SyncConflict {
+  id                String @id @default(cuid())
+  schoolId          String
+  school            School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  integrationId     String?
+  integration       Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  objectType        String
+  field             String
+  schoolhubValue    String?
+  externalValue     String?
+  sourceSystem      String?
+  externalUpdatedAt DateTime?
+  recommended       String? // external_wins | schoolhub_wins | latest | manual
+  resolution        String? // chosen rule
+  status            String @default("open") // open | resolved
+  resolvedById      String?
+  resolvedAt        DateTime?
+  createdAt         DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// A potential duplicate awaiting a merge/ignore/link decision.
+model DuplicateCandidate {
+  id              String @id @default(cuid())
+  schoolId        String
+  school          School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  integrationId   String?
+  integration     Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  objectType      String
+  score           Float @default(0)
+  signals         String @default("[]") // JSON array of matched signals
+  schoolhubId     String?
+  externalId      String?
+  classification  String // unambiguous | candidate
+  status          String @default("open") // open | merged | ignored | linked
+  decidedById     String?
+  decidedAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// Per-record provenance: links an external record to its SchoolHub record and
+/// records ownership + sync status (spec §7).
+model ExternalRecordLink {
+  id               String @id @default(cuid())
+  schoolId         String
+  school           School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  integrationId    String?
+  integration      Integration? @relation(fields: [integrationId], references: [id], onDelete: SetNull)
+  sourceSystem     String
+  objectType       String
+  externalId       String
+  schoolhubId      String?
+  syncStatus       String @default("synced") // synced | pending | failed | conflict
+  ownership        String @default("external") // external | schoolhub | shared
+  externalModifiedAt DateTime?
+  syncedAt         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([schoolId, sourceSystem, objectType, externalId])
+  @@index([schoolId])
+  @@index([integrationId])
+}
+
+/// Inbound webhook delivery log with idempotency (spec §6.2).
+model WebhookDelivery {
+  id            String @id @default(cuid())
+  schoolId      String
+  school        School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  eventId       String? // provider event id / idempotency key
+  eventType     String?
+  signatureValid Boolean @default(false)
+  status        String @default("received") // received | processed | duplicate | failed
+  payloadHash   String?
+  attempts      Int @default(1)
+  error         String?
+  createdAt     DateTime @default(now())
+
+  @@unique([integrationId, eventId])
+  @@index([schoolId])
+  @@index([integrationId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 17 — Invitations, onboarding & login history
+// ----------------------------------------------------------------------------
+
+/// A school-issued invitation. Access is invitation-only: users cannot self-
+/// register. The raw token (in the activation link) and short code are never
+/// stored — only their HMAC hashes. On acceptance the user is created/enabled,
+/// given a Membership for the role, and (for parents) linked to their children.
+model Invitation {
+  id          String   @id @default(cuid())
+  schoolId    String
+  email       String
+  role        String   // a SCHOOL_ROLES value
+  studentRefs String   @default("[]") // JSON array of pupil references to link (parents)
+  status      String   @default("pending") // pending | accepted | revoked | expired
+  tokenHash   String   @unique
+  codeHash    String
+  invitedById String?
+  requireMfa  Boolean  @default(false)
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([email])
+  @@index([status])
+}
+
+/// Login history for admin audit (success + failures).
+model LoginEvent {
+  id       String   @id @default(cuid())
+  userId   String?
+  email    String
+  schoolId String?
+  ip       String?
+  device   String?
+  result   String   // success | failed | suspended | disabled | mfa_required | mfa_failed
+  at       DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([at])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 17 — CRM, campaigns, website capture, CMS video, parent subscriptions
+// (Scalar-id + index pattern, like LoginEvent: no back-relations, so existing
+//  School/User relation blocks are untouched. schoolId null = platform-level.)
+// ----------------------------------------------------------------------------
+
+/// A CRM contact. Origin can be a website subscriber, an imported lead, or a
+/// mirror of a platform user (parent/driver/tenant admin) for campaign targeting.
+model CrmContact {
+  id            String   @id @default(cuid())
+  schoolId      String?  // null => platform-level contact (e.g. website subscriber)
+  userId        String?  // set when the contact maps to a platform user
+  email         String
+  name          String?
+  phone         String?
+  // Primary audience bucket: subscriber | parent | driver | tenant_admin |
+  // teacher | transport_manager | lead | other
+  audience      String   @default("subscriber")
+  source        String   @default("website") // website | import | user_sync | manual | api
+  interest      String?  // free-text interest captured on the subscribe form
+  tagsJson      String   @default("[]") // JSON array of segment tags
+  status        String   @default("subscribed") // pending | subscribed | unsubscribed | bounced
+  consent       Boolean  @default(false) // explicit marketing consent
+  optInAt       DateTime?
+  unsubToken    String?  @unique
+  lastCampaignAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([email, schoolId])
+  @@index([schoolId])
+  @@index([audience])
+  @@index([status])
+}
+
+/// A saved audience definition (dynamic filter over contacts + platform users).
+model CrmSegment {
+  id          String   @id @default(cuid())
+  schoolId    String?  // null => platform-level segment
+  name        String
+  description String?
+  // JSON filter, e.g. {"audiences":["parent","driver"],"schoolIds":[".."],
+  // "status":"subscribed","tags":["newsletter"]}
+  filterJson  String   @default("{}")
+  isSystem    Boolean  @default(false) // built-in audiences (subscribers, parents, ...)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+/// An email campaign sent to a resolved audience.
+model Campaign {
+  id           String   @id @default(cuid())
+  schoolId     String?  // null => platform-level campaign
+  name         String
+  subject      String
+  body         String   @default("") // HTML/markdown with {{merge}} tags
+  fromName     String   @default("SIPlat")
+  fromEmail    String   @default("hello@siplat.co")
+  // Audience: either a segmentId or an inline audience descriptor.
+  segmentId    String?
+  audienceJson String   @default("{}") // inline audience filter if no segment
+  status       String   @default("draft") // draft | scheduled | sending | sent | cancelled | failed
+  scheduledFor DateTime?
+  // Aggregate counters (updated as recipients are created/sent).
+  totalRecipients Int   @default(0)
+  sentCount    Int      @default(0)
+  failedCount  Int      @default(0)
+  openCount    Int      @default(0)
+  clickCount   Int      @default(0)
+  unsubCount   Int      @default(0)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  sentAt       DateTime?
+
+  recipients   CampaignRecipient[]
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// One recipient of one campaign (idempotent per campaign+email).
+model CampaignRecipient {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String?
+  userId     String?
+  email      String
+  name       String?
+  status     String   @default("queued") // queued | sent | failed | opened | clicked | unsubscribed | bounced
+  error      String?
+  sentAt     DateTime?
+  openedAt   DateTime?
+  clickedAt  DateTime?
+
+  @@unique([campaignId, email])
+  @@index([campaignId])
+  @@index([status])
+}
+
+/// How-to / onboarding videos managed by content management. schoolId null =>
+/// platform-wide (visible to every school's Help Centre).
+model HelpVideo {
+  id          String   @id @default(cuid())
+  schoolId    String?
+  title       String
+  description String?
+  category    String   @default("getting_started") // getting_started | parents | staff | transport | integrations | admin
+  audience    String   @default("all") // all | parent | staff | admin | driver
+  url         String   // hosted video URL or storage reference
+  thumbnailUrl String?
+  durationSec Int      @default(0)
+  transcript  String?  // optional, powers AI help search
+  sequence    Int      @default(0)
+  published   Boolean  @default(false)
+  views       Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([category])
+  @@index([published])
+}
+
+/// A parent's premium subscription (e.g. AI assistant). Billing runs through
+/// Stripe; no card data is stored here. Surfaced in the super-admin dashboard
+/// for platform-wide tracking.
+model ParentSubscription {
+  id             String   @id @default(cuid())
+  parentUserId   String
+  schoolId       String?  // the "home" school, for per-school breakdowns
+  planKey        String   @default("parent_premium") // parent_premium | family | trial
+  status         String   @default("trialing") // trialing | active | past_due | canceled
+  amountMinor    Int      @default(0) // price in pence, set by the operator
+  currency       String   @default("GBP")
+  interval       String   @default("month") // month | year
+  stripeCustomerRef String? // opaque Stripe id — not card data
+  stripeSubRef   String?
+  startedAt      DateTime @default(now())
+  renewalDate    DateTime?
+  canceledAt     DateTime?
+  // Renewal approval workflow (Phase 17b).
+  approvalMode     String   @default("auto") // auto | manual
+  approvalStatus   String   @default("approved") // approved | pending | rejected
+  approvedByUserId String?
+  approvedAt       DateTime?
+  reminderSentAt   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([parentUserId, planKey])
+  @@index([status])
+  @@index([schoolId])
+}
+
+/// Multiple drivers assigned to one route (primary + relief/second drivers).
+/// Route.driverUserId remains the primary for back-compat.
+model RouteDriver {
+  id           String   @id @default(cuid())
+  routeId      String
+  route        Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  schoolId     String
+  driverUserId String
+  role         String   @default("primary") // primary | relief | secondary
+  session      String   @default("all") // all | am | pm
+  activeFrom   DateTime @default(now())
+  activeUntil  DateTime?
+  assignedById String?
+  createdAt    DateTime @default(now())
+
+  @@unique([routeId, driverUserId, session])
+  @@index([routeId])
+  @@index([driverUserId])
+  @@index([schoolId])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 17b — templates, usage analytics, SIPlat staff RBAC
+// (Scalar-id + index pattern; schoolId null = platform-level.)
+// ----------------------------------------------------------------------------
+
+/// Reusable content templates: email campaigns, message-board posts, and email
+/// notification templates. Platform-scoped templates can be shared to tenant
+/// admins (sharedWithTenants) so schools start from a house style.
+model MessageTemplate {
+  id            String   @id @default(cuid())
+  scope         String   @default("platform") // platform | tenant
+  schoolId      String?  // set for tenant-owned templates
+  kind          String   @default("email_campaign") // email_campaign | message_board | email_notification
+  name          String
+  category      String   @default("general")
+  audience      String?  // optional default audience (parent, driver, ...)
+  subject       String?  // for email kinds
+  body          String   @default("") // supports {{merge}} tags
+  channelsJson  String   @default("[]") // for message_board / notification: ["inapp","email","push","sms"]
+  sharedWithTenants Boolean @default(false) // platform templates visible to tenant admins
+  isSystem      Boolean  @default(false)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([scope])
+  @@index([schoolId])
+  @@index([kind])
+}
+
+/// Lightweight product-usage event for analytics (logins + feature usage).
+/// This is aggregate/behavioural telemetry, never pupil data.
+model UsageEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  schoolId  String?
+  role      String   // Parent | Teacher | ...
+  action    String   // login | view | export | message_sent | report_viewed | ...
+  area      String?  // dashboard | reports | transport | comms | ai | ...
+  count     Int      @default(1)
+  at        DateTime @default(now())
+
+  @@index([userId])
+  @@index([schoolId])
+  @@index([role])
+  @@index([action])
+  @@index([at])
+}
+
+/// A platform (SIPlat internal) role — scopes which areas of the super-admin
+/// portal a staff member can access. Distinct from tenant RBAC.
+model PlatformRole {
+  id        String   @id @default(cuid())
+  key       String   @unique // owner | billing | support | sales | analyst | content
+  name      String
+  areasJson String   @default("[]") // JSON array of super-admin area keys, or ["*"]
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  staff     PlatformStaff[]
+}
+
+/// A SIPlat staff member and the platform role that governs their portal access.
+model PlatformStaff {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  email        String
+  name         String?
+  roleKey      String
+  role         PlatformRole @relation(fields: [roleKey], references: [key])
+  status       String   @default("active") // active | suspended | invited
+  invitedById  String?
+  lastActiveAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([roleKey])
+  @@index([status])
+}
+
+// ----------------------------------------------------------------------------
+// Phase 17c — PII grants, policies, announcements, event updates, email config,
+// support chat, saved reports. (Scalar-id + index pattern; schoolId null =
+// platform-level where applicable.)
+// ----------------------------------------------------------------------------
+
+/// A time-boxed, audited grant from a tenant admin that lets a named platform
+/// (SIPlat) staff member view a school's pupil PII during troubleshooting.
+/// Without a live grant, pupil PII is always masked for platform staff.
+model PiiUnmaskGrant {
+  id             String   @id @default(cuid())
+  schoolId       String
+  grantedToUserId String  // the platform staff member
+  grantedByUserId String  // the tenant admin
+  scope          String?  // e.g. "ticket-123"
+  reason         String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([grantedToUserId])
+}
+
+/// A policy document made available to parents and/or teachers. Can be uploaded
+/// (storage ref) or authored in-system (body). Metadata drives visibility + ack.
+model Policy {
+  id           String   @id @default(cuid())
+  schoolId     String?  // null = platform-wide policy
+  title        String
+  category     String   @default("general") // safeguarding | data_protection | behaviour | transport | general
+  audience     String   @default("all") // all | parents | teachers | staff
+  version      String   @default("1.0")
+  summary      String?
+  body         String?  // authored-in-system content
+  fileUrl      String?  // uploaded document reference
+  requireAck   Boolean  @default(false)
+  effectiveDate DateTime?
+  published    Boolean  @default(false)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([audience])
+  @@index([published])
+}
+
+/// A school announcement to all/selected parents over one or more channels.
+model Announcement {
+  id           String   @id @default(cuid())
+  schoolId     String
+  title        String
+  body         String
+  audienceKind String   @default("all") // all | year | class | list
+  audienceJson String   @default("{}") // { years:[], classes:[], userIds:[] }
+  channelsJson String   @default("[\"inapp\"]") // subset of inapp|email|whatsapp|sms
+  status       String   @default("draft") // draft | sent
+  targetedCount Int     @default(0)
+  reachedCount  Int     @default(0)
+  perChannelJson String @default("{}")
+  createdById  String?
+  createdAt    DateTime @default(now())
+  sentAt       DateTime?
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// A real-time update from a staff member leading a trip/event (parent-facing).
+/// The button set per trip is standards minus removed plus custom, stored on the
+/// Trip via updateConfigJson (added below). Reuses Trip for the trip itself.
+model EventUpdate {
+  id        String   @id @default(cuid())
+  schoolId  String
+  tripId    String
+  type      String   // journey_started | traffic | delayed | arrived | ... | custom_*
+  label     String?
+  note      String?
+  byUserId  String?
+  notified  Int      @default(0) // parents notified
+  at        DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([tripId])
+}
+
+/// Platform email configuration (single row). The provider secret is stored
+/// encrypted (AES-256-GCM) and never returned to clients.
+model EmailConfig {
+  id            String  @id @default("singleton")
+  provider      String  @default("console") // console | smtp | postmark | ses | resend
+  fromName      String  @default("SIPlat")
+  fromEmail     String  @default("hello@siplat.co")
+  host          String?
+  port          Int?
+  username      String?
+  secretEnc     String? // encrypted API key / password
+  configuredById String?
+  verified      Boolean @default(false)
+  updatedAt     DateTime @updatedAt
+}
+
+/// A support chat thread opened by SIPlat support with a school's tenant admin.
+model SupportChat {
+  id           String   @id @default(cuid())
+  schoolId     String
+  subject      String
+  status       String   @default("open") // open | pending | closed
+  openedById   String?  // platform staff
+  withUserId   String?  // the tenant admin
+  lastMessageAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  messages SupportChatMessage[]
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+model SupportChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  chat      SupportChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderId  String?
+  senderRole String  // support | tenant_admin
+  body      String
+  at        DateTime @default(now())
+
+  @@index([chatId])
+}
+
+/// A saved / generated report run (usage, subscription, event tracking, etc.).
+model ReportRun {
+  id          String   @id @default(cuid())
+  schoolId    String?  // null = platform report; set = tenant/parent scope
+  scope       String   @default("platform") // platform | tenant | parent
+  type        String   // usage | subscription | engagement | event_tracking | adoption | parent_child
+  title       String
+  paramsJson  String   @default("{}")
+  format      String   @default("json") // json | csv | pdf
+  status      String   @default("ready") // queued | ready | failed
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([type])
+}
+
+/// A parent/teacher acknowledgement of a policy at a specific version. Re-ack is
+/// required when the policy version changes (unique per user+policy+version).
+model PolicyAck {
+  id             String   @id @default(cuid())
+  policyId       String
+  schoolId       String?
+  userId         String
+  role           String?
+  version        String
+  acknowledgedAt DateTime @default(now())
+
+  @@unique([policyId, userId, version])
+  @@index([policyId])
+  @@index([userId])
+}
