@@ -14,6 +14,7 @@ import CommsTab from "./CommsTab";
 import ReportsTab from "./ReportsTab";
 import OpsTab from "./OpsTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const SCHOOL_NAV: NavGroup[] = [
   { label: "Overview", items: [{ key: "ops", label: "Operations", icon: "📊" }] },
@@ -105,7 +106,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
     <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
       email={email} role={canManage ? "School Administrator" : "Member"}>
-      {tab === "ops" && canManage && <OpsTab schoolId={schoolId} />}
+      {tab === "ops" && canManage && <OpsTab schoolId={schoolId} subscription={initial.school?.subscription} />}
       {tab === "students" && canManage && <StudentsTab schoolId={schoolId} />}
       {tab === "guardians" && canManage && <GuardiansTab schoolId={schoolId} />}
       {tab === "staff" && canManage && <StaffTab schoolId={schoolId} />}
@@ -219,16 +220,35 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
   );
 }
 
+const ROLE_LABEL_MAP: Record<string, string> = {
+  SchoolAdministrator: "School Administrator", SchoolLeader: "School Leader", Teacher: "Teacher",
+  TransportManager: "Transport Manager", Driver: "Driver", Parent: "Parent / Guardian", SupportStaff: "Support Staff",
+};
 function UsersTab({ schoolId }: { schoolId: string }) {
   const [users, setUsers] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [form, setForm] = useState({ fullName: "", email: "", role: "Teacher", password: "" });
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; danger?: boolean; run: () => void }>(null);
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/users`).then((r) => r.json());
-    setUsers(d.users ?? []);
+    setUsers(d.users ?? []); setSel({});
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
+
+  const rows = users.filter((u) => {
+    const s = q.trim().toLowerCase();
+    if (!s) return true;
+    return [u.user.fullName, u.user.email, u.roleLabel, u.user.status].some((f) => String(f ?? "").toLowerCase().includes(s));
+  });
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const selRows = users.filter((u) => sel[u.membershipId]);
+  const allOn = rows.length > 0 && rows.every((u) => sel[u.membershipId]);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -239,40 +259,115 @@ function UsersTab({ schoolId }: { schoolId: string }) {
       body: JSON.stringify({ ...form, password: form.password || undefined }),
     });
     const data = await res.json();
-    if (!res.ok || data.error) {
-      setMsg({ kind: "err", text: data.error || "Failed to add user" });
-      return;
-    }
+    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Failed to add user" }); return; }
     setMsg({ kind: "ok", text: form.password ? "User created." : "User invited (verification link sent)." });
     setForm({ fullName: "", email: "", role: "Teacher", password: "" });
     load();
   }
+  async function act(userId: string, action: string): Promise<boolean> {
+    const res = await fetch(`/api/schools/${schoolId}/users/${userId}/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Action failed" }); return false; }
+    if (action === "reset_password") setMsg({ kind: "ok", text: "Password reset link generated (emailed in production)." });
+    return true;
+  }
+  async function runAction(userId: string, action: string, okText: string) {
+    setOpenMenu(null); setMsg(null);
+    if (await act(userId, action)) { if (action !== "reset_password") setMsg({ kind: "ok", text: okText }); load(); }
+  }
+  async function bulk(action: string, okText: string) {
+    setMsg(null);
+    let n = 0;
+    for (const u of selRows) { if (await act(u.user.id, action)) n++; }
+    setSel({}); load();
+    setMsg({ kind: "ok", text: `${okText} — ${n} user${n === 1 ? "" : "s"}.` });
+  }
+  async function changeRole(membershipId: string, role: string) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/memberships/${membershipId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Could not change role" }); return; }
+    setEditing(null); setMsg({ kind: "ok", text: "Role updated." }); load();
+  }
+  function duplicate(u: any) { setOpenMenu(null); setForm({ fullName: "", email: "", role: u.role, password: "" }); setMsg({ kind: "ok", text: `New user form pre-filled with the ${u.roleLabel} role — add their name and email.` }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  function askDeactivate(u: any) { setOpenMenu(null); setConfirm({ title: `Deactivate ${u.user.fullName}?`, message: "They will be signed out and blocked from signing in until reactivated.", label: "Deactivate", danger: true, run: () => { runAction(u.user.id, "disable", "User deactivated."); setConfirm(null); } }); }
+  function askSuspend(u: any) { setOpenMenu(null); setConfirm({ title: `Suspend ${u.user.fullName}?`, message: "Access is blocked and live sessions end immediately. You can reactivate later.", label: "Suspend", danger: true, run: () => { runAction(u.user.id, "suspend", "User suspended."); setConfirm(null); } }); }
+  function askRevoke(u: any) { setOpenMenu(null); setConfirm({ title: `Revoke access for ${u.user.fullName}?`, message: "This ends all their live sessions at this school immediately. They keep their account but lose access until re-invited.", label: "Revoke access", danger: true, run: () => { runAction(u.user.id, "revoke", "Access revoked."); setConfirm(null); } }); }
+  function askBulk(action: string, verb: string, okText: string) { setConfirm({ title: `${verb} ${selIds.length} user${selIds.length === 1 ? "" : "s"}?`, message: "This applies immediately to everyone selected and ends their live sessions.", label: verb, danger: true, run: () => { bulk(action, okText); setConfirm(null); } }); }
 
   return (
     <>
+      <ConfirmDialog open={!!confirm} title={confirm?.title || ""} message={confirm?.message || ""} confirmLabel={confirm?.label || "Confirm"} danger={confirm?.danger} onConfirm={() => confirm?.run()} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>Users &amp; roles</h2>
-        <p className="sub">People with access to this school. Roles determine what they can see and do.</p>
+        <p className="sub">People with access to this school. Roles determine what they can see and do. Select rows for bulk actions, or use the ⋯ menu on a row.</p>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
+          <input placeholder="Filter users…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+          <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${users.length}` : `${users.length} user${users.length === 1 ? "" : "s"}`}</span>
+        </div>
+        {selIds.length > 0 && (
+          <div className="bulkbar">
+            <span>{selIds.length} selected</span>
+            <button className="secondary small" onClick={() => bulk("reactivate", "Reactivated")}>Reactivate</button>
+            <button className="danger small" onClick={() => askBulk("suspend", "Suspend", "Suspended")}>Suspend</button>
+            <button className="danger small" onClick={() => askBulk("disable", "Deactivate", "Deactivated")}>Deactivate</button>
+            <button className="danger small" onClick={() => askBulk("revoke", "Revoke access for", "Access revoked")}>Revoke</button>
+            <button className="secondary small" onClick={() => setSel({})}>Clear</button>
+          </div>
+        )}
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>MFA</th></tr></thead>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={allOn} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(rows.map((u) => [u.membershipId, true])) : {})} aria-label="Select all" /></th>
+            <th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>MFA</th><th className="right">Actions</th>
+          </tr></thead>
           <tbody>
-            {users.map((u) => (
+            {rows.map((u) => (
               <tr key={u.membershipId}>
+                <td className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={!!sel[u.membershipId]} onChange={(e) => setSel({ ...sel, [u.membershipId]: e.target.checked })} aria-label={`Select ${u.user.fullName}`} /></td>
                 <td>{u.user.fullName}</td>
                 <td className="mono">{u.user.email}</td>
-                <td><span className="badge role">{u.roleLabel}</span></td>
-                <td>{u.user.status}</td>
+                <td>
+                  {editing === u.membershipId ? (
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <select value={editRole} onChange={(e) => setEditRole(e.target.value)}>{ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}</select>
+                      <button className="small" onClick={() => changeRole(u.membershipId, editRole)}>Save</button>
+                      <button className="secondary small" onClick={() => setEditing(null)}>Cancel</button>
+                    </span>
+                  ) : (
+                    <span className="badge role">{u.roleLabel}</span>
+                  )}
+                </td>
+                <td><span className={`badge ${u.user.status}`}>{u.user.status}</span></td>
                 <td>{u.user.mfaEnabled ? "✓" : "—"}</td>
+                <td className="right">
+                  <span className="kebab-wrap">
+                    <button className="kebab-btn" aria-label="Actions" onClick={() => setOpenMenu(openMenu === u.membershipId ? null : u.membershipId)}>⋯</button>
+                    {openMenu === u.membershipId && (
+                      <>
+                        <div className="kebab-backdrop" onClick={() => setOpenMenu(null)} />
+                        <div className="kebab-menu">
+                          <button onClick={() => { setEditing(u.membershipId); setEditRole(u.role); setOpenMenu(null); }}>Edit role</button>
+                          <button onClick={() => duplicate(u)}>Duplicate</button>
+                          <button onClick={() => runAction(u.user.id, "reset_password", "")}>Reset password</button>
+                          {u.user.status !== "active" && <button onClick={() => runAction(u.user.id, "reactivate", "User reactivated.")}>Reactivate</button>}
+                          <button onClick={() => askSuspend(u)}>Suspend</button>
+                          <button onClick={() => askDeactivate(u)}>Deactivate</button>
+                          <button className="danger" onClick={() => askRevoke(u)}>Revoke access</button>
+                        </div>
+                      </>
+                    )}
+                  </span>
+                </td>
               </tr>
             ))}
-            {users.length === 0 && <tr><td colSpan={5} className="muted">No users yet.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="muted">{users.length ? "No users match your filter." : "No users yet."}</td></tr>}
           </tbody>
         </table>
       </div>
       <div className="panel">
         <h2>Add a user</h2>
         <p className="sub">Leave the password blank to send an email invite instead.</p>
-        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <form onSubmit={add}>
           <div className="row">
             <div><label>Full name</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></div>
@@ -282,7 +377,7 @@ function UsersTab({ schoolId }: { schoolId: string }) {
             <div>
               <label>Role</label>
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}
               </select>
             </div>
             <div><label>Temporary password (optional)</label><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>

@@ -39,6 +39,20 @@ export async function userAdminAction(opts: { schoolId: string; userId: string; 
   return { ok: true, action: opts.action };
 }
 
+// Change the role attached to a specific membership row (a user may hold more
+// than one role in a school, so this is keyed by membershipId, not userId).
+export async function setMembershipRole(opts: { schoolId: string; membershipId: string; role: string; actor: { userId?: string; email?: string } }) {
+  const membership = await prisma.membership.findUnique({ where: { id: opts.membershipId } });
+  if (!membership || membership.schoolId !== opts.schoolId) throw new AppError("Membership not found in this school", 404);
+  if (membership.role === opts.role) return { ok: true, role: opts.role, unchanged: true };
+  // The (userId, schoolId, role) unique constraint blocks moving to a role the user already holds.
+  const clash = await prisma.membership.findFirst({ where: { userId: membership.userId, schoolId: opts.schoolId, role: opts.role } });
+  if (clash) throw new AppError("This user already has that role at this school", 409);
+  await prisma.membership.update({ where: { id: opts.membershipId }, data: { role: opts.role } });
+  await recordAudit({ action: AUDIT.USER_ROLE_CHANGED ?? "USER_ROLE_CHANGED", schoolId: opts.schoolId, actorUserId: opts.actor.userId, actorEmail: opts.actor.email, targetType: "Membership", targetId: opts.membershipId, metadata: { from: membership.role, to: opts.role } });
+  return { ok: true, role: opts.role };
+}
+
 export async function recordLoginEvent(e: { userId?: string | null; email: string; schoolId?: string | null; ip?: string | null; device?: string | null; result: string }) {
   await prisma.loginEvent.create({ data: { userId: e.userId ?? null, email: e.email.toLowerCase(), schoolId: e.schoolId ?? null, ip: e.ip ?? null, device: e.device ?? null, result: e.result } }).catch(() => {});
 }

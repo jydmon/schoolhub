@@ -206,6 +206,16 @@ td strong { font-weight: 650; }
 .checkbox-cell input, td .rowcheck { width: auto; }
 td.nowrap, th.nowrap { white-space: nowrap; }
 td.nowrap .small { margin-bottom: 2px; }
+/* Kebab (3-dot) row action menu */
+.kebab-wrap { position: relative; display: inline-block; }
+.kebab-btn { background: transparent; border: 1px solid var(--border, #d7deea); color: var(--brand-ink, #1e293b); border-radius: 8px; padding: 2px 10px; font-size: 18px; line-height: 1; cursor: pointer; }
+.kebab-btn:hover { background: #eef2ff; }
+.kebab-backdrop { position: fixed; inset: 0; z-index: 40; }
+.kebab-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 41; background: #fff; border: 1px solid var(--border, #d7deea); border-radius: 10px; box-shadow: 0 10px 30px rgba(15,23,42,0.15); padding: 6px; min-width: 172px; display: flex; flex-direction: column; text-align: left; }
+.kebab-menu button { background: transparent; border: 0; text-align: left; padding: 8px 10px; border-radius: 7px; font-size: 13.5px; color: var(--brand-ink, #1e293b); cursor: pointer; width: 100%; }
+.kebab-menu button:hover { background: #f1f5ff; }
+.kebab-menu button.danger { color: var(--danger, #dc2626); }
+.kebab-menu button.danger:hover { background: #fef2f2; }
 
 @media (max-width: 860px) {
   .sidebar { width: 74px; padding: 14px 8px; }

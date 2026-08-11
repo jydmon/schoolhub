@@ -10,7 +10,7 @@ const TILE_LABELS: [string, string][] = [
 ];
 const REPORTS = ["overview", "transport", "trips", "engagement", "ai", "integrations"];
 
-export default function OpsTab({ schoolId }: { schoolId: string }) {
+export default function OpsTab({ schoolId, subscription }: { schoolId: string; subscription?: any }) {
   const [sub, setSub] = useState<"dashboard" | "reports" | "compliance">("dashboard");
   return (
     <>
@@ -19,18 +19,39 @@ export default function OpsTab({ schoolId }: { schoolId: string }) {
           <button key={k} className={sub === k ? "active" : ""} onClick={() => setSub(k)}>{l}</button>
         ))}
       </div>
-      {sub === "dashboard" && <Dashboard schoolId={schoolId} />}
+      {sub === "dashboard" && <Dashboard schoolId={schoolId} subscription={subscription} />}
       {sub === "reports" && <Reports schoolId={schoolId} />}
       {sub === "compliance" && <Compliance schoolId={schoolId} />}
     </>
   );
 }
 
-function Dashboard({ schoolId }: { schoolId: string }) {
+function SubscriptionBanner({ subscription }: { subscription?: any }) {
+  if (!subscription) return null;
+  const planName = subscription.plan?.name || subscription.plan?.key || "—";
+  const status = subscription.status || "active";
+  const renew = subscription.renewalDate ? new Date(subscription.renewalDate).toLocaleDateString() : null;
+  const seats = subscription.studentLimit ? subscription.studentLimit.toLocaleString() : null;
+  return (
+    <div className="panel" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", background: "linear-gradient(120deg,#eef2ff,#e0f2fe)", border: "1px solid #c7d2fe" }}>
+      <div>
+        <strong style={{ fontSize: 16 }}>{planName} plan</strong>
+        <div className="muted" style={{ fontSize: 13 }}>
+          {renew ? `Renews ${renew}` : "No renewal date set"}{seats ? ` · up to ${seats} pupil seats` : ""}
+        </div>
+      </div>
+      <span className={`badge ${status}`}>{status}</span>
+    </div>
+  );
+}
+
+function Dashboard({ schoolId, subscription }: { schoolId: string; subscription?: any }) {
   const [d, setD] = useState<any>(null);
   useEffect(() => { fetch(`/api/schools/${schoolId}/ops/dashboard`).then((r) => r.json()).then(setD); }, [schoolId]);
-  if (!d) return <div className="panel">Loading…</div>;
+  if (!d) return <><SubscriptionBanner subscription={subscription} /><div className="panel">Loading…</div></>;
   return (
+    <>
+    <SubscriptionBanner subscription={subscription} />
     <div className="panel">
       <h2>Operations dashboard</h2><p className="sub">Live view · {d.date}</p>
       <div className="stat-grid">
@@ -39,6 +60,7 @@ function Dashboard({ schoolId }: { schoolId: string }) {
         ))}
       </div>
     </div>
+    </>
   );
 }
 
