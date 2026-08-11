@@ -363,7 +363,7 @@ export function ImportTab({ schoolId }: { schoolId: string }) {
     <>
       <div className="panel">
         <h2>CSV import</h2>
-        <p className="sub">Import students, parents, staff, or messaging consent. Rows are validated and duplicates are detected; a per-row error report is produced.</p>
+        <p className="sub">Import students, parents, staff, messaging consent, vehicles, routes, calendar/timetable events, announcements, or pupil reports. Rows are validated and duplicates are detected; a per-row error report is produced.</p>
         <div className="row">
           <div>
             <label>Import type</label>
@@ -372,6 +372,11 @@ export function ImportTab({ schoolId }: { schoolId: string }) {
               <option value="parents">Parents / guardians</option>
               <option value="staff">Staff</option>
               <option value="messaging_consent">Messaging consent (SMS/WhatsApp opt-in)</option>
+              <option value="vehicles">Vehicles (fleet)</option>
+              <option value="routes">Transport routes</option>
+              <option value="calendar_events">Calendar &amp; timetable events</option>
+              <option value="announcements">Announcements</option>
+              <option value="pupil_reports">Pupil reports</option>
             </select>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>

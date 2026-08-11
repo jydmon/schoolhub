@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 export default function TransportTab({ schoolId }: { schoolId: string }) {
   const [sub, setSub] = useState<"control" | "routes" | "vehicles" | "profiles" | "requests">("control");
@@ -12,8 +13,8 @@ export default function TransportTab({ schoolId }: { schoolId: string }) {
         ))}
       </div>
       {sub === "control" && <Control schoolId={schoolId} />}
-      {sub === "routes" && <Routes schoolId={schoolId} />}
-      {sub === "vehicles" && <Vehicles schoolId={schoolId} />}
+      {sub === "routes" && <><Routes schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="routes" title="Import routes" hint="No routing system? Bulk-add routes from a CSV. Import vehicles first so routes can link to them by reference." /></>}
+      {sub === "vehicles" && <><Vehicles schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="vehicles" title="Import vehicles" hint="Bulk-add your fleet from a CSV — matched and updated by registration / fleet number." /></>}
       {sub === "profiles" && <Profiles schoolId={schoolId} />}
       {sub === "requests" && <Requests schoolId={schoolId} />}
     </>

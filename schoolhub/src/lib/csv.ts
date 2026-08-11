@@ -123,4 +123,32 @@ export const IMPORT_TEMPLATES: Record<
     headers: ["email", "phone", "smsConsent", "whatsappConsent", "consentSource", "consentDate"],
     example: ["sarah@parents.test", "07700 900001", "yes", "yes", "September enrolment form", "2026-09-01"],
   },
+  // ---- Modules that schools without an existing system can seed by import ----
+  vehicles: {
+    // Transport fleet. Matched/updated by reference (registration or fleet no.).
+    headers: ["reference", "label", "capacity", "type", "gpsSource", "active"],
+    example: ["MB-01", "Minibus 1", 16, "minibus", "driver_phone", "true"],
+  },
+  routes: {
+    // Transport routes. Optionally link a vehicle by its reference. Matched by name.
+    headers: ["name", "type", "vehicleReference", "cutoffTime", "active"],
+    example: ["Route A — North", "fixed", "MB-01", "07:00", "true"],
+  },
+  calendar_events: {
+    // Calendar & timetable entries. Dates are "YYYY-MM-DD HH:MM" (24h). Leave
+    // className/yearGroup blank for whole-school. Matched by title + start time.
+    headers: ["title", "category", "startsAt", "endsAt", "allDay", "location", "yearGroup", "className"],
+    example: ["Year 4 Swimming", "timetable_change", "2026-09-10 09:00", "2026-09-10 10:00", "false", "Pool", "Year 4", "4B"],
+  },
+  announcements: {
+    // Parent announcements, created as drafts you review and send. Channels are
+    // semicolon-separated from: inapp;email;whatsapp;sms.
+    headers: ["title", "body", "audienceKind", "channels"],
+    example: ["Welcome back", "Term starts Monday 8:45am.", "all", "inapp;email"],
+  },
+  pupil_reports: {
+    // Pupil reports, created as drafts. Match the pupil by their student reference.
+    headers: ["studentReference", "type", "title", "term", "summary"],
+    example: ["STU-1001", "termly", "Autumn 2026 — Progress", "Autumn 2026", "On track across all subjects."],
+  },
 };

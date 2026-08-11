@@ -46,6 +46,20 @@ function parseDate(v: string, field: string): Date | null {
   return d;
 }
 
+/** Parse "YYYY-MM-DD HH:MM" (or ...T...). Required — throws if blank/malformed. */
+function parseDateTime(v: string, field: string): Date {
+  const s = v.trim();
+  if (!s) throw new Error(`${field} is required (YYYY-MM-DD HH:MM)`);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) throw new Error(`${field} must be "YYYY-MM-DD HH:MM"`);
+  const d = new Date(`${m[1]}T${m[2]}:${m[3]}:${m[4] || "00"}.000Z`);
+  if (isNaN(d.getTime())) throw new Error(`${field} is not a valid date/time`);
+  return d;
+}
+function parseDateTimeOpt(v: string, field: string): Date | null {
+  return (v ?? "").trim() ? parseDateTime(v, field) : null;
+}
+
 async function upsertClass(schoolId: string, name: string, yearGroup?: string): Promise<string> {
   const existing = await prisma.schoolClass.findUnique({
     where: { schoolId_name: { schoolId, name } },
@@ -327,6 +341,101 @@ export async function runImport(opts: {
             metadata: { ...provenance, channel: "sms", optIn: sms },
           });
         }
+      } else if (type === "vehicles") {
+        const reference = row.reference?.trim();
+        if (!reference) throw new Error("reference is required");
+        if (seen.has("veh:" + reference)) { skipped++; errors.push({ row: line, field: "reference", message: `duplicate vehicle "${reference}" in file`, fatal: false }); continue; }
+        seen.add("veh:" + reference);
+        const capacity = row.capacity?.trim() ? parseInt(row.capacity.trim(), 10) : 16;
+        if (isNaN(capacity) || capacity < 0) throw new Error("capacity must be a whole number");
+        const data = {
+          label: row.label?.trim() || null,
+          capacity,
+          type: (row.type?.trim() || "minibus").toLowerCase(),
+          gpsSource: row.gpsSource?.trim() || "driver_phone",
+          active: row.active?.trim() ? parseBool(row.active) : true,
+        };
+        const existing = await prisma.vehicle.findUnique({ where: { schoolId_reference: { schoolId, reference } } });
+        if (existing) { await prisma.vehicle.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.vehicle.create({ data: { schoolId, reference, ...data } }); created++; }
+      } else if (type === "routes") {
+        const name = row.name?.trim();
+        if (!name) throw new Error("name is required");
+        if (seen.has("rt:" + name.toLowerCase())) { skipped++; errors.push({ row: line, field: "name", message: `duplicate route "${name}" in file`, fatal: false }); continue; }
+        seen.add("rt:" + name.toLowerCase());
+        const cutoffTime = row.cutoffTime?.trim() || "07:00";
+        if (!/^\d{2}:\d{2}$/.test(cutoffTime)) throw new Error("cutoffTime must be HH:MM");
+        let vehicleId: string | null = null;
+        const vref = row.vehicleReference?.trim();
+        if (vref) {
+          const v = await prisma.vehicle.findUnique({ where: { schoolId_reference: { schoolId, reference: vref } } });
+          if (!v) errors.push({ row: line, field: "vehicleReference", message: `vehicle "${vref}" not found — import vehicles first`, fatal: false });
+          else vehicleId = v.id;
+        }
+        const data = { type: (row.type?.trim() || "fixed").toLowerCase(), cutoffTime, active: row.active?.trim() ? parseBool(row.active) : true, vehicleId };
+        const existing = await prisma.route.findFirst({ where: { schoolId, name } });
+        if (existing) { await prisma.route.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.route.create({ data: { schoolId, name, ...data } }); created++; }
+      } else if (type === "calendar_events") {
+        const title = row.title?.trim();
+        if (!title) throw new Error("title is required");
+        const startsAt = parseDateTime(row.startsAt || "", "startsAt");
+        const endsAt = parseDateTimeOpt(row.endsAt || "", "endsAt");
+        const key = "ev:" + title.toLowerCase() + "@" + startsAt.toISOString();
+        if (seen.has(key)) { skipped++; errors.push({ row: line, field: "title", message: `duplicate event "${title}" in file`, fatal: false }); continue; }
+        seen.add(key);
+        const yearGroup = row.yearGroup?.trim() || "";
+        const className = row.className?.trim() || "";
+        const classId = className ? await upsertClass(schoolId, className, yearGroup || undefined) : null;
+        const data = {
+          description: null as string | null,
+          category: row.category?.trim() || "event",
+          startsAt, endsAt,
+          allDay: row.allDay?.trim() ? parseBool(row.allDay) : false,
+          location: row.location?.trim() || null,
+          audienceScope: classId ? "class" : yearGroup ? "year" : "school",
+          yearGroup: yearGroup || null,
+          classId,
+          status: "published",
+          createdById: opts.actorUserId || null,
+        };
+        const existing = await prisma.calendarEvent.findFirst({ where: { schoolId, title, startsAt } });
+        if (existing) { await prisma.calendarEvent.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.calendarEvent.create({ data: { schoolId, title, ...data } }); created++; }
+      } else if (type === "announcements") {
+        const title = row.title?.trim();
+        const body = row.body?.trim();
+        if (!title) throw new Error("title is required");
+        if (!body) throw new Error("body is required");
+        if (seen.has("an:" + title.toLowerCase())) { skipped++; errors.push({ row: line, field: "title", message: `duplicate announcement "${title}" in file`, fatal: false }); continue; }
+        seen.add("an:" + title.toLowerCase());
+        const audienceKind = (row.audienceKind?.trim() || "all").toLowerCase();
+        const chans = (row.channels || "inapp").split(/[;,]/).map((c) => c.trim().toLowerCase()).filter((c) => ["inapp", "email", "whatsapp", "sms"].includes(c));
+        await prisma.announcement.create({
+          data: {
+            schoolId, title, body,
+            audienceKind: ["all", "year", "class", "list"].includes(audienceKind) ? audienceKind : "all",
+            channelsJson: JSON.stringify(chans.length ? chans : ["inapp"]),
+            status: "draft", // imported announcements are always drafts you review + send
+            createdById: opts.actorUserId || null,
+          },
+        });
+        created++;
+      } else if (type === "pupil_reports") {
+        const ref = row.studentReference?.trim();
+        const title = row.title?.trim();
+        if (!ref) throw new Error("studentReference is required");
+        if (!title) throw new Error("title is required");
+        const student = await prisma.student.findUnique({ where: { schoolId_reference: { schoolId, reference: ref } } });
+        if (!student) throw new Error(`student "${ref}" not found`);
+        const term = row.term?.trim() || null;
+        const dupKey = "pr:" + student.id + ":" + title.toLowerCase() + ":" + (term || "");
+        if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "title", message: `duplicate report "${title}" for this pupil in file`, fatal: false }); continue; }
+        seen.add(dupKey);
+        const data = { type: (row.type?.trim() || "termly").toLowerCase(), title, term, summary: row.summary?.trim() || null, status: "draft", authorId: opts.actorUserId || null };
+        const existing = await prisma.studentReport.findFirst({ where: { schoolId, studentId: student.id, title, term } });
+        if (existing) { await prisma.studentReport.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.studentReport.create({ data: { schoolId, studentId: student.id, ...data } }); created++; }
       }
     } catch (err) {
       errors.push({ row: line, message: (err as Error).message, fatal: true });

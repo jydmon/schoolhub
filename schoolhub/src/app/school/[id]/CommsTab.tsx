@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 const TARGETS = ["school", "year", "class", "house", "route", "vehicle", "trip", "student", "parents", "staff"];
 const CHANNELS = ["inapp", "push", "email", "sms", "whatsapp"];
@@ -28,6 +29,7 @@ export default function CommsTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="announcements" title="Import announcements" hint="Bulk-add announcements from a CSV. They arrive as drafts you review and send — nothing is sent on import." />
       <div className="panel">
         <h2>Notification centre</h2>
         <p className="sub">Compose across in-app, push, email, SMS and WhatsApp. SMS/WhatsApp reach only parents with a number on file (WhatsApp requires opt-in); emergency alerts override quiet hours and channel preferences.</p>

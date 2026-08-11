@@ -461,5 +461,17 @@ export const INFO_CATEGORIES = [
   "transport",
 ] as const;
 
-export const IMPORT_TYPES = ["students", "parents", "staff", "messaging_consent"] as const;
+export const IMPORT_TYPES = [
+  "students", "parents", "staff", "messaging_consent",
+  "vehicles", "routes", "calendar_events", "announcements", "pupil_reports",
+] as const;
 export type ImportType = (typeof IMPORT_TYPES)[number];
+
+// Human labels for each import type (used in module import panels).
+export const IMPORT_TYPE_LABELS: Record<string, string> = {
+  students: "Students", parents: "Parents / guardians", staff: "Staff",
+  messaging_consent: "Messaging consent (SMS/WhatsApp opt-in)",
+  vehicles: "Vehicles (fleet)", routes: "Transport routes",
+  calendar_events: "Calendar & timetable events", announcements: "Announcements",
+  pupil_reports: "Pupil reports",
+};

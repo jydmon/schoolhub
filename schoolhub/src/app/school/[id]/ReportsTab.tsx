@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 const TYPES: [string, string][] = [
   ["annual", "Annual report card"],
@@ -64,6 +65,7 @@ export default function ReportsTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="pupil_reports" title="Import pupil reports" hint="No reporting system? Bulk-add report cards from a CSV (matched to pupils by student reference). They arrive as drafts." />
       <div className="panel">
         <h2>Pupil reports</h2>
         <p className="sub">Prepare report cards, get school-leadership sign-off, and release them to parents at a set time. Parents can&apos;t see a report until it&apos;s released; on release, guardians are notified through the notification centre honouring each family&apos;s channel preferences.</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 const CATEGORIES = ["academic", "term", "holiday", "inset", "exam", "parents_evening", "sports_day", "trip", "assembly", "club", "performance", "photos", "fundraiser", "early_closure", "timetable_change", "event"];
 const CAT_LABEL: Record<string, string> = {
@@ -65,6 +66,7 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="calendar_events" title="Import calendar & timetable" hint="No timetable system? Bulk-add events and timetable entries from a CSV (dates as YYYY-MM-DD HH:MM)." />
       <div className="panel">
         <div className="flex-between">
           <div><h2>School calendar</h2><p className="sub" style={{ marginBottom: 0 }}>{events.length} event(s)</p></div>
