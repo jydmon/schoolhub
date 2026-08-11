@@ -2016,3 +2016,22 @@ model PolicyAck {
   @@index([policyId])
   @@index([userId])
 }
+
+/// Canteen / catering menu items for a school that has no upstream catering
+/// system. Additive module: `schoolId` is a plain scalar (no relation) so this
+/// change touches nothing else. Seeded manually or by CSV import (type "menus").
+model MenuItem {
+  id          String   @id @default(cuid())
+  schoolId    String
+  day         String   @default("Mon")     // Mon|Tue|Wed|Thu|Fri (or a date label)
+  meal        String   @default("lunch")   // breakfast|lunch|snack|tea
+  course      String   @default("main")    // main|vegetarian|dessert|side|drink
+  name        String
+  description String?
+  allergens   String?  // comma-separated (e.g. "gluten,milk")
+  price       Int      @default(0)         // pence
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([schoolId])
+}

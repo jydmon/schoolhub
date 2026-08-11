@@ -151,4 +151,9 @@ export const IMPORT_TEMPLATES: Record<
     headers: ["studentReference", "type", "title", "term", "summary"],
     example: ["STU-1001", "termly", "Autumn 2026 — Progress", "Autumn 2026", "On track across all subjects."],
   },
+  menus: {
+    // Canteen menu. "price" is in pounds (e.g. 2.50). "allergens" is comma-separated.
+    headers: ["day", "meal", "course", "name", "description", "allergens", "price", "active"],
+    example: ["Mon", "lunch", "main", "Roast chicken & potatoes", "Served with seasonal vegetables", "gluten,milk", "2.50", "true"],
+  },
 };

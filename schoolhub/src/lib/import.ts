@@ -436,6 +436,28 @@ export async function runImport(opts: {
         const existing = await prisma.studentReport.findFirst({ where: { schoolId, studentId: student.id, title, term } });
         if (existing) { await prisma.studentReport.update({ where: { id: existing.id }, data }); updated++; }
         else { await prisma.studentReport.create({ data: { schoolId, studentId: student.id, ...data } }); created++; }
+      } else if (type === "menus") {
+        const name = row.name?.trim();
+        if (!name) throw new Error("name is required");
+        const day = (row.day?.trim() || "Mon");
+        const meal = (row.meal?.trim() || "lunch").toLowerCase();
+        const course = (row.course?.trim() || "main").toLowerCase();
+        const priceRaw = (row.price || "").replace(/[£,\s]/g, "").trim();
+        const price = priceRaw ? Math.round(parseFloat(priceRaw) * 100) : 0;
+        if (priceRaw && (isNaN(price) || price < 0)) throw new Error("price must be a number in pounds, e.g. 2.50");
+        const dupKey = "menu:" + day.toLowerCase() + ":" + meal + ":" + course + ":" + name.toLowerCase();
+        if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "name", message: `duplicate menu item "${name}" in file`, fatal: false }); continue; }
+        seen.add(dupKey);
+        const data = {
+          day, meal, course,
+          description: row.description?.trim() || null,
+          allergens: row.allergens?.trim() || null,
+          price,
+          active: row.active?.trim() ? parseBool(row.active) : true,
+        };
+        const existing = await prisma.menuItem.findFirst({ where: { schoolId, day, meal, course, name } });
+        if (existing) { await prisma.menuItem.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.menuItem.create({ data: { schoolId, name, ...data } }); created++; }
       }
     } catch (err) {
       errors.push({ row: line, message: (err as Error).message, fatal: true });
