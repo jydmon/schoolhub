@@ -55,6 +55,8 @@ const TABS: { key: string; label: string }[] = [
   { key: "videos", label: "Help Videos" },
   { key: "support", label: "Support" },
   { key: "email", label: "Email" },
+  { key: "integrations", label: "Integrations" },
+  { key: "trouble", label: "Troubleshooting" },
   { key: "audit", label: "Audit trail" },
 ];
 
@@ -82,6 +84,8 @@ export default function AdminPortal() {
       {tab === "videos" && <Videos />}
       {tab === "support" && <Support />}
       {tab === "email" && <EmailCfg />}
+      {tab === "integrations" && <Integrations />}
+      {tab === "trouble" && <Troubleshooting />}
       {tab === "audit" && <AuditTab />}
     </>
   );
@@ -390,6 +394,7 @@ function Templates() {
   const { data, err, reload } = useJson<any>("/api/platform/templates");
   const [f, setF] = useState({ kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [view, setView] = useState<any | null>(null);
   const templates: any[] = data?.templates ?? [];
   async function create(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
@@ -398,12 +403,13 @@ function Templates() {
   }
   return (
     <>
+      {view && <DocModal title={view.name} meta={`${view.kind}${view.subject ? " · " + view.subject : ""}`} onClose={() => setView(null)}>{view.body || "(no content)"}</DocModal>}
       <div className="panel">
         <h2>Platform template library</h2>
-        <p className="sub">Reusable email / message templates. Mark as shared to make them available to every tenant admin.</p>
+        <p className="sub">Reusable email / message templates. Mark as shared to make them available to every tenant admin. Click View to read the full template.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
-        <table><thead><tr><th>Name</th><th>Kind</th><th>Category</th><th>Shared</th></tr></thead>
-          <tbody>{templates.map((t: any) => <tr key={t.id}><td><strong>{t.name}</strong></td><td className="muted">{t.kind}</td><td className="muted">{t.category || "—"}</td><td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td></tr>)}{templates.length === 0 && <Empty cols={4} text="No templates yet." />}</tbody>
+        <table><thead><tr><th>Name</th><th>Kind</th><th>Category</th><th>Shared</th><th className="right"></th></tr></thead>
+          <tbody>{templates.map((t: any) => <tr key={t.id}><td><strong>{t.name}</strong></td><td className="muted">{t.kind}</td><td className="muted">{t.category || "—"}</td><td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td><td className="right"><button className="secondary small" onClick={() => setView(t)}>View</button></td></tr>)}{templates.length === 0 && <Empty cols={5} text="No templates yet — use “Load default content”." />}</tbody>
         </table>
       </div>
       <div className="panel">
@@ -431,22 +437,29 @@ function Templates() {
 /* ============================ POLICIES ============================ */
 function Policies() {
   const { data, err, reload } = useJson<any>("/api/platform/policies");
-  const [f, setF] = useState({ title: "", category: "data_protection", audience: "all", version: "", summary: "", requireAck: false, published: true });
+  const [f, setF] = useState({ title: "", category: "data_protection", audience: "all", version: "", summary: "", body: "", fileUrl: "", requireAck: false, published: true });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [view, setView] = useState<any | null>(null);
   const policies: any[] = data?.policies ?? [];
   async function create(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    try { await send("/api/platform/policies", f); setMsg({ k: "ok", t: "Policy published." }); setF({ ...f, title: "", version: "", summary: "" }); reload(); }
+    const body: any = { ...f }; if (!body.fileUrl) delete body.fileUrl;
+    try { await send("/api/platform/policies", body); setMsg({ k: "ok", t: "Policy published." }); setF({ ...f, title: "", version: "", summary: "", body: "", fileUrl: "" }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
   return (
     <>
+      {view && <DocModal title={view.title} meta={`${view.category || "general"} · ${view.audience || "all"} · v${view.version || "1.0"}`} onClose={() => setView(null)}>
+        {view.summary ? <p style={{ fontWeight: 600 }}>{view.summary}</p> : null}
+        {view.body || (view.fileUrl ? "" : "(no content)")}
+        {view.fileUrl ? <p style={{ marginTop: 12 }}><a href={view.fileUrl} target="_blank" rel="noreferrer">Open attached document</a></p> : null}
+      </DocModal>}
       <div className="panel">
         <h2>Platform policies</h2>
-        <p className="sub">Data-protection, safeguarding and general policies pushed to all tenants.</p>
+        <p className="sub">Data-protection, safeguarding and general policies pushed to all tenants. Click View to read the full policy.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
-        <table><thead><tr><th>Title</th><th>Category</th><th>Audience</th><th>Version</th><th>Status</th></tr></thead>
-          <tbody>{policies.map((p: any) => <tr key={p.id}><td><strong>{p.title}</strong></td><td className="muted">{p.category || "—"}</td><td className="muted">{p.audience || "all"}</td><td className="muted">{p.version || "—"}</td><td>{p.published ? <span className="badge active">published</span> : <span className="muted">draft</span>}</td></tr>)}{policies.length === 0 && <Empty cols={5} text="No policies yet." />}</tbody>
+        <table><thead><tr><th>Title</th><th>Category</th><th>Audience</th><th>Version</th><th>Status</th><th className="right"></th></tr></thead>
+          <tbody>{policies.map((p: any) => <tr key={p.id}><td><strong>{p.title}</strong></td><td className="muted">{p.category || "—"}</td><td className="muted">{p.audience || "all"}</td><td className="muted">{p.version || "—"}</td><td>{p.published ? <span className="badge published">published</span> : <span className="badge draft">draft</span>}</td><td className="right"><button className="secondary small" onClick={() => setView(p)}>View</button></td></tr>)}{policies.length === 0 && <Empty cols={6} text="No policies yet — use “Load default content”." />}</tbody>
         </table>
       </div>
       <div className="panel">
@@ -455,14 +468,18 @@ function Policies() {
         <form onSubmit={create}>
           <div className="row">
             <div><label>Title</label><input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} required /></div>
-            <div><label>Version</label><input value={f.version} onChange={(e) => setF({ ...f, version: e.target.value })} /></div>
+            <div><label>Version</label><input value={f.version} onChange={(e) => setF({ ...f, version: e.target.value })} placeholder="1.0" /></div>
           </div>
           <div className="row">
             <div><label>Category</label><select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{["safeguarding", "data_protection", "behaviour", "transport", "general"].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
             <div><label>Audience</label><select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}>{["all", "parents", "teachers", "staff"].map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
           </div>
           <label>Summary</label>
-          <textarea rows={3} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} />
+          <textarea rows={2} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} />
+          <label>Full policy text</label>
+          <textarea rows={6} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
+          <label>Or link to an uploaded document (URL)</label>
+          <input type="url" value={f.fileUrl} onChange={(e) => setF({ ...f, fileUrl: e.target.value })} placeholder="https://…" />
           <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Require acknowledgement</label>
           <button type="submit" style={{ marginTop: 12 }}>Publish policy</button>
         </form>
@@ -750,6 +767,111 @@ function Packages() {
           <label className="consent" style={{ marginTop: 10 }}><input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} /> Active (available for new subscriptions)</label>
           <button type="submit" style={{ marginTop: 12 }}>Save package</button>
         </form>
+      </div>
+    </>
+  );
+}
+
+/* ============================ SHARED: document viewer ============================ */
+function DocModal({ title, meta, children, onClose }: { title: string; meta?: string; children: any; onClose: () => void }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "6vh 16px", overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, maxWidth: 720, width: "100%", padding: 26, boxShadow: "var(--shadow-lg)" }}>
+        <div className="flex-between" style={{ marginBottom: 4 }}><h2 style={{ margin: 0 }}>{title}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
+        {meta && <div className="mono muted" style={{ marginBottom: 14 }}>{meta}</div>}
+        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ INTEGRATIONS (catalogue) ============================ */
+function Integrations() {
+  const { data, err } = useJson<any>("/api/platform/integrations");
+  const [q, setQ] = useState("");
+  const connectors: any[] = data?.connectors ?? [];
+  const catLabels: any = data?.categoryLabels ?? {};
+  const statusLabels: any = data?.statusLabels ?? {};
+  const filtered = connectors.filter((c) => !q || `${c.name} ${c.provider} ${c.description} ${c.category}`.toLowerCase().includes(q.toLowerCase()));
+  const byCat: Record<string, any[]> = {};
+  filtered.forEach((c) => { (byCat[c.category] = byCat[c.category] || []).push(c); });
+  const statusClass = (s: string) => s === "available" ? "active" : s === "beta" ? "trial" : s === "unavailable" ? "suspended" : "archived";
+  return (
+    <div className="panel">
+      <div className="flex-between"><h2>Integration catalogue</h2><span className="muted">{connectors.length} connectors</span></div>
+      <p className="sub">Everything your schools can connect — MIS, LMS, payments, safeguarding, GPS/telematics, maps and more. Schools configure their own connections in each school&apos;s Integration Hub.</p>
+      {err && <Notice msg={{ k: "err", t: err }} />}
+      <input placeholder="Search connectors…" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 18 }} />
+      {Object.keys(byCat).sort().map((cat) => (
+        <div key={cat} style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 12.5, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--muted)", margin: "0 0 10px" }}>{catLabels[cat] || cat} <span style={{ opacity: .6 }}>· {byCat[cat].length}</span></h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 12 }}>
+            {byCat[cat].map((c) => (
+              <div key={c.key} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 15, background: "#fff", boxShadow: "var(--shadow-sm)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}><span style={{ fontSize: 22 }}>{c.icon}</span><strong>{c.name}</strong></div>
+                <div className="muted" style={{ fontSize: 12.5, minHeight: 36, lineHeight: 1.45 }}>{c.description}</div>
+                <div style={{ marginTop: 9, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <span className={`badge ${statusClass(c.status)}`}>{statusLabels[c.status] || c.status}</span>
+                  <span className="badge role">{c.connectionType}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {connectors.length === 0 && !err && <p className="muted">Loading…</p>}
+    </div>
+  );
+}
+
+/* ============================ TROUBLESHOOTING ============================ */
+function Troubleshooting() {
+  const health = useJson<any>("/api/health");
+  const email = useJson<any>("/api/platform/email-config");
+  const plans = useJson<any>("/api/plans");
+  const policies = useJson<any>("/api/platform/policies");
+  const videos = useJson<any>("/api/cms/videos?admin=1");
+  const checks = [
+    { label: "Database connection", ok: health.data?.status === "ok", detail: health.data?.db === "up" ? "Connected" : (health.err || "Checking…") },
+    { label: "Email provider configured", ok: !!email.data && email.data.provider !== "console", detail: email.data ? (email.data.provider === "console" ? "Console mode — set a real provider in the Email tab" : `Provider: ${email.data.provider}`) : "Checking…" },
+    { label: "Subscription packages", ok: (plans.data?.plans?.length ?? 0) > 0, detail: `${plans.data?.plans?.length ?? 0} packages` },
+    { label: "Default policies loaded", ok: (policies.data?.policies?.length ?? 0) > 0, detail: `${policies.data?.policies?.length ?? 0} policies` },
+    { label: "Help videos loaded", ok: (videos.data?.videos?.length ?? 0) > 0, detail: `${videos.data?.videos?.length ?? 0} videos` },
+  ];
+  const guide = [
+    { t: "A school's data isn't syncing", s: "Open the school → Integration Hub → check the connection's last run and error log. Re-enter credentials if the provider reports an authentication error, and confirm the scheduled sync is running (see “scheduled jobs” below)." },
+    { t: "Emails aren't arriving", s: "Go to the Email tab and set a real provider (SMTP / Postmark / SES / Resend) with a verified sender address. In console mode, emails are only logged, never sent — password-reset and notification emails won't reach users until this is set." },
+    { t: "A user can't log in", s: "Check the user isn't suspended and their tenant isn't suspended (Tenants tab). Ask them to use “Forgot password?” on the sign-in page to reset. If MFA is enabled, confirm they're using a current authenticator code." },
+    { t: "Scheduled jobs (report release / integration sync) aren't running", s: "These fire from an external scheduler calling /api/cron/release-reports and /api/cron/integration-sync with an x-cron-secret header. Confirm the scheduler is active and the secret matches the CRON_SECRET environment variable." },
+    { t: "A custom domain shows a certificate or 'not secure' error", s: "Confirm the domain's DNS points to the app host and the HTTPS certificate has been issued. Allow time for DNS changes to propagate before retrying." },
+    { t: "Starter content (policies, packages, videos) is missing", s: "Use the “Load default content” button at the top of this console — it's safe to run anytime and won't overwrite anything you've edited." },
+  ];
+  return (
+    <>
+      <div className="panel">
+        <h2>System status &amp; diagnostics</h2>
+        <p className="sub">Live checks of the core platform services.</p>
+        <table>
+          <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+          <tbody>
+            {checks.map((c) => (
+              <tr key={c.label}><td><strong>{c.label}</strong></td>
+                <td>{c.ok ? <span className="badge active">OK</span> : <span className="badge suspended">Attention</span>}</td>
+                <td className="muted">{c.detail}</td></tr>
+            ))}
+          </tbody>
+        </table>
+        {health.data?.time && <p className="mono muted" style={{ marginTop: 10 }}>Last checked: {new Date(health.data.time).toLocaleString()}</p>}
+      </div>
+      <div className="panel">
+        <h2>Troubleshooting guide</h2>
+        <p className="sub">Common issues and how to resolve them before contacting support.</p>
+        {guide.map((g) => (
+          <details key={g.t} style={{ borderTop: "1px solid var(--line)", padding: "12px 0" }}>
+            <summary style={{ cursor: "pointer", fontWeight: 650 }}>{g.t}</summary>
+            <p className="muted" style={{ marginTop: 8, lineHeight: 1.6 }}>{g.s}</p>
+          </details>
+        ))}
       </div>
     </>
   );
