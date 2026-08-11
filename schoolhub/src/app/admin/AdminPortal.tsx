@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, createContext, useContext } from "react";
+import AppShell, { NavGroup } from "@/components/AppShell";
+import { ConfirmDialog, useBeforeUnload } from "@/components/ConfirmDialog";
+
+// Shared "unsaved changes" flag so forms can warn before navigating away.
+const DirtyCtx = createContext<{ setDirty: (v: boolean) => void }>({ setDirty: () => {} });
+function useDirty(dirty: boolean) {
+  const { setDirty } = useContext(DirtyCtx);
+  useEffect(() => { setDirty(dirty); return () => setDirty(false); }, [dirty, setDirty]);
+}
 
 /* ---------------------------------------------------------------------------
  * Platform super-admin console. Every area below is wired to an existing API
@@ -60,34 +69,86 @@ const TABS: { key: string; label: string }[] = [
   { key: "audit", label: "Audit trail" },
 ];
 
-export default function AdminPortal() {
+const NAV: NavGroup[] = [
+  { label: "Overview", items: [
+    { key: "tenants", label: "Schools", icon: "🏫" },
+    { key: "groups", label: "Trusts & Groups", icon: "🏛️" },
+  ] },
+  { label: "Content", items: [
+    { key: "templates", label: "Templates", icon: "🧩" },
+    { key: "policies", label: "Policies", icon: "📋" },
+    { key: "videos", label: "Help Videos", icon: "🎬" },
+  ] },
+  { label: "Integrations", items: [
+    { key: "integrations", label: "Integrations", icon: "🔌" },
+    { key: "crm", label: "CRM", icon: "📇" },
+    { key: "email", label: "Platform comms", icon: "✉️" },
+  ] },
+  { label: "Insights", items: [
+    { key: "subs", label: "Subscriptions", icon: "💳" },
+    { key: "packages", label: "Packages", icon: "📦" },
+    { key: "revenue", label: "Parent Revenue", icon: "💰" },
+    { key: "usage", label: "User analytics", icon: "📊" },
+    { key: "reports", label: "Reports", icon: "📈" },
+  ] },
+  { label: "Support & Settings", items: [
+    { key: "support", label: "Help desk", icon: "🛟" },
+    { key: "trouble", label: "Troubleshooting", icon: "🩺" },
+    { key: "team", label: "Team & access", icon: "🧑‍💼" },
+    { key: "audit", label: "Audit trail", icon: "🗂️" },
+  ] },
+];
+const TITLES: Record<string, string> = {
+  tenants: "Schools", groups: "Trusts & Groups", templates: "Templates", policies: "Policies",
+  videos: "Help Videos", integrations: "Integrations", crm: "CRM", email: "Platform comms",
+  subs: "Subscriptions", packages: "Packages", revenue: "Parent Revenue", usage: "User analytics",
+  reports: "Reports", support: "Help desk", trouble: "Troubleshooting", team: "Team & Access", audit: "Audit trail",
+};
+
+export default function AdminPortal({ email = "" }: { email?: string }) {
   const [tab, setTab] = useState<string>("tenants");
+  const [dirty, setDirty] = useState(false);
+  const [pendingNav, setPendingNav] = useState<string | null>(null);
+  useBeforeUnload(dirty);
+
+  function navigate(k: string) {
+    if (k === tab) return;
+    if (dirty) { setPendingNav(k); return; }
+    setTab(k);
+  }
+
   return (
-    <>
-      <SeedRow />
-      <div className="tabs" style={{ flexWrap: "wrap" }}>
-        {TABS.map((t) => (
-          <button key={t.key} className={tab === t.key ? "active" : ""} onClick={() => setTab(t.key)}>{t.label}</button>
-        ))}
-      </div>
-      {tab === "tenants" && <Tenants />}
-      {tab === "groups" && <Groups />}
-      {tab === "team" && <Team />}
-      {tab === "subs" && <Subscriptions />}
-      {tab === "packages" && <Packages />}
-      {tab === "revenue" && <ParentRevenue />}
-      {tab === "usage" && <Usage />}
-      {tab === "reports" && <Reports />}
-      {tab === "templates" && <Templates />}
-      {tab === "policies" && <Policies />}
-      {tab === "crm" && <Crm />}
-      {tab === "videos" && <Videos />}
-      {tab === "support" && <Support />}
-      {tab === "email" && <EmailCfg />}
-      {tab === "integrations" && <Integrations />}
-      {tab === "trouble" && <Troubleshooting />}
-      {tab === "audit" && <AuditTab />}
-    </>
+    <DirtyCtx.Provider value={{ setDirty }}>
+      <AppShell brandSub="Platform" nav={NAV} active={tab} onNavigate={navigate}
+        title={TITLES[tab] || "Platform administration"} email={email} role="Platform Super Admin">
+        <SeedRow />
+        {tab === "tenants" && <Tenants />}
+        {tab === "groups" && <Groups />}
+        {tab === "team" && <Team />}
+        {tab === "subs" && <Subscriptions />}
+        {tab === "packages" && <Packages />}
+        {tab === "revenue" && <ParentRevenue />}
+        {tab === "usage" && <Usage />}
+        {tab === "reports" && <Reports />}
+        {tab === "templates" && <Templates />}
+        {tab === "policies" && <Policies />}
+        {tab === "crm" && <Crm />}
+        {tab === "videos" && <Videos />}
+        {tab === "support" && <Support />}
+        {tab === "email" && <EmailCfg />}
+        {tab === "integrations" && <Integrations />}
+        {tab === "trouble" && <Troubleshooting />}
+        {tab === "audit" && <AuditTab />}
+      </AppShell>
+      <ConfirmDialog
+        open={pendingNav !== null}
+        title="Leave this page?"
+        message="You have unsaved changes on this page. If you leave now, those changes will be lost."
+        confirmLabel="Leave without saving"
+        onConfirm={() => { setDirty(false); if (pendingNav) setTab(pendingNav); setPendingNav(null); }}
+        onCancel={() => setPendingNav(null)}
+      />
+    </DirtyCtx.Provider>
   );
 }
 
@@ -100,9 +161,13 @@ function Tenants() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   const [form, setForm] = useState({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "trial", groupId: "" });
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; run: () => void }>(null);
+  const dirty = !!(form.schoolName || form.slug || form.adminName || form.adminEmail || form.adminPassword);
+  useDirty(dirty);
   const load = useCallback(async () => {
     const [s, g] = await Promise.all([fetch("/api/schools").then((r) => r.json()), fetch("/api/groups").then((r) => r.json())]);
-    setSchools(s.schools ?? []); setGroups(g.groups ?? []);
+    setSchools(s.schools ?? []); setGroups(g.groups ?? []); setSel({});
   }, []);
   useEffect(() => { load(); }, [load]);
   async function onboard(e: React.FormEvent) {
@@ -111,11 +176,18 @@ function Tenants() {
     catch (e: any) { setMsg({ k: "err", t: e.message || "Failed to onboard school" }); }
   }
   async function setStatus(id: string, status: string) { await send(`/api/schools/${id}`, { status }, "PATCH"); load(); }
+  const selectedIds = schools.filter((s) => sel[s.id]).map((s) => s.id);
+  const allChecked = schools.length > 0 && selectedIds.length === schools.length;
+  function toggleAll() { const v = !allChecked; const next: Record<string, boolean> = {}; schools.forEach((s) => (next[s.id] = v)); setSel(next); }
+  async function bulk(status: string) { for (const id of selectedIds) await send(`/api/schools/${id}`, { status }, "PATCH"); load(); }
+  function askSuspend(s: School) { setConfirm({ title: `Suspend "${s.name}"?`, message: "This immediately blocks all access for everyone at this school until you reactivate it.", label: "Suspend school", run: () => { setStatus(s.id, "suspended"); setConfirm(null); } }); }
+  function askBulkSuspend() { setConfirm({ title: `Suspend ${selectedIds.length} school${selectedIds.length > 1 ? "s" : ""}?`, message: "This immediately blocks all access for everyone at the selected schools until you reactivate them.", label: "Suspend selected", run: () => { bulk("suspended"); setConfirm(null); } }); }
   const active = schools.filter((s) => s.status === "active").length;
   const suspended = schools.filter((s) => s.status === "suspended").length;
   const students = schools.reduce((n, s) => n + (s._count?.students ?? 0), 0);
   return (
     <>
+      <ConfirmDialog open={!!confirm} title={confirm?.title || ""} message={confirm?.message || ""} confirmLabel={confirm?.label || "Confirm"} onConfirm={() => confirm?.run()} onCancel={() => setConfirm(null)} />
       <div className="stat-grid" style={{ marginBottom: 20 }}>
         <div className="stat"><div className="n">{schools.length}</div><div className="l">Tenants</div></div>
         <div className="stat"><div className="n">{active}</div><div className="l">Active</div></div>
@@ -124,21 +196,30 @@ function Tenants() {
       </div>
       <div className="panel">
         <h2>Schools</h2>
-        <p className="sub">Every school is an isolated tenant. Suspend to block all access instantly.</p>
+        <p className="sub">Every school is an isolated tenant. Select rows to act on several at once. Suspend to block all access instantly.</p>
+        {selectedIds.length > 0 && (
+          <div className="bulkbar">
+            <span>{selectedIds.length} selected</span>
+            <button className="secondary small" onClick={() => bulk("active")}>Reactivate</button>
+            <button className="danger small" onClick={askBulkSuspend}>Suspend</button>
+            <button className="secondary small" onClick={() => setSel({})}>Clear</button>
+          </div>
+        )}
         <table>
-          <thead><tr><th>School</th><th>Trust</th><th>Plan</th><th>Users</th><th>Status</th><th className="right">Actions</th></tr></thead>
+          <thead><tr><th className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></th><th>School</th><th>Trust</th><th>Plan</th><th>Users</th><th>Status</th><th className="right">Actions</th></tr></thead>
           <tbody>
             {schools.map((s) => (
               <tr key={s.id}>
+                <td className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={!!sel[s.id]} onChange={(e) => setSel({ ...sel, [s.id]: e.target.checked })} aria-label={`Select ${s.name}`} /></td>
                 <td><strong>{s.name}</strong><div className="mono muted">/{s.slug}</div></td>
                 <td>{s.group?.name ?? <span className="muted">—</span>}</td>
                 <td>{s.subscription?.plan?.name ?? <span className="muted">—</span>}</td>
                 <td>{s._count?.memberships ?? 0}</td>
                 <td><span className={`badge ${s.status}`}>{s.status}</span></td>
-                <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => setStatus(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => setStatus(s.id, "suspended")}>Suspend</button>}</td>
+                <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => setStatus(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => askSuspend(s)}>Suspend</button>}</td>
               </tr>
             ))}
-            {schools.length === 0 && <Empty cols={6} text="No tenants yet — onboard one below." />}
+            {schools.length === 0 && <Empty cols={7} text="No tenants yet — onboard one below." />}
           </tbody>
         </table>
       </div>
