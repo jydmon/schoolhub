@@ -2,38 +2,27 @@ import React from "react";
 import { View, Text, ActivityIndicator } from "react-native";
 import { useAuth } from "@/auth/AuthContext";
 import LoginScreen from "@/auth/LoginScreen";
-import ParentApp from "@/apps/parent";
-import TeacherApp from "@/apps/teacher";
-import DriverApp from "@/apps/driver";
-import AdminApp from "@/apps/admin";
-import { T } from "@/ui/kit";
+import AppShell from "@/app/shell";
+import { Logo, T } from "@/ui/kit";
 
 /**
- * One shared codebase renders four role experiences. The active app is chosen
- * from the server-issued bootstrap (`boot.appRole`), so a single install adapts
- * to whoever signs in — parent, teacher, driver or school administrator.
+ * One shared codebase renders five role experiences (parent, teacher, driver,
+ * school admin, student). The active app is chosen from the sign-in role; a
+ * single install adapts to whoever signs in.
  */
 function Splash() {
   return (
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: T.bg }}>
-      <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: T.brand, marginBottom: 14 }} />
-      <Text style={{ fontSize: 20, fontWeight: "800", color: T.ink, marginBottom: 12 }}>SchoolHub</Text>
+      <Logo size={56} radius={16} />
+      <Text style={{ fontSize: 22, fontWeight: "800", color: T.ink, marginTop: 14, marginBottom: 12 }}>SIPlat</Text>
       <ActivityIndicator color={T.brand} />
     </View>
   );
 }
 
-const APPS: Record<string, React.ComponentType> = {
-  parent: ParentApp,
-  teacher: TeacherApp,
-  driver: DriverApp,
-  admin: AdminApp,
-};
-
 export default function RootNavigator() {
   const { loading, boot } = useAuth();
   if (loading) return <Splash />;
   if (!boot) return <LoginScreen />;
-  const App = APPS[boot.appRole] || ParentApp;
-  return <App />;
+  return <AppShell roleKey={boot.role} />;
 }
