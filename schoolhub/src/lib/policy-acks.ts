@@ -47,7 +47,7 @@ export async function policyAckStatus(policyId: string) {
   return ackStatus(policy as unknown as PolicyLike, audienceUserIds, acks as unknown as AckLike[]);
 }
 
-async function audienceUsers(schoolId: string | null, audience: string): Promise<string[]> {
+export async function audienceUsers(schoolId: string | null, audience: string): Promise<string[]> {
   if (!schoolId) {
     // Platform-wide policy: approximate audience by role across all schools.
     const roles = audience === "teachers" ? ["Teacher"] : audience === "parents" ? ["Parent"] : ["Parent", "Teacher"];

@@ -865,7 +865,7 @@ function Policies() {
           </div>
           <div className="row">
             <div><label>Category</label><select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{["safeguarding", "data_protection", "behaviour", "transport", "general"].map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
-            <div><label>Audience</label><select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}>{["all", "parents", "teachers", "staff"].map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
+            <div><label>Audience / user group</label><select value={f.audience} onChange={(e) => setF({ ...f, audience: e.target.value })}>{["all", "parents", "teachers", "staff"].map((a) => <option key={a} value={a}>{a}</option>)}</select></div>
           </div>
           <label>Summary</label>
           <textarea rows={2} value={f.summary} onChange={(e) => setF({ ...f, summary: e.target.value })} />
@@ -877,14 +877,66 @@ function Policies() {
             <div><label>Lifecycle status</label><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{POLICY_STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
             <div />
           </div>
-          <label className="consent" style={{ display: "block", marginTop: 6 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Require acknowledgement</label>
+          <label className="consent" style={{ display: "block", marginTop: 6 }}><input type="checkbox" checked={f.requireAck} onChange={(e) => setF({ ...f, requireAck: e.target.checked })} /> Mandatory — require every user in the audience to acknowledge (optional if unticked)</label>
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
             <button type="submit">{editId ? "Update policy" : "Save policy"}</button>
             {editId && <button type="button" className="secondary" onClick={reset}>Cancel edit</button>}
           </div>
         </form>
       </div>
+      <PolicyCompliance />
     </>
+  );
+}
+
+function PolicyCompliance() {
+  const { data } = useJson<any>("/api/platform/policies/compliance");
+  if (!data) return <div className="panel"><p className="muted">Loading compliance…</p></div>;
+  const summaries: any[] = data.summaries ?? [];
+  return (
+    <div className="panel">
+      <div className="flex-between">
+        <div><h2>Policy compliance</h2><p className="sub" style={{ marginBottom: 0 }}>Acceptance of mandatory, published policies. <strong>{data.totalOutstanding}</strong> outstanding acknowledgement(s) across {summaries.length} policy(ies).</p></div>
+        <a href="/api/platform/policies/compliance?format=csv"><button className="secondary">Export outstanding (CSV)</button></a>
+      </div>
+
+      <table style={{ marginTop: 12 }}>
+        <thead><tr><th>Policy</th><th>Scope</th><th>Audience</th><th>Version</th><th>Accepted</th><th>Outstanding</th><th>Rate</th></tr></thead>
+        <tbody>
+          {summaries.map((s) => (
+            <tr key={s.policyId}>
+              <td><strong>{s.title}</strong></td><td className="muted">{s.scope}</td><td className="muted">{s.audience}</td><td className="muted">{s.version}</td>
+              <td>{s.acceptedCount}/{s.audienceCount}</td>
+              <td>{s.outstandingCount > 0 ? <span className="badge suspended">{s.outstandingCount}</span> : <span className="badge active">0</span>}</td>
+              <td><span className={`badge ${s.rate >= 100 ? "active" : s.rate >= 60 ? "trial" : "suspended"}`}>{s.rate}%</span></td>
+            </tr>
+          ))}
+          {summaries.length === 0 && <Empty cols={7} text="No mandatory published policies yet." />}
+        </tbody>
+      </table>
+
+      <div className="row" style={{ marginTop: 14, gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)" }}>Outstanding by role</h3>
+          {(data.byRole ?? []).length === 0 ? <p className="muted">None.</p> : (data.byRole).map((r: any) => <div key={r.role} className="flex-between" style={{ padding: "3px 0" }}><span>{r.role}</span><span className="badge suspended">{r.count}</span></div>)}
+        </div>
+        <div style={{ flex: 1 }}>
+          <h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)" }}>Outstanding by school</h3>
+          {(data.bySchool ?? []).length === 0 ? <p className="muted">None.</p> : (data.bySchool).map((r: any) => <div key={r.school} className="flex-between" style={{ padding: "3px 0" }}><span>{r.school}</span><span className="badge suspended">{r.count}</span></div>)}
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: 16, fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)" }}>Outstanding by user{data.outstanding.length > 50 ? " (first 50 — export CSV for all)" : ""}</h3>
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>School</th><th>Policy</th></tr></thead>
+        <tbody>
+          {data.outstanding.slice(0, 50).map((r: any, i: number) => (
+            <tr key={i}><td>{r.name}</td><td className="muted">{r.email}</td><td className="muted">{r.role}</td><td className="muted">{r.school}</td><td>{r.policy} <span className="muted">v{r.version}</span></td></tr>
+          ))}
+          {data.outstanding.length === 0 && <Empty cols={5} text="Everyone in scope is compliant. 🎉" />}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
