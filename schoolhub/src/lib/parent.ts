@@ -25,6 +25,7 @@ export async function getChildren(userId: string) {
     linkId: l.id,
     student: l.student,
     school: l.student.school,
+    relationship: (l as any).relationship ?? null,
     startTime: l.student.school.config?.schoolStartTime ?? "08:45",
   }));
 }

@@ -13,6 +13,7 @@ const PARENT_NAV: NavGroup[] = [
     { key: "rewards", label: "Rewards", icon: "⭐" },
     { key: "reports", label: "School reports", icon: "📄" },
     { key: "messaging", label: "Messaging", icon: "✉️" },
+    { key: "profile", label: "My profile", icon: "🙂" },
     { key: "preferences", label: "Preferences", icon: "⚙️" },
   ] },
 ];

@@ -24,7 +24,11 @@ export async function policiesForUser(userId: string) {
   const applicable = policies.filter((p) => audienceOk(p.audience));
 
   const acks = await prisma.policyAck.findMany({ where: { userId, policyId: { in: applicable.map((p) => p.id) } } });
-  const ackKey = new Set(acks.map((a) => `${a.policyId}:${a.version}`));
+  const ackAt = new Map(acks.map((a) => [`${a.policyId}:${a.version}`, a.acknowledgedAt]));
+  // Any prior acceptance of this policy (possibly an older version) — used to
+  // flag "updated, needs re-acknowledgement" in the compliance history.
+  const anyAckAt = new Map<string, Date>();
+  for (const a of acks) { const prev = anyAckAt.get(a.policyId); if (!prev || a.acknowledgedAt > prev) anyAckAt.set(a.policyId, a.acknowledgedAt); }
 
   return applicable.map((p) => ({
     id: p.id,
@@ -38,6 +42,8 @@ export async function policiesForUser(userId: string) {
     fileUrl: p.fileUrl,
     effectiveDate: p.effectiveDate,
     mandatory: p.requireAck,
-    acknowledged: ackKey.has(`${p.id}:${p.version}`),
+    acknowledged: ackAt.has(`${p.id}:${p.version}`),
+    acceptedAt: ackAt.get(`${p.id}:${p.version}`) ?? null,
+    previouslyAcceptedAt: anyAckAt.get(p.id) ?? null,
   }));
 }

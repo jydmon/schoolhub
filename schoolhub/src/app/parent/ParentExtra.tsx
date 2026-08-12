@@ -397,3 +397,94 @@ export function ParentMessaging() {
     </div>
   );
 }
+
+// ---- Parent profile: personal details, children/schools, compliance history ----
+export function ParentProfile() {
+  const [data, setData] = useState<any>(null);
+  const [f, setF] = useState<any>({ fullName: "", phone: "", photoUrl: "" });
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const load = useCallback(async () => {
+    const d = await fetch("/api/parent/profile").then((r) => r.json());
+    setData(d);
+    if (d.profile) setF({ fullName: d.profile.fullName || "", phone: d.profile.phone || "", photoUrl: d.profile.photoUrl || "" });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    const res = await fetch("/api/me/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+    const d = await res.json().catch(() => ({}));
+    setMsg(res.ok && !d.error ? { kind: "ok", text: "Profile updated." } : { kind: "err", text: d.error || "Failed" });
+    load();
+  }
+  async function acceptPolicy(id: string) {
+    await fetch("/api/me/policies", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ policyId: id }) });
+    load();
+  }
+  const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
+  if (!data) return <div className="panel" id="p-profile"><p className="muted">Loading profile…</p></div>;
+  const p = data.profile || {};
+
+  return (
+    <div id="p-profile">
+      <div className="panel">
+        <h2>My profile</h2>
+        <p className="sub">Your personal and contact details. Your email is managed by your school and can&apos;t be changed here.</p>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <form onSubmit={save}>
+          <div className="row">
+            <div><label>Full name</label><input value={f.fullName} onChange={(e) => setF({ ...f, fullName: e.target.value })} /></div>
+            <div><label>Email (read-only)</label><input value={p.email || ""} readOnly disabled /></div>
+          </div>
+          <div className="row">
+            <div><label>Mobile number</label><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+44…" /></div>
+            <div><label>Photo URL</label><input value={f.photoUrl} onChange={(e) => setF({ ...f, photoUrl: e.target.value })} placeholder="https://…" /></div>
+          </div>
+          <button type="submit" style={{ marginTop: 12 }}>Save profile</button>
+          <span className="muted" style={{ fontSize: 12, marginLeft: 10 }}>Two-factor: {p.mfaEnabled ? "on" : "off"} · manage notification channels under Preferences.</span>
+        </form>
+      </div>
+
+      <div className="panel">
+        <h2>My children</h2>
+        <p className="sub">Everyone linked to your account{data.schools?.length > 1 ? ` across ${data.schools.length} schools` : ""}.</p>
+        <table>
+          <thead><tr><th>Child</th><th>Year</th><th>Relationship</th><th>School</th></tr></thead>
+          <tbody>
+            {(data.children || []).map((c: any) => (
+              <tr key={c.id}><td><strong>{c.name}</strong><div className="mono muted" style={{ fontSize: 11 }}>{c.reference}</div></td><td className="muted">{c.yearGroup || "—"}</td><td className="muted">{c.relationship || "—"}</td><td>{c.schoolName}</td></tr>
+            ))}
+            {(data.children || []).length === 0 && <tr><td colSpan={4} className="muted">No children linked yet — contact your school.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="panel">
+        <h2>Terms &amp; policy compliance</h2>
+        <p className="sub">A record of what you&apos;ve accepted, and anything still outstanding.</p>
+
+        <h3 style={{ fontSize: 14, margin: "6px 0" }}>{data.terms?.title || "Terms of Business"}</h3>
+        <p style={{ margin: 0 }}>
+          {data.terms?.acceptedAt ? <>Accepted version <strong>{data.terms.acceptedVersion}</strong> on {dt(data.terms.acceptedAt)} {data.terms.upToDate ? <span className="badge active">up to date</span> : <span className="badge suspended">update required</span>}</> : <span className="badge suspended">not yet accepted</span>}
+        </p>
+
+        <h3 style={{ fontSize: 14, margin: "16px 0 6px" }}>Policies accepted</h3>
+        {(data.policies?.accepted || []).length === 0 ? <p className="muted">None recorded yet.</p> : (
+          <table><thead><tr><th>Policy</th><th>Version</th><th>Accepted</th></tr></thead><tbody>
+            {data.policies.accepted.map((a: any) => (<tr key={a.id}><td>{a.title}{a.mandatory ? <span className="badge role" style={{ marginLeft: 6 }}>mandatory</span> : null}</td><td className="muted">{a.version}</td><td className="mono muted" style={{ fontSize: 12 }}>{dt(a.acceptedAt)}</td></tr>))}
+          </tbody></table>
+        )}
+
+        <h3 style={{ fontSize: 14, margin: "16px 0 6px" }}>Outstanding {(data.policies?.outstanding || []).length > 0 && <span className="badge suspended">{data.policies.outstanding.length}</span>}</h3>
+        {(data.policies?.outstanding || []).length === 0 ? <p className="muted">You&apos;re fully up to date. 🎉</p> : (
+          <table><thead><tr><th>Policy</th><th>Version</th><th className="right"></th></tr></thead><tbody>
+            {data.policies.outstanding.map((o: any) => (
+              <tr key={o.id}><td>{o.title}{o.updated ? <span className="badge trial" style={{ marginLeft: 6 }}>updated — re-accept</span> : null}</td><td className="muted">{o.version}</td>
+                <td className="right nowrap"><a className="linklike" style={{ fontSize: 12 }} href={`/api/me/policies/${o.id}/pdf`} target="_blank" rel="noreferrer">View</a>{" · "}<button className="small" onClick={() => acceptPolicy(o.id)}>Accept</button></td></tr>
+            ))}
+          </tbody></table>
+        )}
+      </div>
+    </div>
+  );
+}
