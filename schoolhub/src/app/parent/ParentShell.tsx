@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
-import ParentDashboard from "./ParentDashboard";
+import ParentPages from "./ParentPages";
 
 const PARENT_NAV: NavGroup[] = [
+  { label: "Assistant", items: [
+    { key: "assistant", label: "Ask AI Assistant", icon: "🤖" },
+  ] },
   { label: "Family", items: [
     { key: "overview", label: "Overview", icon: "🏠" },
     { key: "children", label: "My children", icon: "👧" },
@@ -21,18 +24,22 @@ const PARENT_NAV: NavGroup[] = [
   ] },
 ];
 
+const TITLES: Record<string, string> = {
+  assistant: "Ask AI Assistant", overview: "Family dashboard", children: "My children",
+  calendar: "Calendar", timetable: "Timetable", notifications: "Notifications",
+  transport: "Transport", trips: "Trips", rewards: "Rewards", reports: "School reports",
+  messaging: "Messaging", profile: "My profile", preferences: "Preferences",
+};
+
 export default function ParentShell({ email = "" }: { email?: string }) {
   const [active, setActive] = useState("overview");
   function nav(k: string) {
     setActive(k);
-    if (typeof document !== "undefined") {
-      const el = document.getElementById("p-" + k);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
   return (
-    <AppShell brandSub="Family" nav={PARENT_NAV} active={active} onNavigate={nav} title="Family dashboard" email={email} role="Parent / Guardian">
-      <ParentDashboard />
+    <AppShell brandSub="Family" nav={PARENT_NAV} active={active} onNavigate={nav} title={TITLES[active] || "Family dashboard"} email={email} role="Parent / Guardian">
+      <ParentPages active={active} onNavigate={nav} />
     </AppShell>
   );
 }
