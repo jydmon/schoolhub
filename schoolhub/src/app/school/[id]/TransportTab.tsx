@@ -23,7 +23,7 @@ export default function TransportTab({ schoolId }: { schoolId: string }) {
   );
 }
 
-function Control({ schoolId }: { schoolId: string }) {
+export function Control({ schoolId }: { schoolId: string }) {
   const [data, setData] = useState<any>(null);
   const [msg, setMsg] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -110,7 +110,7 @@ function Control({ schoolId }: { schoolId: string }) {
   );
 }
 
-function Vehicles({ schoolId }: { schoolId: string }) {
+export function Vehicles({ schoolId }: { schoolId: string }) {
   const [rows, setRows] = useState<any[]>([]);
   const [f, setF] = useState({ reference: "", label: "", capacity: 16, type: "minibus" });
   const load = useCallback(async () => setRows((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []), [schoolId]);
@@ -132,7 +132,7 @@ function Vehicles({ schoolId }: { schoolId: string }) {
   );
 }
 
-function Routes({ schoolId }: { schoolId: string }) {
+export function Routes({ schoolId }: { schoolId: string }) {
   const [rows, setRows] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
@@ -141,8 +141,9 @@ function Routes({ schoolId }: { schoolId: string }) {
   const load = useCallback(async () => {
     setRows((await fetch(`/api/schools/${schoolId}/routes`).then((r) => r.json())).routes ?? []);
     setVehicles((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []);
-    const users = (await fetch(`/api/schools/${schoolId}/users`).then((r) => r.json())).users ?? [];
-    setDrivers(users.filter((u: any) => u.role === "Driver"));
+    // Transport-scoped driver list (works for transport managers without MANAGE_USERS).
+    const drv = (await fetch(`/api/schools/${schoolId}/transport/drivers`).then((r) => r.json())).drivers ?? [];
+    setDrivers(drv);
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
   // Parse a stop line: Name | kind | HH:MM | address-or-"lat,lng"
@@ -186,7 +187,7 @@ function Routes({ schoolId }: { schoolId: string }) {
           <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
           <div><label>Type</label><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option>fixed</option><option>flexible</option></select></div>
           <div><label>Vehicle</label><select value={f.vehicleId} onChange={(e) => setF({ ...f, vehicleId: e.target.value })}><option value="">—</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label || v.reference}</option>)}</select></div>
-          <div><label>Driver</label><select value={f.driverUserId} onChange={(e) => setF({ ...f, driverUserId: e.target.value })}><option value="">—</option>{drivers.map((d) => <option key={d.user.id} value={d.user.id}>{d.user.fullName}</option>)}</select></div>
+          <div><label>Driver</label><select value={f.driverUserId} onChange={(e) => setF({ ...f, driverUserId: e.target.value })}><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.fullName}</option>)}</select></div>
           <div><label>Termly fee (£)</label><input type="number" step="0.01" value={f.termlyFee} onChange={(e) => setF({ ...f, termlyFee: e.target.value })} /></div>
           <div><label>Cut-off</label><input value={f.cutoffTime} onChange={(e) => setF({ ...f, cutoffTime: e.target.value })} /></div>
         </div>
@@ -198,12 +199,12 @@ function Routes({ schoolId }: { schoolId: string }) {
   );
 }
 
-function Profiles({ schoolId }: { schoolId: string }) {
+export function Profiles({ schoolId }: { schoolId: string }) {
   const [students, setStudents] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
   const load = useCallback(async () => {
-    setStudents((await fetch(`/api/schools/${schoolId}/students`).then((r) => r.json())).students ?? []);
+    setStudents((await fetch(`/api/schools/${schoolId}/transport/students`).then((r) => r.json())).students ?? []);
     setRoutes((await fetch(`/api/schools/${schoolId}/routes`).then((r) => r.json())).routes ?? []);
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
@@ -227,7 +228,7 @@ function Profiles({ schoolId }: { schoolId: string }) {
 
 const FEE_STATUS: [string, string][] = [["none", "Not invoiced"], ["invoiced", "Invoiced"], ["paid", "Paid"], ["waived", "Waived"]];
 const feeBadge = (s: string) => s === "paid" ? "active" : s === "invoiced" ? "trial" : s === "waived" ? "archived" : "suspended";
-function Fees({ schoolId }: { schoolId: string }) {
+export function Fees({ schoolId }: { schoolId: string }) {
   const [data, setData] = useState<any>(null);
   const load = useCallback(async () => setData(await fetch(`/api/schools/${schoolId}/transport/fees`).then((r) => r.json())), [schoolId]);
   useEffect(() => { load(); }, [load]);
@@ -267,7 +268,7 @@ function Fees({ schoolId }: { schoolId: string }) {
   );
 }
 
-function Requests({ schoolId }: { schoolId: string }) {
+export function Requests({ schoolId }: { schoolId: string }) {
   const [rows, setRows] = useState<any[]>([]);
   const load = useCallback(async () => setRows((await fetch(`/api/schools/${schoolId}/transport/requests`).then((r) => r.json())).requests ?? []), [schoolId]);
   useEffect(() => { load(); }, [load]);
@@ -288,7 +289,7 @@ function Requests({ schoolId }: { schoolId: string }) {
 
 const ENQ_STATUS: [string, string][] = [["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"]];
 const enqBadge = (s: string) => s === "resolved" ? "active" : s === "in_progress" ? "trial" : "suspended";
-function Enquiries({ schoolId }: { schoolId: string }) {
+export function Enquiries({ schoolId }: { schoolId: string }) {
   const [rows, setRows] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [f, setF] = useState({ name: "", contact: "", studentId: "", subject: "", message: "" });
@@ -296,7 +297,7 @@ function Enquiries({ schoolId }: { schoolId: string }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const load = useCallback(async () => {
     setRows((await fetch(`/api/schools/${schoolId}/transport/enquiries`).then((r) => r.json())).enquiries ?? []);
-    setStudents((await fetch(`/api/schools/${schoolId}/students`).then((r) => r.json())).students ?? []);
+    setStudents((await fetch(`/api/schools/${schoolId}/transport/students`).then((r) => r.json())).students ?? []);
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
   async function add(e: React.FormEvent) {
@@ -350,7 +351,7 @@ function Enquiries({ schoolId }: { schoolId: string }) {
 // Self-contained live map: projects the driver's GPS trail + geocoded route
 // stops into an SVG (no map tiles, no API key). Shows the current position, the
 // recent trail, stops, and a keyless "open in OpenStreetMap" link.
-function LiveMap({ track }: { track: any }) {
+export function LiveMap({ track }: { track: any }) {
   const stops: any[] = track.stops || [];
   const trail: any[] = track.trail || [];
   const last = track.last;

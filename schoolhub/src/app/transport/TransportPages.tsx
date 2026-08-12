@@ -1,0 +1,382 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
+function dueState(dateStr?: string | null) {
+  if (!dateStr) return null;
+  const days = Math.round((new Date(`${dateStr}T00:00:00`).getTime() - Date.now()) / 86400000);
+  if (days < 0) return { label: `overdue ${-days}d`, tone: "suspended" as const };
+  if (days <= 30) return { label: `${days}d`, tone: "trial" as const };
+  if (days <= 60) return { label: `${days}d`, tone: "archived" as const };
+  return { label: "ok", tone: "active" as const };
+}
+function DueCell({ date }: { date?: string | null }) {
+  if (!date) return <span className="muted">—</span>;
+  const s = dueState(date)!;
+  return <span><span className="mono muted" style={{ fontSize: 12 }}>{date}</span> <span className={`badge ${s.tone}`}>{s.label}</span></span>;
+}
+
+/* ------------------------------- Dashboard ------------------------------- */
+export function TMDashboard({ schoolId, onNavigate }: { schoolId: string; onNavigate: (k: string) => void }) {
+  const [journeys, setJourneys] = useState<any>(null);
+  const [incidents, setIncidents] = useState<any>(null);
+  const [msgs, setMsgs] = useState<any>(null);
+  const [drivers, setDrivers] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/schools/${schoolId}/transport/journeys`).then((r) => r.json()).then(setJourneys).catch(() => {});
+    fetch(`/api/schools/${schoolId}/transport/incidents?status=open`).then((r) => r.json()).then(setIncidents).catch(() => {});
+    fetch(`/api/schools/${schoolId}/transport/messages`).then((r) => r.json()).then(setMsgs).catch(() => {});
+    fetch(`/api/schools/${schoolId}/transport/drivers`).then((r) => r.json()).then((d) => setDrivers(d.drivers ?? [])).catch(() => {});
+  }, [schoolId]);
+
+  const js: any[] = journeys?.journeys ?? [];
+  const active = js.filter((j) => j.status === "started" || j.status === "approaching").length;
+  const completed = js.filter((j) => j.status === "completed").length;
+  const delayed = js.filter((j) => j.delayMinutes > 0).length;
+  const onboard = js.reduce((s, j) => s + (j.onboard || 0), 0);
+
+  const complianceAlerts = useMemo(() => {
+    const out: { driver: string; item: string; date: string; tone: string }[] = [];
+    for (const d of drivers) {
+      const p = d.profile; if (!p) continue;
+      for (const [item, date] of [["Licence", p.licenceExpiry], ["DBS", p.dbsExpiry], ["Medical", p.medicalDue]] as [string, string][]) {
+        const s = dueState(date); if (s && (s.tone === "suspended" || s.tone === "trial")) out.push({ driver: d.fullName, item, date, tone: s.tone });
+      }
+    }
+    return out;
+  }, [drivers]);
+
+  return (
+    <>
+      <div className="panel">
+        <h2 style={{ margin: 0 }}>Transport control — today</h2>
+        <p className="sub" style={{ marginBottom: 10 }}>{journeys?.date || ""}</p>
+        <div className="stat-grid">
+          <div className="stat"><div className="n">{js.length}</div><div className="l">Journeys today</div></div>
+          <div className="stat"><div className="n" style={{ color: active ? "#16a34a" : undefined }}>{active}</div><div className="l">On the road now</div></div>
+          <div className="stat"><div className="n">{onboard}</div><div className="l">Pupils onboard</div></div>
+          <div className="stat"><div className="n" style={{ color: delayed ? "#dc2626" : undefined }}>{delayed}</div><div className="l">Delayed</div></div>
+          <div className="stat"><div className="n">{completed}</div><div className="l">Completed</div></div>
+        </div>
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => onNavigate("control")}>Open control centre</button>
+          <button className="secondary" onClick={() => onNavigate("incidents")}>Incidents{incidents?.counts?.open ? ` (${incidents.counts.open})` : ""}</button>
+          <button className="secondary" onClick={() => onNavigate("messages")}>Driver messages{msgs?.totalUnread ? ` (${msgs.totalUnread})` : ""}</button>
+        </div>
+      </div>
+
+      <div className="row" style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div className="panel" style={{ flex: 1, minWidth: 300 }}>
+          <div className="flex-between"><h2 style={{ fontSize: 16, margin: 0 }}>Open incidents</h2><button className="secondary small" onClick={() => onNavigate("incidents")}>All</button></div>
+          {(incidents?.incidents ?? []).length === 0 ? <p className="muted" style={{ marginTop: 8 }}>No open incidents. ✅</p> : (incidents.incidents.slice(0, 6).map((i: any) => (
+            <div key={i.id} style={{ borderTop: "1px solid var(--line)", padding: "7px 0", fontSize: 13 }}>
+              <strong style={{ textTransform: "capitalize" }}>{String(i.type).replace(/_/g, " ")}</strong> {i.severity === "high" && <span className="badge suspended">high</span>}
+              <div className="muted" style={{ fontSize: 12 }}>{i.routeName ? `${i.routeName} · ` : ""}{i.reportedBy || ""} · {dt(i.at)}</div>
+              {i.notes && <div className="muted" style={{ fontSize: 12 }}>{i.notes}</div>}
+            </div>
+          )))}
+        </div>
+        <div className="panel" style={{ flex: 1, minWidth: 300 }}>
+          <div className="flex-between"><h2 style={{ fontSize: 16, margin: 0 }}>Driver compliance alerts</h2><button className="secondary small" onClick={() => onNavigate("drivers")}>Drivers</button></div>
+          {complianceAlerts.length === 0 ? <p className="muted" style={{ marginTop: 8 }}>No licence/DBS/medical items due. ✅</p> : complianceAlerts.slice(0, 8).map((a, i) => (
+            <div key={i} className="flex-between" style={{ borderTop: "1px solid var(--line)", padding: "7px 0", fontSize: 13 }}>
+              <span>{a.driver} — {a.item}</span><DueCell date={a.date} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* --------------------------------- Fleet --------------------------------- */
+export function TMFleet({ schoolId }: { schoolId: string }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [f, setF] = useState({ reference: "", label: "", capacity: 16, type: "minibus" });
+  const [edit, setEdit] = useState<any | null>(null);
+  const [msg, setMsg] = useState("");
+  const load = useCallback(async () => setRows((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []), [schoolId]);
+  useEffect(() => { load(); }, [load]);
+  async function add(e: React.FormEvent) { e.preventDefault(); await fetch(`/api/schools/${schoolId}/vehicles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, capacity: Number(f.capacity) }) }); setF({ reference: "", label: "", capacity: 16, type: "minibus" }); load(); }
+  async function saveEdit() {
+    const res = await fetch(`/api/schools/${schoolId}/vehicles/${edit.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
+    const d = await res.json(); if (d.error) { setMsg(d.error); return; } setEdit(null); load();
+  }
+  return (
+    <>
+      <div className="panel">
+        <h2 style={{ margin: 0 }}>Fleet</h2>
+        <p className="sub">Your vehicles and their compliance reminders. MOT / insurance / service / tax dates are flagged as they approach or fall overdue.</p>
+        {msg && <div className="notice err">{msg}</div>}
+        <table>
+          <thead><tr><th>Reg / ref</th><th>Label</th><th>Type</th><th>Cap.</th><th>MOT</th><th>Insurance</th><th>Service</th><th>Tax</th><th className="right"></th></tr></thead>
+          <tbody>
+            {rows.map((v) => (
+              <tr key={v.id} style={{ opacity: v.active === false ? 0.5 : 1 }}>
+                <td className="mono">{v.reference}</td><td>{v.label || "—"}</td><td>{v.type}</td><td>{v.capacity}</td>
+                <td><DueCell date={v.motDue} /></td><td><DueCell date={v.insuranceDue} /></td><td><DueCell date={v.serviceDue} /></td><td><DueCell date={v.taxDue} /></td>
+                <td className="right"><button className="secondary small" onClick={() => setEdit({ id: v.id, reference: v.reference, label: v.label || "", capacity: v.capacity, type: v.type, motDue: v.motDue || "", insuranceDue: v.insuranceDue || "", serviceDue: v.serviceDue || "", taxDue: v.taxDue || "", notes: v.notes || "", active: v.active })}>Edit</button></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={9} className="muted">No vehicles yet.</td></tr>}
+          </tbody>
+        </table>
+        <form onSubmit={add} style={{ marginTop: 12 }}><div className="row">
+          <div><label>Reference</label><input value={f.reference} onChange={(e) => setF({ ...f, reference: e.target.value })} required /></div>
+          <div><label>Label</label><input value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} /></div>
+          <div><label>Type</label><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option>minibus</option><option>coach</option><option>car</option></select></div>
+          <div><label>Capacity</label><input type="number" value={f.capacity} onChange={(e) => setF({ ...f, capacity: e.target.value as any })} /></div>
+          <div style={{ display: "flex", alignItems: "flex-end" }}><button>Add vehicle</button></div>
+        </div></form>
+      </div>
+
+      {edit && (
+        <div className="modal-overlay" onClick={() => setEdit(null)}>
+          <div className="modal" style={{ maxWidth: 560, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>{edit.reference}</h2><button className="secondary small" onClick={() => setEdit(null)}>Close</button></div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div style={{ flex: 2 }}><label>Label</label><input value={edit.label} onChange={(e) => setEdit({ ...edit, label: e.target.value })} /></div>
+              <div><label>Type</label><select value={edit.type} onChange={(e) => setEdit({ ...edit, type: e.target.value })}><option>minibus</option><option>coach</option><option>car</option></select></div>
+              <div><label>Capacity</label><input type="number" value={edit.capacity} onChange={(e) => setEdit({ ...edit, capacity: e.target.value })} /></div>
+            </div>
+            <div className="row">
+              <div><label>MOT due</label><input type="date" value={edit.motDue} onChange={(e) => setEdit({ ...edit, motDue: e.target.value })} /></div>
+              <div><label>Insurance due</label><input type="date" value={edit.insuranceDue} onChange={(e) => setEdit({ ...edit, insuranceDue: e.target.value })} /></div>
+            </div>
+            <div className="row">
+              <div><label>Service due</label><input type="date" value={edit.serviceDue} onChange={(e) => setEdit({ ...edit, serviceDue: e.target.value })} /></div>
+              <div><label>Tax due</label><input type="date" value={edit.taxDue} onChange={(e) => setEdit({ ...edit, taxDue: e.target.value })} /></div>
+            </div>
+            <label>Notes</label><input value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} />
+            <label className="chip" style={{ marginTop: 10, display: "inline-flex" }}><input type="checkbox" style={{ width: "auto" }} checked={edit.active !== false} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> In service</label>
+            <div style={{ marginTop: 12 }}><button onClick={saveEdit}>Save vehicle</button></div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* -------------------------------- Drivers -------------------------------- */
+export function TMDrivers({ schoolId }: { schoolId: string }) {
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [edit, setEdit] = useState<any | null>(null);
+  const [assign, setAssign] = useState<any | null>(null);
+  const [msg, setMsg] = useState("");
+  const load = useCallback(async () => {
+    const d = await fetch(`/api/schools/${schoolId}/transport/drivers`).then((r) => r.json());
+    setDrivers(d.drivers ?? []); setRoutes(d.routes ?? []);
+  }, [schoolId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function saveProfile() {
+    const res = await fetch(`/api/schools/${schoolId}/transport/drivers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
+    const d = await res.json(); if (d.error) { setMsg(d.error); return; } setEdit(null); load();
+  }
+  async function doAssign() {
+    // Fetch current route drivers, append this driver (dedupe by session), PUT.
+    const cur = (await fetch(`/api/schools/${schoolId}/routes/${assign.routeId}/drivers`).then((r) => r.json())).drivers ?? [];
+    const kept = cur.filter((c: any) => !(c.driverUserId === assign.driverUserId));
+    const next = [...kept.map((c: any) => ({ driverUserId: c.driverUserId, role: c.role, session: c.session })), { driverUserId: assign.driverUserId, role: assign.role, session: assign.session }];
+    const res = await fetch(`/api/schools/${schoolId}/routes/${assign.routeId}/drivers`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ drivers: next }) });
+    const d = await res.json(); if (d.error) { setMsg(d.error); return; } setAssign(null); load();
+  }
+  async function unassign(driverUserId: string, routeId: string) {
+    const cur = (await fetch(`/api/schools/${schoolId}/routes/${routeId}/drivers`).then((r) => r.json())).drivers ?? [];
+    const next = cur.filter((c: any) => c.driverUserId !== driverUserId).map((c: any) => ({ driverUserId: c.driverUserId, role: c.role, session: c.session }));
+    // setRouteDrivers requires >=1 driver; if empty, we can't PUT — send a delete-all convention if supported, else keep last.
+    if (next.length === 0) { setMsg("A route needs at least one driver; assign a replacement first."); return; }
+    await fetch(`/api/schools/${schoolId}/routes/${routeId}/drivers`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ drivers: next }) });
+    load();
+  }
+
+  return (
+    <>
+      <div className="panel">
+        <h2 style={{ margin: 0 }}>Drivers</h2>
+        <p className="sub">Your driving team, their licence / DBS / medical compliance, and route assignments.</p>
+        {msg && <div className="notice err">{msg}</div>}
+        <table>
+          <thead><tr><th>Driver</th><th>Licence</th><th>DBS</th><th>Medical</th><th>Routes</th><th className="right"></th></tr></thead>
+          <tbody>
+            {drivers.map((d) => (
+              <tr key={d.id}>
+                <td><strong>{d.fullName}</strong><div className="mono muted" style={{ fontSize: 11 }}>{d.email}{d.phone ? ` · ${d.phone}` : ""}</div></td>
+                <td>{d.profile?.licenceExpiry ? <DueCell date={d.profile.licenceExpiry} /> : <span className="muted">—</span>}{d.profile?.licenceClasses ? <div className="muted" style={{ fontSize: 11 }}>{d.profile.licenceClasses}</div> : null}</td>
+                <td><DueCell date={d.profile?.dbsExpiry} /></td>
+                <td><DueCell date={d.profile?.medicalDue} /></td>
+                <td>{d.assignments.length === 0 ? <span className="muted">—</span> : d.assignments.map((a: any) => (
+                  <div key={a.id} style={{ fontSize: 12 }}>{a.routeName} <span className="muted">({a.role}/{a.session})</span> <button className="linklike" style={{ fontSize: 11, color: "var(--danger)" }} onClick={() => unassign(d.id, a.routeId)}>remove</button></div>
+                ))}</td>
+                <td className="right nowrap">
+                  <button className="secondary small" onClick={() => setEdit({ userId: d.id, name: d.fullName, phone: d.phone || "", licenceNumber: d.profile?.licenceNumber || "", licenceClasses: d.profile?.licenceClasses || "", licenceExpiry: d.profile?.licenceExpiry || "", dbsExpiry: d.profile?.dbsExpiry || "", medicalDue: d.profile?.medicalDue || "", status: d.profile?.status || "active", notes: d.profile?.notes || "" })}>Profile</button>{" "}
+                  <button className="small" disabled={routes.length === 0} onClick={() => setAssign({ driverUserId: d.id, name: d.fullName, routeId: routes[0]?.id || "", role: "primary", session: "all" })}>Assign</button>
+                </td>
+              </tr>
+            ))}
+            {drivers.length === 0 && <tr><td colSpan={6} className="muted">No drivers yet. Add users with the Driver role in the School portal (People → Users).</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {edit && (
+        <div className="modal-overlay" onClick={() => setEdit(null)}>
+          <div className="modal" style={{ maxWidth: 560, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>{edit.name}</h2><button className="secondary small" onClick={() => setEdit(null)}>Close</button></div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div><label>Phone</label><input value={edit.phone} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></div>
+              <div><label>Status</label><select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+            </div>
+            <div className="row">
+              <div><label>Licence number</label><input value={edit.licenceNumber} onChange={(e) => setEdit({ ...edit, licenceNumber: e.target.value })} /></div>
+              <div><label>Classes</label><input value={edit.licenceClasses} onChange={(e) => setEdit({ ...edit, licenceClasses: e.target.value })} placeholder="D1, D" /></div>
+            </div>
+            <div className="row">
+              <div><label>Licence expiry</label><input type="date" value={edit.licenceExpiry} onChange={(e) => setEdit({ ...edit, licenceExpiry: e.target.value })} /></div>
+              <div><label>DBS expiry</label><input type="date" value={edit.dbsExpiry} onChange={(e) => setEdit({ ...edit, dbsExpiry: e.target.value })} /></div>
+              <div><label>Medical due</label><input type="date" value={edit.medicalDue} onChange={(e) => setEdit({ ...edit, medicalDue: e.target.value })} /></div>
+            </div>
+            <label>Notes</label><input value={edit.notes} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} />
+            <div style={{ marginTop: 12 }}><button onClick={saveProfile}>Save driver profile</button></div>
+          </div>
+        </div>
+      )}
+
+      {assign && (
+        <div className="modal-overlay" onClick={() => setAssign(null)}>
+          <div className="modal" style={{ maxWidth: 480, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Assign {assign.name}</h2><button className="secondary small" onClick={() => setAssign(null)}>Close</button></div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div style={{ flex: 2 }}><label>Route</label><select value={assign.routeId} onChange={(e) => setAssign({ ...assign, routeId: e.target.value })}>{routes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+              <div><label>Role</label><select value={assign.role} onChange={(e) => setAssign({ ...assign, role: e.target.value })}><option>primary</option><option>relief</option><option>secondary</option></select></div>
+              <div><label>Session</label><select value={assign.session} onChange={(e) => setAssign({ ...assign, session: e.target.value })}><option value="all">All</option><option value="am">AM</option><option value="pm">PM</option></select></div>
+            </div>
+            <div style={{ marginTop: 12 }}><button onClick={doAssign}>Assign to route</button></div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ------------------------------- Incidents ------------------------------- */
+const SEV_BADGE: Record<string, string> = { high: "suspended", medium: "trial", low: "archived" };
+export function TMIncidents({ schoolId }: { schoolId: string }) {
+  const [data, setData] = useState<any>(null);
+  const [filter, setFilter] = useState("");
+  const [resolving, setResolving] = useState<any | null>(null);
+  const load = useCallback(async () => setData(await fetch(`/api/schools/${schoolId}/transport/incidents${filter ? `?status=${filter}` : ""}`).then((r) => r.json())), [schoolId, filter]);
+  useEffect(() => { load(); }, [load]);
+  async function patch(id: string, body: any) { await fetch(`/api/schools/${schoolId}/transport/incidents`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...body }) }); setResolving(null); load(); }
+  const rows: any[] = data?.incidents ?? [];
+  return (
+    <>
+      <div className="panel">
+        <h2 style={{ margin: 0 }}>Incident log</h2>
+        <p className="sub">Everything reported by drivers or raised by failed vehicle checks. Acknowledge and resolve to keep the log clean.</p>
+        <div className="chips" style={{ marginTop: 8 }}>
+          {[["", "All"], ["open", `Open (${data?.counts?.open ?? 0})`], ["acknowledged", `Acknowledged (${data?.counts?.acknowledged ?? 0})`], ["resolved", `Resolved (${data?.counts?.resolved ?? 0})`]].map(([k, l]) => (
+            <button key={k} className={filter === k ? "" : "secondary"} onClick={() => setFilter(k)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div className="panel">
+        <table>
+          <thead><tr><th>When</th><th>Type</th><th>Severity</th><th>Route</th><th>Reported by</th><th>Status</th><th className="right"></th></tr></thead>
+          <tbody>
+            {rows.map((i) => (
+              <tr key={i.id}>
+                <td className="mono muted" style={{ fontSize: 12, whiteSpace: "nowrap" }}>{dt(i.at)}</td>
+                <td><strong style={{ textTransform: "capitalize" }}>{String(i.type).replace(/_/g, " ")}</strong>{i.notes ? <div className="muted" style={{ fontSize: 11 }}>{i.notes}</div> : null}</td>
+                <td><span className={`badge ${SEV_BADGE[i.severity] || "archived"}`}>{i.severity}</span></td>
+                <td>{i.routeName || <span className="muted">—</span>}{i.session ? <span className="muted"> ({i.session})</span> : null}</td>
+                <td>{i.reportedBy || <span className="muted">—</span>}</td>
+                <td><span className={`badge ${i.status === "resolved" ? "active" : i.status === "acknowledged" ? "trial" : "suspended"}`}>{i.status}</span>{i.resolutionNote ? <div className="muted" style={{ fontSize: 11 }}>{i.resolutionNote}</div> : null}</td>
+                <td className="right nowrap">
+                  {i.status === "open" && <button className="secondary small" onClick={() => patch(i.id, { status: "acknowledged" })}>Acknowledge</button>}{" "}
+                  {i.status !== "resolved" && <button className="small" onClick={() => setResolving(i)}>Resolve</button>}
+                  {i.status === "resolved" && <button className="secondary small" onClick={() => patch(i.id, { status: "open" })}>Reopen</button>}
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={7} className="muted">No incidents{filter ? " in this view" : ""}.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {resolving && (
+        <div className="modal-overlay" onClick={() => setResolving(null)}>
+          <div className="modal" style={{ maxWidth: 460, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Resolve incident</h2><button className="secondary small" onClick={() => setResolving(null)}>Close</button></div>
+            <p className="sub" style={{ textTransform: "capitalize" }}>{String(resolving.type).replace(/_/g, " ")}{resolving.notes ? ` — ${resolving.notes}` : ""}</p>
+            <label>Resolution note (optional)</label>
+            <ResolveBox onResolve={(note) => patch(resolving.id, { status: "resolved", resolutionNote: note })} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+function ResolveBox({ onResolve }: { onResolve: (note: string) => void }) {
+  const [note, setNote] = useState("");
+  return (<><input value={note} onChange={(e) => setNote(e.target.value)} placeholder="How was it resolved?" /><div style={{ marginTop: 12 }}><button onClick={() => onResolve(note)}>Mark resolved</button></div></>);
+}
+
+/* -------------------------------- Messages ------------------------------- */
+export function TMMessages({ schoolId }: { schoolId: string }) {
+  const [threads, setThreads] = useState<any[]>([]);
+  const [active, setActive] = useState<any | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [text, setText] = useState("");
+  const loadThreads = useCallback(async () => { const d = await fetch(`/api/schools/${schoolId}/transport/messages`).then((r) => r.json()); setThreads(d.threads ?? []); }, [schoolId]);
+  useEffect(() => { loadThreads(); }, [loadThreads]);
+  const openThread = useCallback(async (t: any) => {
+    setActive(t);
+    const d = await fetch(`/api/schools/${schoolId}/transport/messages?driver=${t.driverId}`).then((r) => r.json());
+    setMessages(d.messages ?? []); loadThreads();
+  }, [schoolId, loadThreads]);
+  async function send() {
+    if (!text.trim() || !active) return;
+    await fetch(`/api/schools/${schoolId}/transport/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ driverUserId: active.driverId, body: text.trim() }) });
+    setText(""); openThread(active);
+  }
+  return (
+    <div className="panel">
+      <h2 style={{ margin: 0 }}>Driver messages</h2>
+      <p className="sub">Two-way messages with your drivers. They see these in the driver app; replies land back here.</p>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
+        <div style={{ flex: "0 0 240px", minWidth: 220 }}>
+          {threads.map((t) => (
+            <button key={t.driverId} onClick={() => openThread(t)} style={{ display: "block", width: "100%", textAlign: "left", background: active?.driverId === t.driverId ? "#eef2ff" : "transparent", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginBottom: 6, cursor: "pointer", color: "var(--ink)" }}>
+              <div style={{ fontWeight: 700 }}>{t.driverName}{t.unread > 0 && <span className="badge" style={{ background: "#dc2626", color: "#fff", marginLeft: 6 }}>{t.unread}</span>}</div>
+              {t.last && <div className="muted" style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.last.direction === "to_office" ? "↩ " : ""}{t.last.body}</div>}
+            </button>
+          ))}
+          {threads.length === 0 && <p className="muted">No drivers yet.</p>}
+        </div>
+        <div style={{ flex: 1, minWidth: 300 }}>
+          {!active ? <p className="muted">Select a driver to view the conversation.</p> : (
+            <>
+              <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12, minHeight: 240, maxHeight: 420, overflowY: "auto", background: "#fafbfe" }}>
+                {messages.length === 0 ? <p className="muted">No messages yet — say hello.</p> : messages.map((m) => (
+                  <div key={m.id} style={{ textAlign: m.direction === "to_driver" ? "right" : "left", margin: "6px 0" }}>
+                    <div style={{ display: "inline-block", maxWidth: "80%", background: m.direction === "to_driver" ? "#4f46e5" : "#fff", color: m.direction === "to_driver" ? "#fff" : "var(--ink)", border: "1px solid var(--line)", borderRadius: 10, padding: "6px 10px", fontSize: 13 }}>
+                      {m.body}
+                      <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{new Date(m.createdAt).toLocaleString()}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="row" style={{ marginTop: 10 }}>
+                <div style={{ flex: 4 }}><input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder={`Message ${active.driverName}…`} /></div>
+                <div style={{ display: "flex", alignItems: "flex-end" }}><button onClick={send}>Send</button></div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

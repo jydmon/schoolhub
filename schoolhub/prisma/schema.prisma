@@ -882,6 +882,12 @@ model Vehicle {
   type      String  @default("minibus") // minibus | coach | car
   gpsSource String  @default("driver_phone") // driver_phone | vehicle_gps | telematics | tracking_link | device
   active    Boolean @default(true)
+  // Fleet compliance reminders (YYYY-MM-DD). Surfaced as due/overdue alerts.
+  motDue        String?
+  insuranceDue  String?
+  serviceDue    String?
+  taxDue        String?
+  notes         String?
   createdAt DateTime @default(now())
 
   routes    Route[]
@@ -1100,9 +1106,15 @@ model Incident {
   reportedByUserId String?
   type             String  @default("other")
   notes            String?
+  severity         String  @default("low") // low | medium | high
+  status           String  @default("open") // open | acknowledged | resolved
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  resolutionNote   String?
   at               DateTime @default(now())
 
   @@index([schoolId])
+  @@index([status])
 }
 
 /// In-app notification (parent transport & trip updates). Delivery to push/SMS/email
@@ -2279,4 +2291,61 @@ model GuardianAudit {
   @@index([relationshipId])
   @@index([studentId])
   @@index([createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// Driver & Transport Manager portals
+// ----------------------------------------------------------------------------
+
+/// Driver personnel record: licence, checks and status. Scalar-only (additive).
+model DriverProfile {
+  id            String @id @default(cuid())
+  schoolId      String
+  userId        String @unique
+  phone         String?
+  licenceNumber String?
+  licenceClasses String? // e.g. "D1, D"
+  licenceExpiry String? // YYYY-MM-DD
+  dbsExpiry     String? // YYYY-MM-DD
+  medicalDue    String? // YYYY-MM-DD
+  status        String  @default("active") // active | inactive
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([schoolId])
+}
+
+/// Two-way messages between the transport office and a driver.
+model DriverMessage {
+  id           String @id @default(cuid())
+  schoolId     String
+  driverUserId String
+  direction    String // to_driver | to_office
+  senderUserId String?
+  senderName   String?
+  body         String
+  read         Boolean @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([driverUserId])
+}
+
+/// Pre-trip vehicle safety check completed by a driver.
+model VehicleCheck {
+  id           String @id @default(cuid())
+  schoolId     String
+  vehicleId    String?
+  journeyId    String?
+  driverUserId String
+  date         String  // YYYY-MM-DD
+  passed       Boolean @default(true)
+  defects      String?
+  itemsJson    String  @default("{}") // { itemKey: "ok"|"defect"|"na" }
+  at           DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([vehicleId])
+  @@index([driverUserId])
 }
