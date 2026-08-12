@@ -729,6 +729,7 @@ export function ImportTab({ schoolId }: { schoolId: string }) {
               <option value="pupil_reports">Pupil reports</option>
               <option value="menus">Meals &amp; menus</option>
               <option value="trips">Trips &amp; events</option>
+              <option value="attendance">Attendance</option>
             </select>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end" }}>

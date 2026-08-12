@@ -166,4 +166,10 @@ export const IMPORT_TEMPLATES: Record<
     headers: ["title", "date", "destination", "departureTime", "returnTime", "purpose", "venue", "status"],
     example: ["Ecomuseum trip — Year 4", "2026-09-18", "Ecomuseum", "08:30", "15:00", "Curriculum enrichment", "Ecomuseum", "planned"],
   },
+  attendance: {
+    // Daily attendance. Match a pupil by student reference. session = am|pm|day.
+    // status = present|late|authorised|unauthorised|excused|absent. Date is YYYY-MM-DD.
+    headers: ["studentReference", "date", "session", "status", "note"],
+    example: ["STU-1001", "2026-09-08", "am", "present", ""],
+  },
 };

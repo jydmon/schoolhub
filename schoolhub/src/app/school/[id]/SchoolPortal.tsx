@@ -12,6 +12,7 @@ import TripsTab from "./TripsTab";
 import BehaviourTab from "./BehaviourTab";
 import CommsTab from "./CommsTab";
 import MealsTab from "./MealsTab";
+import AttendanceTab from "./AttendanceTab";
 import ReportsTab from "./ReportsTab";
 import OpsTab from "./OpsTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
@@ -27,6 +28,7 @@ const SCHOOL_NAV: NavGroup[] = [
   ] },
   { label: "Learning & care", items: [
     { key: "calendar", label: "Calendar", icon: "📅" },
+    { key: "attendance", label: "Attendance", icon: "✅" },
     { key: "behaviour", label: "Behaviour", icon: "⭐" },
     { key: "reports", label: "Pupils reports", icon: "📄" },
     { key: "knowledge", label: "Knowledge", icon: "📚" },
@@ -53,7 +55,7 @@ const SCHOOL_NAV: NavGroup[] = [
 ];
 const SCHOOL_TITLES: Record<string, string> = {
   ops: "Operations", students: "Students", guardians: "Guardians", staff: "Staff", users: "Users & roles",
-  calendar: "Calendar", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
+  calendar: "Calendar", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
   config: "Configuration", audit: "Audit", security: "My security",
@@ -79,7 +81,7 @@ type Props = {
 
 export default function SchoolPortal({ schoolId, roles, initial, email = "" }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "security";
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "security";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
   const manageTabs: [Tab, string][] = [
@@ -88,6 +90,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
     ["guardians", "Guardians"],
     ["staff", "Staff"],
     ["calendar", "Calendar"],
+    ["attendance", "Attendance"],
     ["transport", "Transport"],
     ["trips", "Trips"],
     ["behaviour", "Behaviour"],
@@ -114,6 +117,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
       {tab === "guardians" && canManage && <GuardiansTab schoolId={schoolId} />}
       {tab === "staff" && canManage && <StaffTab schoolId={schoolId} />}
       {tab === "calendar" && canManage && <CalendarTab schoolId={schoolId} />}
+      {tab === "attendance" && canManage && <AttendanceTab schoolId={schoolId} />}
       {tab === "transport" && canManage && <TransportTab schoolId={schoolId} />}
       {tab === "trips" && canManage && <TripsTab schoolId={schoolId} />}
       {tab === "behaviour" && canManage && <BehaviourTab schoolId={schoolId} />}

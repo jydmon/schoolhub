@@ -494,6 +494,22 @@ export async function runImport(opts: {
         const existing = await prisma.trip.findFirst({ where: { schoolId, title, date } });
         if (existing) { await prisma.trip.update({ where: { id: existing.id }, data }); updated++; }
         else { await prisma.trip.create({ data: { schoolId, title, ...data } }); created++; }
+      } else if (type === "attendance") {
+        const ref = row.studentReference?.trim();
+        if (!ref) throw new Error("studentReference is required");
+        const date = (row.date || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("date must be YYYY-MM-DD");
+        const student = await prisma.student.findUnique({ where: { schoolId_reference: { schoolId, reference: ref } } });
+        if (!student) throw new Error(`student "${ref}" not found`);
+        const session = ["am", "pm", "day"].includes((row.session || "").trim().toLowerCase()) ? row.session.trim().toLowerCase() : "am";
+        const status = ["present", "late", "authorised", "unauthorised", "excused", "absent"].includes((row.status || "").trim().toLowerCase()) ? row.status.trim().toLowerCase() : "present";
+        const dupKey = "att:" + student.id + ":" + date + ":" + session;
+        if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "studentReference", message: `duplicate attendance for "${ref}" ${date} ${session} in file`, fatal: false }); continue; }
+        seen.add(dupKey);
+        const data = { status, note: row.note?.trim() || null, source: "import" };
+        const existing = await prisma.attendanceRecord.findUnique({ where: { studentId_date_session: { studentId: student.id, date, session } } });
+        if (existing) { await prisma.attendanceRecord.update({ where: { id: existing.id }, data }); updated++; }
+        else { await prisma.attendanceRecord.create({ data: { schoolId, studentId: student.id, date, session, ...data } }); created++; }
       }
     } catch (err) {
       errors.push({ row: line, message: (err as Error).message, fatal: true });

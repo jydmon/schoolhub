@@ -283,6 +283,7 @@ model Student {
   updatedAt     DateTime @updatedAt
 
   guardianLinks      GuardianLink[]
+  attendance         AttendanceRecord[]
   emergencyContacts  EmergencyContact[]
   approvedCollectors ApprovedCollector[]
   eventLinks         EventStudent[]
@@ -2123,4 +2124,24 @@ model CmsPage {
   updatedAt      DateTime @updatedAt
 
   @@index([status])
+}
+
+/// Daily attendance marks (AM/PM/day session). Fed by an integration/MIS (API,
+/// read-only) or imported/entered manually. Unique per pupil+date+session.
+model AttendanceRecord {
+  id        String  @id @default(cuid())
+  schoolId  String
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  date      String  // YYYY-MM-DD
+  session   String  @default("am") // am | pm | day
+  status    String  @default("present") // present | late | authorised | unauthorised | excused | absent
+  note      String?
+  source    String  @default("manual") // manual | import | api — api rows are read-only
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, date, session])
+  @@index([schoolId, date])
+  @@index([schoolId, status])
 }
