@@ -16,6 +16,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
   const [f, setF] = useState<any>({ weekOf: "", day: "Mon", yearGroup: "", meal: "lunch", course: "main", name: "", description: "", allergens: "", vegetarian: false, vegan: false, price: "" });
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<any | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
   const sel = useSel();
 
   const load = useCallback(async () => {
@@ -38,7 +39,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
     if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Could not add item" }); return; }
     setMsg({ kind: "ok", text: "Menu item added." });
     setF({ ...f, name: "", description: "", allergens: "", price: "", vegetarian: false, vegan: false });
-    load();
+    setShowAdd(false); load();
   }
   async function toggle(i: any) {
     setMsg(null);
@@ -60,8 +61,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
     <>
       <ModuleImportCard schoolId={schoolId} type="menus" title="Import meals & menus" hint="No catering system? Bulk-add the weekly menu from a CSV (weekOf date, class/year, veg/vegan, price in pounds)." />
       <div className="panel">
-        <h2>Meals &amp; menus</h2>
-        <p className="sub">Weekly canteen menu — from your catering system (read-only) or added/imported here. Shows week, class/year, veg/vegan options, allergens and price. Click an item to open its details.</p>
+        <div className="flex-between"><div><h2>Meals &amp; menus</h2><p className="sub" style={{ marginBottom: 0 }}>Weekly canteen menu — from your catering system (read-only) or added/imported here. Shows week, class/year, veg/vegan options, allergens and price. Click an item to open its details.</p></div><button onClick={() => setShowAdd(true)}>New menu item</button></div>
         {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
           <input placeholder="Filter menu…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
@@ -97,33 +97,38 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
         </table>
       </div>
 
-      <div className="panel">
-        <h2>Add a menu item</h2>
-        <form onSubmit={add}>
-          <div className="row">
-            <div><label>Week commencing</label><input type="date" value={f.weekOf} onChange={(e) => setF({ ...f, weekOf: e.target.value })} /></div>
-            <div><label>Day</label><select value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })}>{DAYS.map((d) => <option key={d}>{d}</option>)}</select></div>
-            <div><label>Class / year (blank = all)</label><input value={f.yearGroup} onChange={(e) => setF({ ...f, yearGroup: e.target.value })} placeholder="Year 4" /></div>
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal" style={{ maxWidth: 680, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>New menu item</h2><button className="secondary small" onClick={() => setShowAdd(false)}>Close</button></div>
+            {msg && msg.kind === "err" && <div className="notice err" style={{ marginTop: 10 }}>{msg.text}</div>}
+            <form onSubmit={add} style={{ marginTop: 12 }}>
+              <div className="row">
+                <div><label>Week commencing</label><input type="date" value={f.weekOf} onChange={(e) => setF({ ...f, weekOf: e.target.value })} /></div>
+                <div><label>Day</label><select value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })}>{DAYS.map((d) => <option key={d}>{d}</option>)}</select></div>
+                <div><label>Class / year (blank = all)</label><input value={f.yearGroup} onChange={(e) => setF({ ...f, yearGroup: e.target.value })} placeholder="Year 4" /></div>
+              </div>
+              <div className="row">
+                <div><label>Meal</label><select value={f.meal} onChange={(e) => setF({ ...f, meal: e.target.value })}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></div>
+                <div><label>Course</label><select value={f.course} onChange={(e) => setF({ ...f, course: e.target.value })}>{COURSES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                <div><label>Price (£)</label><input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="2.50" /></div>
+              </div>
+              <div className="row">
+                <div style={{ flex: 2 }}><label>Item name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
+              </div>
+              <label>Description</label>
+              <input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
+              <label>Allergens (comma-separated)</label>
+              <input value={f.allergens} onChange={(e) => setF({ ...f, allergens: e.target.value })} placeholder="gluten, milk" />
+              <div className="chips" style={{ marginTop: 10 }}>
+                <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegetarian} onChange={(e) => setF({ ...f, vegetarian: e.target.checked })} /> Vegetarian option</label>
+                <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegan} onChange={(e) => setF({ ...f, vegan: e.target.checked })} /> Vegan option</label>
+              </div>
+              <button type="submit" style={{ marginTop: 14 }}>Add item</button>
+            </form>
           </div>
-          <div className="row">
-            <div><label>Meal</label><select value={f.meal} onChange={(e) => setF({ ...f, meal: e.target.value })}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></div>
-            <div><label>Course</label><select value={f.course} onChange={(e) => setF({ ...f, course: e.target.value })}>{COURSES.map((c) => <option key={c}>{c}</option>)}</select></div>
-            <div><label>Price (£)</label><input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="2.50" /></div>
-          </div>
-          <div className="row">
-            <div style={{ flex: 2 }}><label>Item name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
-          </div>
-          <label>Description</label>
-          <input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
-          <label>Allergens (comma-separated)</label>
-          <input value={f.allergens} onChange={(e) => setF({ ...f, allergens: e.target.value })} placeholder="gluten, milk" />
-          <div className="chips" style={{ marginTop: 10 }}>
-            <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegetarian} onChange={(e) => setF({ ...f, vegetarian: e.target.checked })} /> Vegetarian option</label>
-            <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegan} onChange={(e) => setF({ ...f, vegan: e.target.checked })} /> Vegan option</label>
-          </div>
-          <button type="submit" style={{ marginTop: 14 }}>Add item</button>
-        </form>
-      </div>
+        </div>
+      )}
 
       {selected && (
         <DetailModal

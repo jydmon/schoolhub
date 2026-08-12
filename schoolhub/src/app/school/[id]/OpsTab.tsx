@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import AssistantChat from "@/components/AssistantChat";
 
 const TILE_LABELS: [string, string][] = [
   ["studentsPresent", "Students present"], ["studentsAbsent", "Students absent"], ["activeBuses", "Active buses"],
@@ -14,6 +15,7 @@ export default function OpsTab({ schoolId, subscription }: { schoolId: string; s
   const [sub, setSub] = useState<"dashboard" | "reports" | "compliance">("dashboard");
   return (
     <>
+      <AssistantChat schoolId={schoolId} examples={["How many students are enrolled?", "List the pupils in Year 4", "What's on the lunch menu?", "Which pupils have allergies?"]} />
       <div className="tabs">
         {([["dashboard", "Dashboard"], ["reports", "Reports"], ["compliance", "Compliance"]] as [any, string][]).map(([k, l]) => (
           <button key={k} className={sub === k ? "active" : ""} onClick={() => setSub(k)}>{l}</button>

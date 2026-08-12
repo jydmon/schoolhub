@@ -521,6 +521,7 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
   const [form, setForm] = useState({ reference: "", fullName: "", email: "", role: "Teacher", jobTitle: "", department: "" });
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
   const sel = useSel();
 
   const load = useCallback(async () => {
@@ -545,13 +546,13 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
     const data = await res.json();
     if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Failed" }); return; }
     setMsg({ kind: "ok", text: "Staff member saved." });
-    setForm({ reference: "", fullName: "", email: "", role: "Teacher", jobTitle: "", department: "" }); load();
+    setForm({ reference: "", fullName: "", email: "", role: "Teacher", jobTitle: "", department: "" }); setShowAdd(false); load();
   }
 
   return (
     <>
       <div className="panel">
-        <div className="flex-between"><div><h2>Staff</h2><p className="sub" style={{ marginBottom: 0 }}>Employment profiles, roles, classes and status. Click a name for the full profile.</p></div></div>
+        <div className="flex-between"><div><h2>Staff</h2><p className="sub" style={{ marginBottom: 0 }}>Employment profiles, roles, classes and status. Click a name for the full profile.</p></div><button onClick={() => setShowAdd(true)}>New staff member</button></div>
         {msg && <Msg m={msg} />}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "10px 0 12px" }}>
           <input placeholder="Filter staff…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
@@ -588,23 +589,29 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
         </table>
       </div>
       {selected && <StaffModal schoolId={schoolId} staffId={selected} onClose={() => setSelected(null)} onChange={load} />}
-      <div className="panel">
-        <h2>Add staff member</h2>
-        <Msg m={msg} />
-        <form onSubmit={add}>
-          <div className="row">
-            <div><label>Staff ID / reference</label><input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} required /></div>
-            <div><label>Full name</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></div>
-            <div><label>Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal" style={{ maxWidth: 640, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>New staff member</h2><button className="secondary small" onClick={() => setShowAdd(false)}>Close</button></div>
+            {msg && msg.kind === "err" && <Msg m={msg} />}
+            <form onSubmit={add} style={{ marginTop: 12 }}>
+              <div className="row">
+                <div><label>Staff ID / reference</label><input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} required /></div>
+                <div><label>Full name</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></div>
+              </div>
+              <div className="row">
+                <div><label>Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+                <div><label>Role</label><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{STAFF_ROLES.map((r) => <option key={r}>{r}</option>)}</select></div>
+              </div>
+              <div className="row">
+                <div><label>Job title</label><input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} /></div>
+                <div><label>Department</label><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
+              </div>
+              <button type="submit" style={{ marginTop: 14 }}>Save staff member</button>
+            </form>
           </div>
-          <div className="row">
-            <div><label>Role</label><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{STAFF_ROLES.map((r) => <option key={r}>{r}</option>)}</select></div>
-            <div><label>Job title</label><input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} /></div>
-            <div><label>Department</label><input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
-          </div>
-          <button type="submit" style={{ marginTop: 14 }}>Save staff member</button>
-        </form>
-      </div>
+        </div>
+      )}
     </>
   );
 }

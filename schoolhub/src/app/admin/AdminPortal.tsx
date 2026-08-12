@@ -1387,7 +1387,7 @@ function AiCfg() {
   return (
     <div className="panel">
       <h2>AI Assistant model <span className="sub" style={{ fontWeight: 400 }}>· {cfg?.verified ? <span className="badge active">verified</span> : <span className="badge draft">not verified</span>}</span></h2>
-      <p className="sub">The assistant always answers from each school&apos;s own records. Connecting a model adds natural-language phrasing and translation. The API key is encrypted at rest and never shown again. {cfg?.secretSet ? "A key is currently set." : "No key set yet."}</p>
+      <p className="sub">The assistant always answers from each school&apos;s own records. Connecting a model adds natural-language phrasing and translation. The API key is encrypted at rest. {cfg?.secretSet ? <>Saved key: <span className="mono">{cfg.secretHint || "••••"}</span> (shown masked for reference).</> : "No key set yet."}</p>
       {cfg?.envFallback && <p className="sub" style={{ color: "var(--brand-ink)" }}>An environment variable ({cfg.envProvider}) is currently providing the model. Saving a provider here overrides it.</p>}
       <p className="sub" style={{ background: "#f7f9fc", border: "1px solid var(--line,#d7deea)", borderRadius: 8, padding: "8px 10px" }}>{meta?.hint || ""}</p>
       {err && <Notice msg={{ k: "err", t: err }} />}

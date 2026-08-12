@@ -75,12 +75,23 @@ async function resolveRuntime(): Promise<Runtime | null> {
 
 // ---- config surface (admin) ----
 
+// Masked hint of a stored secret — first 4 + last 4 chars, e.g. "gsk_…1zKf".
+// Enough for a super-admin to confirm *which* key is saved without exposing it.
+function maskSecret(enc: string | null | undefined): string | null {
+  if (!enc) return null;
+  try {
+    const s = decryptSecret(enc);
+    if (s.length <= 8) return "••••";
+    return `${s.slice(0, 4)}…${s.slice(-4)}`;
+  } catch { return "••••"; }
+}
+
 export async function getAiConfig() {
   const c = await prisma.aiConfig.findUnique({ where: { id: "singleton" } });
   const env = fromEnv();
-  if (!c) return { provider: "console", model: "", baseUrl: "", verified: false, secretSet: false, envFallback: !!env, envProvider: env?.provider || null };
+  if (!c) return { provider: "console", model: "", baseUrl: "", verified: false, secretSet: false, secretHint: null, envFallback: !!env, envProvider: env?.provider || null };
   const { secretEnc, ...rest } = c as any;
-  return { ...rest, secretSet: !!secretEnc, envFallback: !secretEnc && !!env, envProvider: env?.provider || null };
+  return { ...rest, secretSet: !!secretEnc, secretHint: maskSecret(secretEnc), envFallback: !secretEnc && !!env, envProvider: env?.provider || null };
 }
 
 export async function setAiConfig(input: { provider: string; model?: string; baseUrl?: string; secret?: string; actorUserId?: string | null }) {
