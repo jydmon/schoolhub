@@ -6,6 +6,7 @@ import { aiAskSchema } from "@/lib/validation";
 import { gatherContext } from "@/lib/ai/retrieval";
 import { rank, composeAnswer } from "@/lib/ai/answer";
 import { maybeLlmAnswer } from "@/lib/ai/llm";
+import { llmComplete } from "@/lib/ai/provider";
 import { staffAnalytics } from "@/lib/ai/staff";
 import { parentRewardAnalytics } from "@/lib/ai/parent";
 import { handleError, ok } from "@/lib/http";
@@ -26,6 +27,16 @@ export async function POST(req: Request) {
     if (sa || pa) {
       const a = (sa || pa)!;
       answer = a.answer; citations = a.citations; found = a.found;
+      // Rephrase the computed facts to answer the question naturally. The model
+      // may only restate the given facts — it must not add or change numbers.
+      if (found) {
+        const phrased = await llmComplete(
+          "You rephrase a factual answer so it directly and naturally answers the user's question. Use ONLY the facts and numbers provided — never add, drop, or change any number, name or fact. If the facts are a list, keep every item. Be concise and conversational: 1–3 sentences, no preamble." + (lang && lang !== "en" ? ` Reply in ${lang}.` : ""),
+          `Question: ${question}\n\nFacts to convey:\n${a.answer}`,
+          { temperature: 0 },
+        );
+        if (phrased && phrased.trim()) answer = phrased.trim();
+      }
     } else {
       const ranked = rank(context.records, question, 10);
       const composed = composeAnswer(question, ranked, { lang, isStaff: context.isStaff });

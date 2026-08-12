@@ -18,15 +18,19 @@ export async function staffAnalytics(question: string, schoolIds: string[], now 
   const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
 
-  // Roster headcounts — "how many students / teachers / staff / parents", counts
-  // by year group or status. Computed live from records, not document retrieval.
+  // Roster headcounts — "how many students / teachers / staff / parents", incl.
+  // a specific year group / status. Computed live; answers only what was asked.
   {
-    const countish = hasAny(q, "how many", "number of", "count", "total", "registered", "enrolled", "on roll", "how much");
     const aboutStudents = hasAny(q, "student", "pupil", "children", "child", "learner");
     const aboutTeachers = q.includes("teacher");
     const aboutStaff = hasAny(q, "staff", "employee", "member of staff", "teaching staff");
     const aboutParents = hasAny(q, "parent", "guardian", "carer");
     const aboutUsers = hasAny(q, "user", "people", "account", "member", "on this portal", "on the portal", "registered");
+    const yearMatch = q.match(/\b(?:year|yr|grade|y)\s*(\d{1,2})\b/);
+    const kwMatch = /\b(reception|nursery|foundation|kindergarten|pre-?school|sixth\s?form)\b/.exec(q);
+    const statusMatch = /\b(enrolled|applicant|applicants|leaver|leavers|archived)\b/.exec(q);
+    const countish = hasAny(q, "how many", "number of", "count", "total", "registered", "enrolled", "on roll", "how much") || (aboutStudents && (!!yearMatch || !!kwMatch || !!statusMatch));
+
     if (countish && (aboutStudents || aboutTeachers || aboutStaff || aboutParents || aboutUsers)) {
       const [studentCount, byStatus, byYear, mem] = await Promise.all([
         prisma.student.count({ where: { schoolId: { in: schoolIds } } }),
@@ -38,26 +42,62 @@ export async function staffAnalytics(question: string, schoolIds: string[], now 
       const teachers = roleCount(ROLES.TEACHER);
       const parents = roleCount(ROLES.PARENT);
       const staffTotal = mem.filter((m) => STAFF_ROLES.includes(m.role)).reduce((s, m) => s + m._count._all, 0);
-      const statusStr = byStatus.map((s) => `${s._count._all} ${s.status}`).join(", ");
-      const showAll = aboutUsers && !aboutStudents && !aboutTeachers && !aboutStaff && !aboutParents;
+      const plural = (n: number, s: string) => `${n} ${s}${n === 1 ? "" : "s"}`;
 
-      const lines: string[] = ["Here's what your records show right now:\n"];
-      if (aboutStudents || showAll) {
-        lines.push(`• **Pupils:** ${studentCount} on record${statusStr ? ` (${statusStr})` : ""}.`);
-        if (has(q, "year") || has(q, "class")) {
+      // 1) A SPECIFIC year group / status was named → answer only that.
+      if (aboutStudents && (yearMatch || kwMatch)) {
+        const digits = yearMatch ? yearMatch[1] : null;
+        const kw = kwMatch ? kwMatch[1].toLowerCase().replace(/\s|-/g, "") : null;
+        const matches = byYear.filter((y) => {
+          const yg = String(y.yearGroup || "");
+          if (digits) return (yg.match(/\d+/)?.[0] ?? "") === digits;
+          return yg.toLowerCase().replace(/\s|-/g, "").includes(kw!);
+        });
+        const label = matches[0]?.yearGroup || (digits ? `Year ${digits}` : kwMatch![1]);
+        const n = matches.reduce((s, y) => s + y._count._all, 0);
+        const ans = n > 0
+          ? `There ${n === 1 ? "is" : "are"} ${plural(n, "pupil")} in ${label}.`
+          : `I don't have any pupils recorded in ${digits ? `Year ${digits}` : kwMatch![1]}.`;
+        return { answer: ans, citations: [], found: true };
+      }
+      if (aboutStudents && statusMatch && !aboutTeachers && !aboutStaff && !aboutParents) {
+        const st = statusMatch[1].replace(/s$/, "");
+        const n = byStatus.find((s) => s.status === st)?._count._all ?? 0;
+        return { answer: `There ${n === 1 ? "is" : "are"} ${plural(n, "pupil")} with the status “${st}”.`, citations: [], found: true };
+      }
+
+      // 2) A single entity was asked → one precise sentence.
+      const onlyStudents = aboutStudents && !aboutTeachers && !aboutStaff && !aboutParents && !aboutUsers;
+      const onlyTeachers = aboutTeachers && !aboutStudents && !aboutStaff && !aboutParents && !aboutUsers;
+      const onlyParents = aboutParents && !aboutStudents && !aboutTeachers && !aboutStaff && !aboutUsers;
+      const onlyStaff = aboutStaff && !aboutStudents && !aboutTeachers && !aboutParents && !aboutUsers;
+      const wantsBreakdown = hasAny(q, "breakdown", "by year", "each year", "per year", "by class", "every year", "by group", "by status");
+
+      if (onlyStudents && !wantsBreakdown) {
+        const enrolled = byStatus.find((s) => s.status === "enrolled")?._count._all ?? 0;
+        const others = byStatus.filter((s) => s.status !== "enrolled" && s._count._all > 0);
+        const tail = others.length === 0 ? " (all enrolled)" : ` (${byStatus.filter((s) => s._count._all > 0).map((s) => `${s._count._all} ${s.status}`).join(", ")})`;
+        return { answer: `There ${studentCount === 1 ? "is" : "are"} ${plural(studentCount, "pupil")} on record${tail}.`, citations: [], found: true };
+      }
+      if (onlyTeachers) return { answer: `There ${teachers === 1 ? "is" : "are"} ${plural(teachers, "teacher")} with a portal account.`, citations: [], found: true };
+      if (onlyParents) return { answer: `There ${parents === 1 ? "is" : "are"} ${plural(parents, "parent/guardian account")}.`, citations: [], found: true };
+      if (onlyStaff) {
+        const breakdown = mem.filter((m) => STAFF_ROLES.includes(m.role) && m._count._all > 0).map((m) => `${m._count._all} ${ROLE_LABELS[m.role] || m.role}`).join(", ");
+        return { answer: `There ${staffTotal === 1 ? "is" : "are"} ${plural(staffTotal, "staff member")} with a portal account${breakdown ? ` — ${breakdown}` : ""}.`, citations: [], found: true };
+      }
+
+      // 3) Multiple entities / general "who's on the portal" → a compact summary.
+      const lines: string[] = ["Here's what your records show:\n"];
+      if (aboutStudents || aboutUsers) {
+        lines.push(`• Pupils: ${studentCount}${byStatus.length ? ` (${byStatus.filter((s) => s._count._all > 0).map((s) => `${s._count._all} ${s.status}`).join(", ")})` : ""}`);
+        if (wantsBreakdown) {
           const yr = byYear.filter((y) => y.yearGroup).sort((a, b) => String(a.yearGroup).localeCompare(String(b.yearGroup)));
-          if (yr.length) lines.push(`   By year group: ${yr.map((y) => `${y.yearGroup} — ${y._count._all}`).join(", ")}.`);
+          if (yr.length) lines.push(`   By year group: ${yr.map((y) => `${y.yearGroup} — ${y._count._all}`).join(", ")}`);
         }
       }
-      if (aboutTeachers) lines.push(`• **Teachers:** ${teachers} with a portal account.`);
-      if (aboutStaff || showAll) {
-        const breakdown = mem.filter((m) => STAFF_ROLES.includes(m.role) && m._count._all > 0)
-          .map((m) => `${m._count._all} ${ROLE_LABELS[m.role] || m.role}`).join(", ");
-        lines.push(`• **Staff:** ${staffTotal} with portal accounts${breakdown ? ` (${breakdown})` : ""}.`);
-      }
-      if (aboutParents || showAll) lines.push(`• **Parents / guardians:** ${parents} account(s).`);
-
-      lines.push(`\n_Live counts from your school records (people with portal accounts for staff/parents). Manage them under Students, Staff and Users & roles._`);
+      if (aboutTeachers) lines.push(`• Teachers: ${teachers}`);
+      if (aboutStaff || aboutUsers) lines.push(`• Staff (all roles): ${staffTotal}`);
+      if (aboutParents || aboutUsers) lines.push(`• Parents / guardians: ${parents}`);
       return { answer: lines.join("\n"), citations: [], found: true };
     }
   }
