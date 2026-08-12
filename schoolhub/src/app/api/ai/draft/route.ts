@@ -3,6 +3,7 @@ import { requireAuth } from "@/lib/session";
 import { recordAudit } from "@/lib/audit";
 import { AUDIT, ROLES, LANGUAGES } from "@/lib/constants";
 import { aiDraftSchema } from "@/lib/validation";
+import { llmComplete } from "@/lib/ai/provider";
 import { handleError, ok } from "@/lib/http";
 
 const STAFF_ROLES: string[] = [ROLES.SCHOOL_ADMIN, ROLES.SCHOOL_LEADER, ROLES.TEACHER, ROLES.TRANSPORT_MANAGER, ROLES.SUPPORT_STAFF];
@@ -49,9 +50,14 @@ export async function POST(req: Request) {
     } else if (input.type === "translation") {
       title = "Translation (draft)";
       const target = LANGUAGES[input.lang || ""] || input.lang || "the target language";
-      body = process.env.OPENAI_API_KEY
-        ? `[Translation to ${target}]\n\n${prompt}`
-        : `[Translation to ${target} requires an AI model key — set OPENAI_API_KEY.]\n\nOriginal:\n${prompt}`;
+      const translated = await llmComplete(
+        `You are a professional translator for a school. Translate the user's message into ${target}. Preserve meaning, names, dates and formatting. Reply with the translation only.`,
+        prompt,
+        { temperature: 0 },
+      );
+      body = translated
+        ? `[Translation to ${target}]\n\n${translated}`
+        : `[Translation to ${target} needs an AI provider — a super-admin can connect one under Platform comms → AI Assistant.]\n\nOriginal:\n${prompt}`;
     }
 
     const draft = await prisma.aiDraft.create({

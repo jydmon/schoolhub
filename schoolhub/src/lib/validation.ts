@@ -386,6 +386,13 @@ export const transportProfileSchema = z.object({
   feeStatus: z.string().optional(),
 });
 
+export const aiConfigSchema = z.object({
+  provider: z.enum(["console", "openai", "groq", "openrouter", "together", "mistral", "deepseek", "gemini", "anthropic", "custom"]),
+  model: z.string().optional(),
+  baseUrl: z.string().optional(),
+  secret: z.string().optional(),
+});
+
 export const transportEnquirySchema = z.object({
   name: z.string().min(1),
   contact: z.string().optional(),

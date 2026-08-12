@@ -182,7 +182,7 @@ export default function AdminPortal({ email = "" }: { email?: string }) {
         {tab === "videos" && <Videos />}
         {tab === "website" && <WebsitePages />}
         {tab === "support" && <Support />}
-        {tab === "email" && <EmailCfg />}
+        {tab === "email" && <><EmailCfg /><AiCfg /></>}
         {tab === "integrations" && <Integrations />}
         {tab === "trouble" && <Troubleshooting />}
         {tab === "audit" && <AuditTab />}
@@ -1356,6 +1356,62 @@ function EmailCfg() {
           <div style={{ flex: 2 }}><label>Send test to</label><input type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="you@school.test" /></div>
           <div style={{ display: "flex", alignItems: "flex-end" }}><button type="button" className="secondary" disabled={!testTo || testing} onClick={sendTest}>{testing ? "Sending…" : "Send test"}</button></div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ AI ASSISTANT PROVIDER ============================ */
+function AiCfg() {
+  const { data, err, reload } = useJson<any>("/api/platform/ai-config");
+  const [f, setF] = useState<any>({ provider: "console", model: "", baseUrl: "", secret: "" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const cfg = data?.config;
+  const providers: any[] = data?.providers ?? [];
+  useEffect(() => { if (cfg) setF((prev: any) => ({ ...prev, provider: cfg.provider ?? "console", model: cfg.model ?? "", baseUrl: cfg.baseUrl ?? "" })); }, [cfg]);
+  const meta = providers.find((p) => p.key === f.provider);
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    const body: any = { provider: f.provider, model: f.model || undefined, baseUrl: f.baseUrl || undefined };
+    if (f.secret) body.secret = f.secret;
+    try { await send("/api/platform/ai-config", body, "PUT"); setMsg({ k: "ok", t: "AI settings saved." }); setF({ ...f, secret: "" }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function runTest() {
+    setMsg(null); setTesting(true);
+    try { const r = await send("/api/platform/ai-config/test", {}); setMsg({ k: "ok", t: `Provider verified — ${r.provider} (${r.model}) replied “${r.reply}”.` }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: `Test failed: ${e.message}` }); }
+    finally { setTesting(false); }
+  }
+  return (
+    <div className="panel">
+      <h2>AI Assistant model <span className="sub" style={{ fontWeight: 400 }}>· {cfg?.verified ? <span className="badge active">verified</span> : <span className="badge draft">not verified</span>}</span></h2>
+      <p className="sub">The assistant always answers from each school&apos;s own records. Connecting a model adds natural-language phrasing and translation. The API key is encrypted at rest and never shown again. {cfg?.secretSet ? "A key is currently set." : "No key set yet."}</p>
+      {cfg?.envFallback && <p className="sub" style={{ color: "var(--brand-ink)" }}>An environment variable ({cfg.envProvider}) is currently providing the model. Saving a provider here overrides it.</p>}
+      <p className="sub" style={{ background: "#f7f9fc", border: "1px solid var(--line,#d7deea)", borderRadius: 8, padding: "8px 10px" }}>{meta?.hint || ""}</p>
+      {err && <Notice msg={{ k: "err", t: err }} />}
+      <Notice msg={msg} />
+      <form onSubmit={save}>
+        <div className="row">
+          <div><label>Provider</label><select value={f.provider} onChange={(e) => { const m = providers.find((p) => p.key === e.target.value); setF({ ...f, provider: e.target.value, model: m?.defaultModel || "" }); }}>{providers.map((p) => <option key={p.key} value={p.key}>{p.label}{p.free ? " — free" : ""}</option>)}</select></div>
+          <div><label>Model {meta?.defaultModel ? `(default ${meta.defaultModel})` : ""}</label><input value={f.model} onChange={(e) => setF({ ...f, model: e.target.value })} placeholder={meta?.defaultModel || ""} disabled={f.provider === "console"} /></div>
+        </div>
+        {(f.provider === "custom") && (
+          <div className="row"><div style={{ flex: 1 }}><label>Base URL (OpenAI-compatible)</label><input value={f.baseUrl} onChange={(e) => setF({ ...f, baseUrl: e.target.value })} placeholder="https://…/v1" /></div></div>
+        )}
+        {f.provider !== "console" && (
+          <>
+            <label>API key {cfg?.secretSet ? "(leave blank to keep current)" : ""}</label>
+            <input type="password" value={f.secret} onChange={(e) => setF({ ...f, secret: e.target.value })} placeholder="Paste your provider API key" />
+          </>
+        )}
+        <button type="submit" style={{ marginTop: 12 }}>Save AI settings</button>
+      </form>
+      <div style={{ marginTop: 18, borderTop: "1px solid var(--line,#d7deea)", paddingTop: 14 }}>
+        <h2 style={{ fontSize: 15 }}>Test the connection</h2>
+        <p className="sub">Sends one tiny request to confirm the key, model and account work. Save first.</p>
+        <button type="button" className="secondary" disabled={testing || f.provider === "console"} onClick={runTest}>{testing ? "Testing…" : "Run test"}</button>
       </div>
     </div>
   );

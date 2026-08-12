@@ -1051,6 +1051,19 @@ model TransportEnquiry {
   @@index([schoolId, status])
 }
 
+/// Platform-wide LLM provider configuration for the AI Assistant. Singleton.
+/// The secret (API key) is encrypted at rest and never returned to a client.
+model AiConfig {
+  id            String  @id @default("singleton")
+  provider      String  @default("console") // console | openai | groq | openrouter | together | mistral | deepseek | gemini | anthropic | custom
+  model         String  @default("")
+  baseUrl       String? // optional override for OpenAI-compatible / custom endpoints
+  secretEnc     String? // encrypted API key
+  configuredById String?
+  verified      Boolean @default(false)
+  updatedAt     DateTime @updatedAt
+}
+
 /// Transport or trip incident.
 model Incident {
   id               String  @id @default(cuid())
