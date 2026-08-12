@@ -1,8 +1,11 @@
 import { prisma } from "../db";
+import { ROLES, ROLE_LABELS } from "../constants";
 import type { Answer } from "./answer";
 
 const has = (q: string, ...words: string[]) => words.every((w) => q.includes(w));
 const hasAny = (q: string, ...words: string[]) => words.some((w) => q.includes(w));
+
+const STAFF_ROLES: string[] = [ROLES.SCHOOL_ADMIN, ROLES.SCHOOL_LEADER, ROLES.TEACHER, ROLES.TRANSPORT_MANAGER, ROLES.DRIVER, ROLES.SUPPORT_STAFF, ROLES.INTEGRATION_ADMIN];
 
 /**
  * Answer staff-only operational questions that need computed data rather than
@@ -14,6 +17,50 @@ export async function staffAnalytics(question: string, schoolIds: string[], now 
   const q = question.toLowerCase();
   const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+
+  // Roster headcounts — "how many students / teachers / staff / parents", counts
+  // by year group or status. Computed live from records, not document retrieval.
+  {
+    const countish = hasAny(q, "how many", "number of", "count", "total", "registered", "enrolled", "on roll", "how much");
+    const aboutStudents = hasAny(q, "student", "pupil", "children", "child", "learner");
+    const aboutTeachers = q.includes("teacher");
+    const aboutStaff = hasAny(q, "staff", "employee", "member of staff", "teaching staff");
+    const aboutParents = hasAny(q, "parent", "guardian", "carer");
+    const aboutUsers = hasAny(q, "user", "people", "account", "member", "on this portal", "on the portal", "registered");
+    if (countish && (aboutStudents || aboutTeachers || aboutStaff || aboutParents || aboutUsers)) {
+      const [studentCount, byStatus, byYear, mem] = await Promise.all([
+        prisma.student.count({ where: { schoolId: { in: schoolIds } } }),
+        prisma.student.groupBy({ by: ["status"], where: { schoolId: { in: schoolIds } }, _count: { _all: true } }),
+        prisma.student.groupBy({ by: ["yearGroup"], where: { schoolId: { in: schoolIds } }, _count: { _all: true } }),
+        prisma.membership.groupBy({ by: ["role"], where: { schoolId: { in: schoolIds } }, _count: { _all: true } }),
+      ]);
+      const roleCount = (r: string) => mem.find((m) => m.role === r)?._count._all ?? 0;
+      const teachers = roleCount(ROLES.TEACHER);
+      const parents = roleCount(ROLES.PARENT);
+      const staffTotal = mem.filter((m) => STAFF_ROLES.includes(m.role)).reduce((s, m) => s + m._count._all, 0);
+      const statusStr = byStatus.map((s) => `${s._count._all} ${s.status}`).join(", ");
+      const showAll = aboutUsers && !aboutStudents && !aboutTeachers && !aboutStaff && !aboutParents;
+
+      const lines: string[] = ["Here's what your records show right now:\n"];
+      if (aboutStudents || showAll) {
+        lines.push(`• **Pupils:** ${studentCount} on record${statusStr ? ` (${statusStr})` : ""}.`);
+        if (has(q, "year") || has(q, "class")) {
+          const yr = byYear.filter((y) => y.yearGroup).sort((a, b) => String(a.yearGroup).localeCompare(String(b.yearGroup)));
+          if (yr.length) lines.push(`   By year group: ${yr.map((y) => `${y.yearGroup} — ${y._count._all}`).join(", ")}.`);
+        }
+      }
+      if (aboutTeachers) lines.push(`• **Teachers:** ${teachers} with a portal account.`);
+      if (aboutStaff || showAll) {
+        const breakdown = mem.filter((m) => STAFF_ROLES.includes(m.role) && m._count._all > 0)
+          .map((m) => `${m._count._all} ${ROLE_LABELS[m.role] || m.role}`).join(", ");
+        lines.push(`• **Staff:** ${staffTotal} with portal accounts${breakdown ? ` (${breakdown})` : ""}.`);
+      }
+      if (aboutParents || showAll) lines.push(`• **Parents / guardians:** ${parents} account(s).`);
+
+      lines.push(`\n_Live counts from your school records (people with portal accounts for staff/parents). Manage them under Students, Staff and Users & roles._`);
+      return { answer: lines.join("\n"), citations: [], found: true };
+    }
+  }
 
   // Policies due for review
   if (has(q, "review") && hasAny(q, "polic", "document", "due")) {
