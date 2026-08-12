@@ -26,7 +26,9 @@ export async function PATCH(req: Request, { params }: Params) {
     if (typeof b.term === "string") data.term = b.term.trim() || null;
     if (typeof b.summary === "string") data.summary = b.summary.trim() || null;
     if (typeof b.type === "string") data.type = b.type.trim();
-    if (typeof b.status === "string" && ["draft", "submitted", "approved", "released", "withdrawn"].includes(b.status)) data.status = b.status;
+    if (typeof b.status === "string" && ["draft", "submitted", "approved", "released", "withdrawn", "archived"].includes(b.status)) data.status = b.status;
+    // Structured document fields (subjects, comments, attendance…) → bodyJson.
+    if (b.body && typeof b.body === "object") data.bodyJson = JSON.stringify(b.body);
     if (!Object.keys(data).length) return ok({ ok: true });
 
     await prisma.studentReport.update({ where: { id: params.reportId }, data });

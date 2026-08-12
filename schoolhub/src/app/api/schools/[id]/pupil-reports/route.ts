@@ -63,17 +63,22 @@ export async function GET(_req: Request, { params }: Params) {
       where: { schoolId: params.id, releaseId: null },
       orderBy: { createdAt: "desc" },
       take: 500,
-      include: { student: { select: { firstName: true, lastName: true, reference: true } } },
+      include: { student: { select: { firstName: true, lastName: true, reference: true, yearGroup: true } } },
     });
-    const standaloneReports = standalone.map((r) => ({
-      id: r.id,
-      studentName: `${r.student?.firstName ?? ""} ${r.student?.lastName ?? ""}`.trim() || r.studentId,
-      studentRef: r.student?.reference ?? null,
-      type: r.type, title: r.title, term: r.term, summary: r.summary,
-      status: r.status, source: (r as any).source ?? "manual",
-      editable: ((r as any).source ?? "manual") !== "api",
-      createdAt: r.createdAt,
-    }));
+    const standaloneReports = standalone.map((r) => {
+      let body: any = {}; try { body = JSON.parse((r as any).bodyJson || "{}"); } catch { body = {}; }
+      return {
+        id: r.id,
+        studentName: `${r.student?.firstName ?? ""} ${r.student?.lastName ?? ""}`.trim() || r.studentId,
+        studentRef: r.student?.reference ?? null,
+        yearGroup: r.student?.yearGroup ?? null,
+        type: r.type, title: r.title, term: r.term, summary: r.summary,
+        status: r.status, source: (r as any).source ?? "manual",
+        editable: ((r as any).source ?? "manual") !== "api",
+        fileUrl: r.fileUrl ?? null, body,
+        createdAt: r.createdAt,
+      };
+    });
 
     return ok({ releases: withCounts, standaloneReports });
   } catch (err) { return handleError(err); }
