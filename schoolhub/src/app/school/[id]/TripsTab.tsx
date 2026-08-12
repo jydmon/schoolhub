@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import ModuleImportCard from "./ModuleImportCard";
+import { useSel, Kebab, SourceBadge } from "./EntityKit";
+
+const TRIP_STATUSES = ["planned", "active", "completed", "cancelled"];
 
 const UPDATE_TYPES: [string, string][] = [
   ["students_assembled", "Students assembled"], ["all_accounted", "All accounted for"], ["coach_departed", "Coach departed"],
@@ -20,16 +23,35 @@ export default function TripsTab({ schoolId }: { schoolId: string }) {
   const [show, setShow] = useState(false);
   const [f, setF] = useState<any>({ title: "", date: "", destination: "", departureTime: "", returnTime: "", purpose: "", packingList: "", riskAssessmentRef: "", transportProvider: "", consentRequired: true, isResidential: false, endDate: "", accommodation: "", returnPlan: "" });
 
-  const load = useCallback(async () => setTrips((await fetch(`/api/schools/${schoolId}/trips`).then((r) => r.json())).trips ?? []), [schoolId]);
+  const [q, setQ] = useState("");
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const sel = useSel();
+  const load = useCallback(async () => { setTrips((await fetch(`/api/schools/${schoolId}/trips`).then((r) => r.json())).trips ?? []); sel.clear(); }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
+  const rows = trips.filter((t) => { const s = q.trim().toLowerCase(); if (!s) return true; return [t.title, t.destination, t.date, t.status].some((v) => String(v ?? "").toLowerCase().includes(s)); });
+  const allOn = rows.length > 0 && rows.every((t) => sel.on(t.id));
+  const editable = (t: any) => (t.source ?? "manual") !== "api";
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
     await fetch(`/api/schools/${schoolId}/trips`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
     setF({ ...f, title: "" }); setShow(false); load();
   }
-
-  if (open) return <TripDetail schoolId={schoolId} tripId={open} onBack={() => { setOpen(null); load(); }} />;
+  async function setStatus(t: any, status: string) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/trips/${t.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: t.title, date: t.date, status }) });
+    const d = await res.json().catch(() => ({})); if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; } setMsg({ kind: "ok", text: `${t.title} → ${status}.` }); load();
+  }
+  async function del(t: any) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/trips/${t.id}`, { method: "DELETE" });
+    const d = await res.json().catch(() => ({})); if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; } setMsg({ kind: "ok", text: "Trip removed." }); load();
+  }
+  async function bulkCancel() {
+    setMsg(null); let n = 0, skip = 0;
+    for (const id of sel.ids) { const t = trips.find((x) => x.id === id); if (!editable(t)) { skip++; continue; } if (await (async () => { const res = await fetch(`/api/schools/${schoolId}/trips/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: t.title, date: t.date, status: "cancelled" }) }); return res.ok; })()) n++; }
+    sel.clear(); load(); setMsg({ kind: "ok", text: `Cancelled ${n} trip(s)${skip ? ` · ${skip} API-fed skipped` : ""}.` });
+  }
 
   return (
     <>
@@ -69,15 +91,42 @@ export default function TripsTab({ schoolId }: { schoolId: string }) {
         )}
       </div>
       <div className="panel">
-        <table><thead><tr><th>Trip</th><th>Date</th><th>Students</th><th>Status</th><th className="right"></th></tr></thead><tbody>
-          {trips.map((t) => (
-            <tr key={t.id}><td><strong>{t.title}</strong><div className="muted" style={{ fontSize: 12 }}>{t.destination || ""}</div></td><td>{t.date}</td><td>{t._count.students}</td>
-              <td><span className={`badge ${t.status === "completed" ? "active" : t.status === "active" ? "trial" : "archived"}`}>{t.status}</span></td>
-              <td className="right"><button className="secondary small" onClick={() => setOpen(t.id)}>Open</button></td></tr>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
+          <input placeholder="Filter trips…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+          <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${trips.length}` : `${trips.length} trip${trips.length === 1 ? "" : "s"}`}</span>
+        </div>
+        {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={bulkCancel}>Cancel trips</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
+        <table><thead><tr>
+          <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((t) => t.id), e.target.checked)} /></th>
+          <th>Trip</th><th>Date</th><th>Pupils</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+        </tr></thead><tbody>
+          {rows.map((t) => (
+            <tr key={t.id}>
+              <td className="checkbox-cell"><input type="checkbox" checked={sel.on(t.id)} onChange={() => sel.toggle(t.id)} /></td>
+              <td><button className="linklike" onClick={() => setOpen(t.id)}><strong>{t.title}</strong></button><div className="muted" style={{ fontSize: 12 }}>{t.destination || ""}</div></td>
+              <td>{t.date}</td>
+              <td>{t._count.students}{t._count.students ? <span className="muted" style={{ fontSize: 11 }}> confirmed</span> : null}</td>
+              <td><span className={`badge ${t.status === "completed" ? "active" : t.status === "active" ? "trial" : t.status === "cancelled" ? "suspended" : "archived"}`}>{t.status}</span></td>
+              <td><SourceBadge src={t.source} /></td>
+              <td className="right"><Kebab items={[
+                { label: "Open / expand", onClick: () => setOpen(t.id) },
+                ...(editable(t) ? TRIP_STATUSES.filter((st) => st !== t.status).map((st) => ({ label: `Set ${st}`, onClick: () => setStatus(t, st) })) : []),
+                editable(t) ? { label: "Delete", onClick: () => del(t), danger: true } : null,
+              ]} /></td>
+            </tr>
           ))}
-          {trips.length === 0 && <tr><td colSpan={5} className="muted">No trips yet.</td></tr>}
+          {trips.length === 0 && <tr><td colSpan={7} className="muted">No trips yet.</td></tr>}
         </tbody></table>
       </div>
+
+      {open && (
+        <div className="modal-overlay" onClick={() => { setOpen(null); load(); }}>
+          <div className="modal" style={{ maxWidth: 900, width: "95%", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <TripDetail schoolId={schoolId} tripId={open} onBack={() => { setOpen(null); load(); }} />
+          </div>
+        </div>
+      )}
     </>
   );
 }

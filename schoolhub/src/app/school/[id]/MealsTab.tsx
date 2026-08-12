@@ -2,97 +2,146 @@
 
 import { useEffect, useState, useCallback } from "react";
 import ModuleImportCard from "./ModuleImportCard";
+import { useSel, Kebab, SourceBadge, DetailModal } from "./EntityKit";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MEALS = ["breakfast", "lunch", "snack", "tea"];
 const COURSES = ["main", "vegetarian", "dessert", "side", "drink"];
-
 const gbp = (pence: number) => (pence ? `£${(pence / 100).toFixed(2)}` : "—");
+const editableItem = (i: any) => (i.source ?? "manual") !== "api";
 
 export default function MealsTab({ schoolId }: { schoolId: string }) {
   const [items, setItems] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
-  const [f, setF] = useState({ day: "Mon", meal: "lunch", course: "main", name: "", description: "", allergens: "", price: "" });
+  const [f, setF] = useState<any>({ weekOf: "", day: "Mon", yearGroup: "", meal: "lunch", course: "main", name: "", description: "", allergens: "", vegetarian: false, vegan: false, price: "" });
   const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<any | null>(null);
+  const sel = useSel();
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/menus`).then((r) => r.json());
-    setItems(d.items ?? []);
-  }, [schoolId]);
+    setItems(d.items ?? []); sel.clear();
+  }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
 
   const rows = items.filter((i) => {
     const s = q.trim().toLowerCase();
     if (!s) return true;
-    return [i.name, i.day, i.meal, i.course, i.allergens].some((v) => String(v ?? "").toLowerCase().includes(s));
+    return [i.name, i.day, i.meal, i.course, i.allergens, i.weekOf, i.yearGroup].some((v) => String(v ?? "").toLowerCase().includes(s));
   });
+  const allOn = rows.length > 0 && rows.every((i) => sel.on(i.id));
 
   async function add(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    const res = await fetch(`/api/schools/${schoolId}/menus`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...f, price: f.price }),
-    });
+    const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Could not add item" }); return; }
     setMsg({ kind: "ok", text: "Menu item added." });
-    setF({ ...f, name: "", description: "", allergens: "", price: "" });
+    setF({ ...f, name: "", description: "", allergens: "", price: "", vegetarian: false, vegan: false });
     load();
   }
-  async function toggle(id: string, active: boolean) {
-    await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, active }) });
-    load();
+  async function toggle(i: any) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: i.id, active: !i.active }) });
+    const d = await res.json().catch(() => ({})); if (!res.ok || d.error) setMsg({ kind: "err", text: d.error || "Failed" }); load();
+  }
+  async function del(i: any) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/menus?id=${i.id}`, { method: "DELETE" });
+    const d = await res.json().catch(() => ({})); if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; } setMsg({ kind: "ok", text: "Item removed." }); load();
+  }
+  async function bulkArchive() {
+    setMsg(null); let n = 0, skip = 0;
+    for (const id of sel.ids) { const i = items.find((x) => x.id === id); if (!editableItem(i)) { skip++; continue; } const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, active: false }) }); if (res.ok) n++; }
+    sel.clear(); load(); setMsg({ kind: "ok", text: `Hid ${n} item(s)${skip ? ` · ${skip} API-fed skipped` : ""}.` });
   }
 
   return (
     <>
-      <ModuleImportCard schoolId={schoolId} type="menus" title="Import meals & menus" hint="No catering system? Bulk-add canteen items from a CSV (price in pounds, e.g. 2.50; allergens comma-separated)." />
+      <ModuleImportCard schoolId={schoolId} type="menus" title="Import meals & menus" hint="No catering system? Bulk-add the weekly menu from a CSV (weekOf date, class/year, veg/vegan, price in pounds)." />
       <div className="panel">
         <h2>Meals &amp; menus</h2>
-        <p className="sub">The canteen menu for schools with no catering system. Items appear to parents grouped by day and meal; allergens and price are shown alongside each dish.</p>
+        <p className="sub">Weekly canteen menu — from your catering system (read-only) or added/imported here. Shows week, class/year, veg/vegan options, allergens and price. Click an item to open its details.</p>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
           <input placeholder="Filter menu…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
           <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${items.length}` : `${items.length} item${items.length === 1 ? "" : "s"}`}</span>
         </div>
+        {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={bulkArchive}>Hide</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
         <table>
-          <thead><tr><th>Day</th><th>Meal</th><th>Course</th><th>Item</th><th>Allergens</th><th>Price</th><th>Status</th><th className="right">Actions</th></tr></thead>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((i) => i.id), e.target.checked)} /></th>
+            <th>Week / Day</th><th>For</th><th>Meal</th><th>Item</th><th>Diet</th><th>Price</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+          </tr></thead>
           <tbody>
             {rows.map((i) => (
               <tr key={i.id}>
-                <td>{i.day}</td>
-                <td className="muted">{i.meal}</td>
-                <td className="muted">{i.course}</td>
-                <td><strong>{i.name}</strong>{i.description ? <div className="muted" style={{ fontSize: 12 }}>{i.description}</div> : null}</td>
-                <td className="muted">{i.allergens || "—"}</td>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(i.id)} onChange={() => sel.toggle(i.id)} /></td>
+                <td>{i.weekOf || "—"}<div className="muted" style={{ fontSize: 11 }}>{i.day}</div></td>
+                <td className="muted">{i.className || i.yearGroup || "Whole school"}</td>
+                <td className="muted">{i.meal} · {i.course}</td>
+                <td><button className="linklike" onClick={() => setSelected(i)}><strong>{i.name}</strong></button>{i.description ? <div className="muted" style={{ fontSize: 11 }}>{i.description}</div> : null}</td>
+                <td>{i.vegan ? <span className="badge active" title="Vegan">VG</span> : i.vegetarian ? <span className="badge trial" title="Vegetarian">V</span> : <span className="muted">—</span>}</td>
                 <td>{gbp(i.price)}</td>
-                <td>{i.active ? <span className="badge active">active</span> : <span className="badge archived">hidden</span>}</td>
-                <td className="right"><button className="secondary small" onClick={() => toggle(i.id, !i.active)}>{i.active ? "Hide" : "Show"}</button></td>
+                <td>{i.active ? <span className="badge active">shown</span> : <span className="badge archived">hidden</span>}</td>
+                <td><SourceBadge src={i.source} /></td>
+                <td className="right"><Kebab items={[
+                  { label: "Open / expand", onClick: () => setSelected(i) },
+                  editableItem(i) ? { label: i.active ? "Hide" : "Show", onClick: () => toggle(i) } : null,
+                  editableItem(i) ? { label: "Delete", onClick: () => del(i), danger: true } : null,
+                ]} /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={8} className="muted">{items.length ? "No items match your filter." : "No menu items yet — add one below or import a CSV."}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="muted">{items.length ? "No items match your filter." : "No menu items yet — add one below or import a CSV."}</td></tr>}
           </tbody>
         </table>
       </div>
+
       <div className="panel">
         <h2>Add a menu item</h2>
-        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <form onSubmit={add}>
           <div className="row">
+            <div><label>Week commencing</label><input type="date" value={f.weekOf} onChange={(e) => setF({ ...f, weekOf: e.target.value })} /></div>
             <div><label>Day</label><select value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })}>{DAYS.map((d) => <option key={d}>{d}</option>)}</select></div>
+            <div><label>Class / year (blank = all)</label><input value={f.yearGroup} onChange={(e) => setF({ ...f, yearGroup: e.target.value })} placeholder="Year 4" /></div>
+          </div>
+          <div className="row">
             <div><label>Meal</label><select value={f.meal} onChange={(e) => setF({ ...f, meal: e.target.value })}>{MEALS.map((m) => <option key={m}>{m}</option>)}</select></div>
             <div><label>Course</label><select value={f.course} onChange={(e) => setF({ ...f, course: e.target.value })}>{COURSES.map((c) => <option key={c}>{c}</option>)}</select></div>
+            <div><label>Price (£)</label><input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="2.50" /></div>
           </div>
           <div className="row">
             <div style={{ flex: 2 }}><label>Item name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
-            <div><label>Price (£)</label><input value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="2.50" /></div>
           </div>
           <label>Description</label>
           <input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
           <label>Allergens (comma-separated)</label>
           <input value={f.allergens} onChange={(e) => setF({ ...f, allergens: e.target.value })} placeholder="gluten, milk" />
+          <div className="chips" style={{ marginTop: 10 }}>
+            <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegetarian} onChange={(e) => setF({ ...f, vegetarian: e.target.checked })} /> Vegetarian option</label>
+            <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegan} onChange={(e) => setF({ ...f, vegan: e.target.checked })} /> Vegan option</label>
+          </div>
           <button type="submit" style={{ marginTop: 14 }}>Add item</button>
         </form>
       </div>
+
+      {selected && (
+        <DetailModal
+          title={selected.name}
+          subtitle={<>{selected.weekOf ? `w/c ${selected.weekOf} · ` : ""}{selected.day} · {selected.meal} · {selected.course} · <SourceBadge src={selected.source} /></>}
+          onClose={() => setSelected(null)}
+        >
+          <div className="row" style={{ marginTop: 10 }}>
+            <div className="stat"><div className="n" style={{ fontSize: 20 }}>{gbp(selected.price)}</div><div className="l">Price</div></div>
+            <div className="stat"><div className="n" style={{ fontSize: 16 }}>{selected.className || selected.yearGroup || "Whole school"}</div><div className="l">For</div></div>
+            <div className="stat"><div className="n" style={{ fontSize: 16 }}>{selected.vegan ? "Vegan" : selected.vegetarian ? "Vegetarian" : "Standard"}</div><div className="l">Diet</div></div>
+            <div className="stat"><div className="n" style={{ fontSize: 16 }}>{selected.active ? "Shown" : "Hidden"}</div><div className="l">Status</div></div>
+          </div>
+          {selected.description ? <p style={{ marginTop: 14 }}>{selected.description}</p> : null}
+          <p style={{ marginTop: 10 }}><strong>Allergens:</strong> {selected.allergens || "none listed"}</p>
+          {!editableItem(selected) && <div className="notice info">This menu is fed from an integration — it&apos;s read-only here.</div>}
+        </DetailModal>
+      )}
     </>
   );
 }

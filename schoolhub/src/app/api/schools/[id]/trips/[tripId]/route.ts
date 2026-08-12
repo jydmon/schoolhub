@@ -37,6 +37,7 @@ export async function PATCH(req: Request, { params }: Params) {
     assertCan(ctx, PERMISSIONS.MANAGE_TRIPS, params.id);
     const existing = await prisma.trip.findFirst({ where: { id: params.tripId, schoolId: params.id } });
     if (!existing) return ok({ error: "Not found" }, 404);
+    if (((existing as any).source ?? "manual") === "api") return ok({ error: "This trip is fed from an integration and is read-only. External confirmations sync automatically." }, 403);
     const i = tripSchema.partial().parse(await req.json());
     const trip = await prisma.trip.update({ where: { id: existing.id }, data: i as any });
     await recordAudit({ action: AUDIT.TRIP_CHANGED, schoolId: params.id, actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "Trip", targetId: trip.id, metadata: { op: "update" } });
@@ -51,6 +52,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     assertCan(ctx, PERMISSIONS.MANAGE_TRIPS, params.id);
     const existing = await prisma.trip.findFirst({ where: { id: params.tripId, schoolId: params.id } });
     if (!existing) return ok({ error: "Not found" }, 404);
+    if (((existing as any).source ?? "manual") === "api") return ok({ error: "This trip is fed from an integration and is read-only." }, 403);
     await prisma.trip.delete({ where: { id: existing.id } });
     return ok({ ok: true });
   } catch (err) { return handleError(err); }

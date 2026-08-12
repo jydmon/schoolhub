@@ -457,10 +457,16 @@ export async function runImport(opts: {
         seen.add(dupKey);
         const data = {
           day, meal, course,
+          weekOf: row.weekOf?.trim() || null,
+          yearGroup: row.yearGroup?.trim() || null,
+          className: row.className?.trim() || null,
           description: row.description?.trim() || null,
           allergens: row.allergens?.trim() || null,
+          vegetarian: row.vegetarian?.trim() ? parseBool(row.vegetarian) : false,
+          vegan: row.vegan?.trim() ? parseBool(row.vegan) : false,
           price,
           active: row.active?.trim() ? parseBool(row.active) : true,
+          source: "import",
         };
         const existing = await prisma.menuItem.findFirst({ where: { schoolId, day, meal, course, name } });
         if (existing) { await prisma.menuItem.update({ where: { id: existing.id }, data }); updated++; }
@@ -482,6 +488,7 @@ export async function runImport(opts: {
           purpose: row.purpose?.trim() || null,
           venue: row.venue?.trim() || null,
           status: ["planned", "active", "completed", "cancelled"].includes(status) ? status : "planned",
+          source: "import",
           createdById: opts.actorUserId || null,
         };
         const existing = await prisma.trip.findFirst({ where: { schoolId, title, date } });

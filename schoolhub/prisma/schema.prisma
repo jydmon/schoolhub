@@ -1096,6 +1096,7 @@ model Trip {
   riskAssessmentRef String?
   attachments String  @default("[]")
   status      String  @default("planned") // planned | active | completed | cancelled
+  source      String  @default("manual") // manual | import | api — api rows are read-only
 
   // Real-time event-update button config (Phase 17c): { removed:[], custom:[{key,label,icon}] }
   updateConfigJson String @default("{}")
@@ -2085,13 +2086,19 @@ model MenuItem {
   id          String   @id @default(cuid())
   schoolId    String
   day         String   @default("Mon")     // Mon|Tue|Wed|Thu|Fri (or a date label)
+  weekOf      String?  // week-commencing date (YYYY-MM-DD) — menus change weekly
+  yearGroup   String?  // year/class this menu is for (blank = whole school)
+  className   String?
   meal        String   @default("lunch")   // breakfast|lunch|snack|tea
   course      String   @default("main")    // main|vegetarian|dessert|side|drink
   name        String
   description String?
   allergens   String?  // comma-separated (e.g. "gluten,milk")
+  vegetarian  Boolean  @default(false)
+  vegan       Boolean  @default(false)
   price       Int      @default(0)         // pence
   active      Boolean  @default(true)
+  source      String   @default("manual")  // manual | import | api — api rows are read-only
   createdAt   DateTime @default(now())
 
   @@index([schoolId])

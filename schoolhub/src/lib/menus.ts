@@ -21,8 +21,9 @@ export async function listMenuItems(schoolId: string) {
 }
 
 export async function createMenuItem(input: {
-  schoolId: string; day?: string; meal?: string; course?: string; name: string;
-  description?: string; allergens?: string; price?: number; active?: boolean; actorUserId?: string | null;
+  schoolId: string; day?: string; weekOf?: string; yearGroup?: string; className?: string;
+  meal?: string; course?: string; name: string; description?: string; allergens?: string;
+  vegetarian?: boolean; vegan?: boolean; price?: number; active?: boolean; source?: string; actorUserId?: string | null;
 }): Promise<{ id: string }> {
   const name = (input.name || "").trim();
   if (!name) throw new Error("name is required");
@@ -30,13 +31,19 @@ export async function createMenuItem(input: {
     data: {
       schoolId: input.schoolId,
       day: input.day?.trim() || "Mon",
+      weekOf: input.weekOf?.trim() || null,
+      yearGroup: input.yearGroup?.trim() || null,
+      className: input.className?.trim() || null,
       meal: input.meal?.trim() || "lunch",
       course: input.course?.trim() || "main",
       name,
       description: input.description?.trim() || null,
       allergens: input.allergens?.trim() || null,
+      vegetarian: input.vegetarian ?? false,
+      vegan: input.vegan ?? false,
       price: Number.isFinite(input.price) ? Math.max(0, Math.round(input.price as number)) : 0,
       active: input.active ?? true,
+      source: input.source || "manual",
     },
   });
   await recordAudit({ action: AUDIT.DATA_IMPORT ?? "MENU_ITEM_CREATED", schoolId: input.schoolId, actorUserId: input.actorUserId, targetType: "MenuItem", targetId: item.id, metadata: { name, day: item.day, meal: item.meal } });
@@ -47,4 +54,25 @@ export async function setMenuItemActive(schoolId: string, id: string, active: bo
   const item = await prisma.menuItem.findUnique({ where: { id } });
   if (!item || item.schoolId !== schoolId) throw new Error("Menu item not found");
   await prisma.menuItem.update({ where: { id }, data: { active } });
+}
+
+/** Edit a menu item (manual/imported only — API-fed items are read-only). */
+export async function updateMenuItem(schoolId: string, id: string, patch: any): Promise<void> {
+  const item = await prisma.menuItem.findUnique({ where: { id } });
+  if (!item || item.schoolId !== schoolId) throw new Error("Menu item not found");
+  if (((item as any).source ?? "manual") === "api") throw new Error("This menu is fed from an integration and is read-only.");
+  const data: any = {};
+  for (const k of ["day", "weekOf", "yearGroup", "className", "meal", "course", "name", "description", "allergens"] as const) {
+    if (typeof patch[k] === "string") data[k] = patch[k].trim() || (k === "name" || k === "day" || k === "meal" || k === "course" ? item[k] : null);
+  }
+  for (const k of ["vegetarian", "vegan", "active"] as const) if (typeof patch[k] === "boolean") data[k] = patch[k];
+  if (patch.price !== undefined) { const p = typeof patch.price === "number" ? patch.price : Math.round(parseFloat(String(patch.price).replace(/[£,\s]/g, "")) * 100); if (Number.isFinite(p) && p >= 0) data.price = p; }
+  await prisma.menuItem.update({ where: { id }, data });
+}
+
+export async function deleteMenuItem(schoolId: string, id: string): Promise<void> {
+  const item = await prisma.menuItem.findUnique({ where: { id } });
+  if (!item || item.schoolId !== schoolId) throw new Error("Menu item not found");
+  if (((item as any).source ?? "manual") === "api") throw new Error("This menu is fed from an integration and is read-only.");
+  await prisma.menuItem.delete({ where: { id } });
 }

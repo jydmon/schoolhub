@@ -155,9 +155,10 @@ export const IMPORT_TEMPLATES: Record<
     example: ["STU-1001", "termly", "Autumn 2026 — Progress", "Autumn 2026", "On track across all subjects."],
   },
   menus: {
-    // Canteen menu. "price" is in pounds (e.g. 2.50). "allergens" is comma-separated.
-    headers: ["day", "meal", "course", "name", "description", "allergens", "price", "active"],
-    example: ["Mon", "lunch", "main", "Roast chicken & potatoes", "Served with seasonal vegetables", "gluten,milk", "2.50", "true"],
+    // Canteen menu. Menus change weekly, so set weekOf (Mon date). "price" is in
+    // pounds (2.50). Leave yearGroup blank for whole-school. veg/vegan are yes/no.
+    headers: ["weekOf", "day", "yearGroup", "meal", "course", "name", "description", "allergens", "vegetarian", "vegan", "price", "active"],
+    example: ["2026-09-07", "Mon", "Year 4", "lunch", "main", "Roast chicken & potatoes", "Served with seasonal vegetables", "gluten,milk", "no", "no", "2.50", "true"],
   },
   trips: {
     // Trips & events (event-tracking). Created as "planned"; live update buttons
