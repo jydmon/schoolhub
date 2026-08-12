@@ -459,6 +459,7 @@ export const rewardSchema = z.object({
   teacherName: z.string().optional(),
   source: z.string().optional(),
   at: z.string().optional(),
+  notifyGuardians: z.boolean().optional(),
 });
 
 export const homeRuleSchema = z.object({ studentId: z.string().min(1), threshold: z.number().int().min(1), reward: z.string().min(1) });

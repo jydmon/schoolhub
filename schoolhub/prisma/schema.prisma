@@ -1229,6 +1229,7 @@ model RewardRecord {
   teacherName String?
   source      String  @default("Behaviour system")
   positive    Boolean @default(true)
+  notifiedCount Int    @default(0) // how many guardians were notified when this was recorded
   at          DateTime @default(now())
 
   // Provenance for Integration Hub ingestion (Phase 16). externalId makes an
