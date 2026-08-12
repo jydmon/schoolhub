@@ -321,7 +321,18 @@ function UsersTab({ schoolId }: { schoolId: string }) {
     const res = await fetch(`/api/schools/${schoolId}/memberships/${membershipId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Could not change role" }); return; }
-    setEditing(null); setMsg({ kind: "ok", text: "Role updated." }); load();
+    setEditing(null); setMsg({ kind: "ok", text: data.mergedDuplicate ? "Role updated (removed a duplicate role the user already held)." : "Role updated." }); load();
+  }
+  async function removeRole(membershipId: string) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/memberships/${membershipId}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Could not remove role" }); return; }
+    setMsg({ kind: "ok", text: "Role removed." }); load();
+  }
+  function askRemoveRole(u: any) {
+    setOpenMenu(null);
+    setConfirm({ title: `Remove the ${u.roleLabel} role from ${u.user.fullName}?`, message: "This removes only this role at this school. If it's their only role they'll lose access here until re-invited, and they'll be signed out.", label: "Remove role", danger: true, run: () => { removeRole(u.membershipId); setConfirm(null); } });
   }
   function duplicate(u: any) { setOpenMenu(null); setForm({ fullName: "", email: "", role: u.role, password: "" }); setMsg({ kind: "ok", text: `New user form pre-filled with the ${u.roleLabel} role — add their name and email.` }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
   function askDeactivate(u: any) { setOpenMenu(null); setConfirm({ title: `Deactivate ${u.user.fullName}?`, message: "They will be signed out and blocked from signing in until reactivated.", label: "Deactivate", danger: true, run: () => { runAction(u.user.id, "disable", "User deactivated."); setConfirm(null); } }); }
@@ -382,6 +393,7 @@ function UsersTab({ schoolId }: { schoolId: string }) {
                         <div className="kebab-backdrop" onClick={() => setOpenMenu(null)} />
                         <div className="kebab-menu">
                           <button onClick={() => { setEditing(u.membershipId); setEditRole(u.role); setOpenMenu(null); }}>Edit role</button>
+                          <button onClick={() => askRemoveRole(u)}>Remove this role</button>
                           <button onClick={() => duplicate(u)}>Duplicate</button>
                           <button onClick={() => runAction(u.user.id, "reset_password", "")}>Reset password</button>
                           {u.user.status !== "active" && <button onClick={() => runAction(u.user.id, "reactivate", "User reactivated.")}>Reactivate</button>}
