@@ -1036,6 +1036,29 @@ model VehiclePosition {
   @@index([journeyId])
 }
 
+/// A recurring weekly timetable lesson. Linked to a class/year group (so its
+/// students inherit it) and to a teacher (so it appears on their schedule).
+/// Surfaced on the calendar as weekly occurrences.
+model TimetableEntry {
+  id            String  @id @default(cuid())
+  schoolId      String
+  dayOfWeek     Int     // 1 = Monday … 7 = Sunday
+  period        String? // optional label, e.g. "P1"
+  startTime     String  // HH:MM
+  endTime       String  // HH:MM
+  subject       String
+  yearGroup     String?
+  className     String?
+  room          String?
+  teacherUserId String?
+  source        String  @default("manual") // manual | import | api
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([schoolId, dayOfWeek])
+  @@index([schoolId, teacherUserId])
+}
+
 /// A general transport enquiry (availability, eligibility, a question or a
 /// complaint) that the office triages. Distinct from a daily TransportRequest.
 model TransportEnquiry {

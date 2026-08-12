@@ -15,7 +15,7 @@ export default function OpsTab({ schoolId, subscription }: { schoolId: string; s
   const [sub, setSub] = useState<"dashboard" | "reports" | "compliance">("dashboard");
   return (
     <>
-      <AssistantChat schoolId={schoolId} examples={["How many students are enrolled?", "List the pupils in Year 4", "What's on the lunch menu?", "Which pupils have allergies?"]} />
+      <AssistantChat schoolId={schoolId} examples={["How many students are enrolled?", "List the pupils in Year 4", "How do I invite a parent?", "Where do I generate a PDF report?", "How do I record behaviour?", "Which pupils have allergies?"]} />
       <div className="tabs">
         {([["dashboard", "Dashboard"], ["reports", "Reports"], ["compliance", "Compliance"]] as [any, string][]).map(([k, l]) => (
           <button key={k} className={sub === k ? "active" : ""} onClick={() => setSub(k)}>{l}</button>

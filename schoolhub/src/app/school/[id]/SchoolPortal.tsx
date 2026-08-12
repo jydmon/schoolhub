@@ -5,6 +5,7 @@ import { StudentsTab, GuardiansTab, StaffTab, ImportTab } from "./PeopleTabs";
 import IntegrationsTab from "./IntegrationsTab";
 import IntegrationHubTab from "./IntegrationHubTab";
 import CalendarTab from "./CalendarTab";
+import TimetableTab from "./TimetableTab";
 import KnowledgeTab from "./KnowledgeTab";
 import AssistantTab from "./AssistantTab";
 import TransportTab from "./TransportTab";
@@ -31,6 +32,7 @@ const SCHOOL_NAV: NavGroup[] = [
   ] },
   { label: "Learning & care", items: [
     { key: "calendar", label: "Calendar", icon: "📅" },
+    { key: "timetable", label: "Timetable", icon: "🗓️" },
     { key: "attendance", label: "Attendance", icon: "✅" },
     { key: "behaviour", label: "Behaviour", icon: "⭐" },
     { key: "reports", label: "Pupils reports", icon: "📄" },
@@ -61,7 +63,7 @@ const SCHOOL_NAV: NavGroup[] = [
 ];
 const SCHOOL_TITLES: Record<string, string> = {
   ops: "Operations", students: "Students", guardians: "Guardians", staff: "Staff", users: "Users & roles",
-  calendar: "Calendar", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
+  calendar: "Calendar", timetable: "Timetable", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "Ask AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
   config: "School configuration", insights: "Reports & search", audit: "History", notifications: "Notifications", profile: "My profile", security: "My security",
@@ -88,9 +90,10 @@ type Props = {
 
 export default function SchoolPortal({ schoolId, roles, initial, email = "", schoolCount = 1 }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
+  const [focusStudentId, setFocusStudentId] = useState<string | null>(null);
   // Remember this as the user's current school so future logins land here.
   useEffect(() => { try { document.cookie = `siplat_last_school=${schoolId}; path=/; max-age=${60 * 60 * 24 * 180}; SameSite=Lax`; } catch { /* ignore */ } }, [schoolId]);
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security" | "insights";
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "timetable" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security" | "insights";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
   const manageTabs: [Tab, string][] = [
@@ -99,6 +102,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
     ["guardians", "Guardians"],
     ["staff", "Staff"],
     ["calendar", "Calendar"],
+    ["timetable", "Timetable"],
     ["attendance", "Attendance"],
     ["transport", "Transport"],
     ["trips", "Trips"],
@@ -126,10 +130,11 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
       email={email} role={canManage ? "School Administrator" : "Member"}>
       {schoolCount > 1 && <div style={{ marginBottom: 10 }}><a className="linklike" href="/school?choose=1" style={{ fontSize: 13 }}>← Switch school</a></div>}
       {tab === "ops" && canManage && <OpsTab schoolId={schoolId} subscription={initial.school?.subscription} />}
-      {tab === "students" && canManage && <StudentsTab schoolId={schoolId} />}
+      {tab === "students" && canManage && <StudentsTab schoolId={schoolId} focusId={focusStudentId} onFocusHandled={() => setFocusStudentId(null)} />}
       {tab === "guardians" && canManage && <GuardiansTab schoolId={schoolId} />}
       {tab === "staff" && canManage && <StaffTab schoolId={schoolId} />}
-      {tab === "calendar" && canManage && <CalendarTab schoolId={schoolId} />}
+      {tab === "calendar" && canManage && <CalendarTab schoolId={schoolId} onOpenStudent={(id) => { setFocusStudentId(id); setTab("students"); }} />}
+      {tab === "timetable" && canManage && <TimetableTab schoolId={schoolId} />}
       {tab === "attendance" && canManage && <AttendanceTab schoolId={schoolId} />}
       {tab === "transport" && canManage && <TransportTab schoolId={schoolId} />}
       {tab === "trips" && canManage && <TripsTab schoolId={schoolId} />}

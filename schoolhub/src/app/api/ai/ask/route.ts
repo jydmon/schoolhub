@@ -9,6 +9,7 @@ import { maybeLlmAnswer } from "@/lib/ai/llm";
 import { llmComplete } from "@/lib/ai/provider";
 import { staffAnalytics } from "@/lib/ai/staff";
 import { parentRewardAnalytics } from "@/lib/ai/parent";
+import { matchGuidance } from "@/lib/ai/guidance";
 import { handleError, ok } from "@/lib/http";
 
 // Ask the assistant. Permission filtering happens in gatherContext BEFORE any
@@ -20,11 +21,15 @@ export async function POST(req: Request) {
 
     const context = await gatherContext(ctx.userId, { schoolId });
 
-    // Staff operational questions answered from computed data first.
+    // "How do I… / where is…" navigation guidance takes priority, then computed
+    // operational answers, then record retrieval.
     let answer: string, citations: any[] = [], found: boolean;
-    const sa = context.isStaff ? await staffAnalytics(question, context.schoolIds) : null;
-    const pa = !sa && context.hasChildren ? await parentRewardAnalytics(ctx.userId, question) : null;
-    if (sa || pa) {
+    const guide = matchGuidance(question);
+    const sa = !guide && context.isStaff ? await staffAnalytics(question, context.schoolIds) : null;
+    const pa = !guide && !sa && context.hasChildren ? await parentRewardAnalytics(ctx.userId, question) : null;
+    if (guide) {
+      answer = guide.answer; citations = []; found = true;
+    } else if (sa || pa) {
       const a = (sa || pa)!;
       answer = a.answer; citations = a.citations; found = a.found;
       // Rephrase the computed facts to answer the question naturally. The model

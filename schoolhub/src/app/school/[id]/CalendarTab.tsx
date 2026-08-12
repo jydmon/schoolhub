@@ -10,14 +10,29 @@ const CAT_LABEL: Record<string, string> = {
   parents_evening: "Parents' evening", sports_day: "Sports day", trip: "School trip", assembly: "Assembly",
   club: "Club", performance: "Performance", photos: "School photographs", fundraiser: "Fundraiser",
   early_closure: "Early closure", timetable_change: "Timetable change", event: "Event",
+  homework: "Homework", timetable: "Timetable",
 };
 const CAT_COLOR: Record<string, string> = {
   academic: "#4f46e5", term: "#0ea5e9", holiday: "#12a150", inset: "#64748b", exam: "#e11d48",
   parents_evening: "#7c3aed", sports_day: "#d97706", trip: "#0891b2", assembly: "#2563eb",
   club: "#059669", performance: "#db2777", photos: "#9333ea", fundraiser: "#ca8a04",
   early_closure: "#dc2626", timetable_change: "#475569", event: "#4338ca",
+  homework: "#0f766e", timetable: "#7c3aed",
+};
+const CAT_ICON: Record<string, string> = {
+  academic: "🎓", term: "📅", holiday: "🏖️", inset: "🧑‍🏫", exam: "📝", parents_evening: "👪",
+  sports_day: "🏅", trip: "🧳", assembly: "🎤", club: "⚽", performance: "🎭", photos: "📸",
+  fundraiser: "💷", early_closure: "🚪", timetable_change: "🔁", event: "📌", homework: "📚", timetable: "🗓️",
 };
 const catColor = (c: string) => CAT_COLOR[c] || "#4338ca";
+const catIcon = (c: string) => CAT_ICON[c] || "📌";
+// A rich, multi-line tooltip preview for an event chip.
+const evTip = (e: any) => [
+  `${CAT_LABEL[e.category] || e.category}: ${e.title}`,
+  e.allDay ? "All day" : `${new Date(e.startsAt).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+  e.location ? `📍 ${e.location}` : "",
+  e.consentRequired ? "Consent required" : "",
+].filter(Boolean).join("\n");
 const SCOPES = ["school", "year", "class", "house", "club", "students"];
 const VIEWS: [string, string][] = [["month", "Month"], ["week", "Week"], ["day", "Day"], ["quarter", "Quarter"], ["year", "Year"], ["table", "Table"]];
 const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -123,9 +138,10 @@ function EventFields({ form, setForm }: { form: any; setForm: (f: any) => void }
   );
 }
 
-export default function CalendarTab({ schoolId }: { schoolId: string }) {
+export default function CalendarTab({ schoolId, onOpenStudent }: { schoolId: string; onOpenStudent?: (studentId: string) => void }) {
   const [events, setEvents] = useState<any[]>([]);
   const [homework, setHomework] = useState<any[]>([]);
+  const [parts, setParts] = useState<{ loading: boolean; staff: any[]; students: any[] } | null>(null);
   const [view, setView] = useState<string>("month");
   const [cursor, setCursor] = useState<Date>(() => new Date());
   const [form, setForm] = useState<any>(blankEvent());
@@ -148,10 +164,11 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
   const [editForm, setEditForm] = useState<any>(null);
 
   const load = useCallback(async () => {
-    const [e, h, tr] = await Promise.all([
+    const [e, h, tr, tt] = await Promise.all([
       fetch(`/api/schools/${schoolId}/events`).then((r) => r.json()),
       fetch(`/api/schools/${schoolId}/homework`).then((r) => r.json()),
       fetch(`/api/schools/${schoolId}/trips`).then((r) => r.json()).catch(() => ({})),
+      fetch(`/api/schools/${schoolId}/timetable`).then((r) => r.json()).catch(() => ({})),
     ]);
     // Trips show automatically on the calendar as read-only "trip" events
     // (managed in the Trips tab). Synthetic ids are prefixed "trip:".
@@ -166,7 +183,33 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
         consentRequired: !!t.consentRequired, transportRequired: true, _isTrip: true,
       };
     });
-    setEvents([...(e.events ?? []), ...tripEvents]);
+    // Homework due dates also appear on the calendar (read-only "homework" entries).
+    const hwEvents = (h.homework ?? []).filter((x: any) => x.dueAt).map((x: any) => ({
+      id: `hw:${x.id}`, title: `${x.title}${x.subject ? ` (${x.subject})` : ""}`, category: "homework",
+      startsAt: x.dueAt, endsAt: null, allDay: false, location: "", description: `Homework due${x.yearGroup ? ` · ${x.yearGroup}` : ""}`,
+      audienceScope: x.yearGroup ? "year" : "school", yearGroup: x.yearGroup || "", status: "published", source: "api", _isHomework: true,
+    }));
+    // Timetable lessons repeat weekly — expand into dated occurrences across an
+    // 8-week window from the start of this week so they show on the calendar.
+    const ttEntries: any[] = tt.entries ?? [];
+    const ttEvents: any[] = [];
+    if (ttEntries.length) {
+      const weekStart = startOfWeek(new Date());
+      for (let d = 0; d < 56; d++) {
+        const day = addDays(weekStart, d);
+        const dow = ((day.getDay() + 6) % 7) + 1; // 1=Mon..7=Sun
+        for (const t of ttEntries.filter((x) => x.dayOfWeek === dow)) {
+          const ds = ymd(day);
+          ttEvents.push({
+            id: `tt:${t.id}:${ds}`, title: `${t.subject}${t.room ? ` (${t.room})` : ""}`, category: "timetable",
+            startsAt: `${ds}T${String(t.startTime).padStart(5, "0")}:00`, endsAt: `${ds}T${String(t.endTime).padStart(5, "0")}:00`,
+            allDay: false, location: t.room || "", description: [t.className || t.yearGroup, t.teacherName].filter(Boolean).join(" · "),
+            audienceScope: t.yearGroup ? "year" : "school", yearGroup: t.yearGroup || "", status: "published", source: "api", _isTimetable: true,
+          });
+        }
+      }
+    }
+    setEvents([...(e.events ?? []), ...tripEvents, ...hwEvents, ...ttEvents]);
     setHomework(h.homework ?? []);
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
@@ -204,7 +247,24 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
     setDetail(null); load();
   }
 
-  function openDetail(e: any) { setDetail(e); setDTab("Details"); setEditForm(eventToForm(e)); }
+  function openDetail(e: any) {
+    setDetail(e); setDTab("Details"); setEditForm(eventToForm(e)); setParts(null);
+    // Fetch the full participant list (teacher in charge + students attending).
+    if (e._isHomework || e._isTimetable) return;
+    setParts({ loading: true, staff: [], students: [] });
+    if (e._isTrip) {
+      const tripId = String(e.id).replace(/^trip:/, "");
+      fetch(`/api/schools/${schoolId}/trips/${tripId}`).then((r) => r.json()).then((d) => {
+        const t = d.trip || {};
+        setParts({ loading: false, staff: (t.staff || []).map((s: any) => ({ id: s.userId, name: s.user?.fullName })), students: (t.students || []).map((s: any) => ({ id: s.studentId, name: `${s.student?.firstName ?? ""} ${s.student?.lastName ?? ""}`.trim(), medicalAlert: s.student?.medicalAlert })) });
+      }).catch(() => setParts({ loading: false, staff: [], students: [] }));
+    } else {
+      fetch(`/api/schools/${schoolId}/events/${e.id}`).then((r) => r.json()).then((d) => {
+        const ev = d.event || {};
+        setParts({ loading: false, staff: (ev.staff || []).map((s: any) => ({ id: s.user?.id || s.userId, name: s.user?.fullName })), students: (ev.students || []).map((s: any) => ({ id: s.student?.id || s.studentId, name: `${s.student?.firstName ?? ""} ${s.student?.lastName ?? ""}`.trim() })) });
+      }).catch(() => setParts({ loading: false, staff: [], students: [] }));
+    }
+  }
 
   async function addHomework(ev: React.FormEvent) {
     ev.preventDefault();
@@ -315,7 +375,7 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
         const tabs = readOnly ? ["Details"] : ["Details", "Edit"];
         return (
           <DetailModal
-            title={<span><span className="cal-dot" style={{ background: catColor(detail.category) }} />{detail.title}</span>}
+            title={<span><span style={{ marginRight: 6 }}>{catIcon(detail.category)}</span>{detail.title}</span>}
             subtitle={<span>{CAT_LABEL[detail.category] || detail.category} · {new Date(detail.startsAt).toLocaleString([], { weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })} · <SourceBadge src={detail.source} /></span>}
             onClose={() => setDetail(null)} tabs={tabs} active={dTab} onTab={setDTab}
           >
@@ -334,12 +394,27 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
                     {(detail.collectionAt || detail.collectionLocation) && <tr><th>Collection</th><td>{detail.collectionAt ? new Date(detail.collectionAt).toLocaleString() : ""}{detail.collectionLocation ? ` · ${detail.collectionLocation}` : ""}</td></tr>}
                     {detail.paymentRef && <tr><th>Payment ref</th><td>{detail.paymentRef}</td></tr>}
                     <tr><th>Flags</th><td>{detail.consentRequired ? <span className="badge suspended">consent</span> : null} {detail.transportRequired ? <span className="badge trial">transport</span> : null} {detail.packedLunch ? <span className="badge role">packed lunch</span> : null} {!detail.consentRequired && !detail.transportRequired && !detail.packedLunch ? <span className="muted">—</span> : null}</td></tr>
-                    {detail._count && <tr><th>Participants</th><td>{detail._count.students ?? 0} pupils · {detail._count.staff ?? 0} staff</td></tr>}
+                    {!detail._isHomework && !detail._isTimetable && (
+                      <tr><th>Teacher in charge</th><td>{!parts || parts.loading ? <span className="muted">Loading…</span> : parts.staff.length === 0 ? <span className="muted">—</span> : parts.staff.map((s: any, i: number) => <span key={s.id || i}>{i > 0 ? ", " : ""}{s.name || "Staff"}</span>)}</td></tr>
+                    )}
+                    {!detail._isHomework && !detail._isTimetable && (
+                      <tr><th>Students attending</th><td>
+                        {!parts || parts.loading ? <span className="muted">Loading…</span> : parts.students.length === 0 ? <span className="muted">Whole {detail.audienceScope === "year" ? "year group" : detail.audienceScope === "class" ? "class" : "school"} — no named pupils</span> : (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {parts.students.map((s: any, i: number) => (
+                              <button key={s.id || i} className="chip" style={{ margin: 0 }} title="Open pupil profile" onClick={() => s.id && onOpenStudent?.(s.id)}>{s.name || "Pupil"}{s.medicalAlert ? " ⚕️" : ""}</button>
+                            ))}
+                          </div>
+                        )}
+                      </td></tr>
+                    )}
                   </tbody>
                 </table>
                 <div className="chips" style={{ marginTop: 14 }}>
-                  {!detail._isTrip && <a className="chip" href={`/api/schools/${schoolId}/events/${detail.id}/ics`}>Download .ics</a>}
+                  {!detail._isTrip && !detail._isHomework && !detail._isTimetable && <a className="chip" href={`/api/schools/${schoolId}/events/${detail.id}/ics`}>Download .ics</a>}
                   {detail._isTrip && <span className="muted" style={{ fontSize: 12 }}>This is a school trip — manage it in the Trips tab.</span>}
+                  {detail._isHomework && <span className="muted" style={{ fontSize: 12 }}>This is a homework deadline — manage it in the Homework panel below the calendar.</span>}
+                  {detail._isTimetable && <span className="muted" style={{ fontSize: 12 }}>This is a recurring timetable lesson — manage it in the Timetable section.</span>}
                   {!readOnly && <button className="danger small" onClick={() => del(detail.id)}>Delete event</button>}
                 </div>
               </div>
@@ -364,8 +439,8 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
 function EventChip({ e, onEvent, showTime }: { e: any; onEvent: (e: any) => void; showTime?: boolean }) {
   const dim = e.status !== "published";
   return (
-    <button className={`cal-ev${dim ? " dim" : ""}`} style={{ background: catColor(e.category) }} title={`${e.title} — ${CAT_LABEL[e.category] || e.category}`} onClick={() => onEvent(e)}>
-      {showTime ? `${timeLabel(e)} · ` : ""}{e.title}
+    <button className={`cal-ev${dim ? " dim" : ""}`} style={{ background: catColor(e.category) }} title={evTip(e)} onClick={() => onEvent(e)}>
+      <span style={{ marginRight: 3 }}>{catIcon(e.category)}</span>{showTime ? `${timeLabel(e)} · ` : ""}{e.title}
     </button>
   );
 }

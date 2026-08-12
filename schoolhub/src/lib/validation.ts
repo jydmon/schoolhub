@@ -393,6 +393,20 @@ export const aiConfigSchema = z.object({
   secret: z.string().optional(),
 });
 
+export const timetableSchema = z.object({
+  dayOfWeek: z.number().int().min(1).max(7),
+  period: z.string().optional(),
+  startTime: z.string().regex(/^\d{1,2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{1,2}:\d{2}$/),
+  subject: z.string().min(1),
+  yearGroup: z.string().optional(),
+  className: z.string().optional(),
+  room: z.string().optional(),
+  teacherUserId: z.string().optional().nullable(),
+});
+
+export const timetableUpdateSchema = timetableSchema.partial();
+
 export const transportEnquirySchema = z.object({
   name: z.string().min(1),
   contact: z.string().optional(),

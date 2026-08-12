@@ -74,10 +74,11 @@ function PersonModal({ title, subtitle, avatar, onClose, tabs, active, onTab, ch
 const SOURCE_BADGE = (src?: string) => src === "api" ? <span className="badge role" title="From an integration — read-only">API</span> : src === "import" ? <span className="badge trial" title="Imported from CSV">imported</span> : <span className="muted" style={{ fontSize: 12 }}>manual</span>;
 
 /* ============================ STUDENTS ============================ */
-export function StudentsTab({ schoolId }: { schoolId: string }) {
+export function StudentsTab({ schoolId, focusId, onFocusHandled }: { schoolId: string; focusId?: string | null; onFocusHandled?: () => void }) {
   const [students, setStudents] = useState<any[]>([]);
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  useEffect(() => { if (focusId) { setSelected(focusId); onFocusHandled?.(); } }, [focusId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [fStatus, setFStatus] = useState("");
