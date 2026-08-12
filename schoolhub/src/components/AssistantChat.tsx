@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const LANGS: [string, string][] = [["en", "English"], ["fr", "Français"], ["es", "Español"], ["pl", "Polski"], ["ur", "اردو"], ["ar", "العربية"]];
 
@@ -9,6 +9,14 @@ export default function AssistantChat({ schoolId, examples }: { schoolId?: strin
   const [lang, setLang] = useState("en");
   const [busy, setBusy] = useState(false);
   const [turns, setTurns] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    try { const d = await fetch(`/api/ai/history${schoolId ? `?schoolId=${schoolId}` : ""}`).then((r) => r.json()); setHistory(d.items ?? []); }
+    catch { /* ignore */ }
+  }, [schoolId]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   async function ask(question?: string) {
     const text = (question ?? q).trim();
@@ -18,10 +26,13 @@ export default function AssistantChat({ schoolId, examples }: { schoolId?: strin
       const res = await fetch(`/api/ai/ask`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: text, lang, schoolId }) });
       const data = await res.json();
       setTurns((t) => [{ q: text, a: data.answer || data.error || "No answer", citations: data.citations || [], found: data.found }, ...t]);
+      loadHistory();
     } catch {
       setTurns((t) => [{ q: text, a: "Network error", citations: [], found: false }, ...t]);
     } finally { setBusy(false); }
   }
+  async function delOne(id: string) { await fetch(`/api/ai/history?id=${id}`, { method: "DELETE" }); loadHistory(); }
+  async function clearAll() { await fetch(`/api/ai/history?all=1`, { method: "DELETE" }); setHistory([]); }
 
   return (
     <div className="panel">
@@ -37,6 +48,29 @@ export default function AssistantChat({ schoolId, examples }: { schoolId?: strin
           {examples.map((ex) => <button key={ex} className="secondary small" onClick={() => ask(ex)}>{ex}</button>)}
         </div>
       )}
+
+      {history.length > 0 && (
+        <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+          <div className="flex-between">
+            <button className="linklike" style={{ fontSize: 13 }} onClick={() => setShowHistory((v) => !v)}>{showHistory ? "▾" : "▸"} Recent searches ({history.length})</button>
+            {showHistory && <button className="secondary small" onClick={clearAll}>Clear all</button>}
+          </div>
+          {showHistory && (
+            <div style={{ marginTop: 8 }}>
+              {history.map((h) => (
+                <div key={h.id} className="flex-between" style={{ padding: "5px 0", gap: 8 }}>
+                  <button className="linklike" style={{ fontSize: 13, textAlign: "left" }} title={h.answer} onClick={() => ask(h.question)}>{h.question}</button>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <span className="mono muted" style={{ fontSize: 11 }}>{new Date(h.createdAt).toLocaleDateString([], { day: "numeric", month: "short" })}</span>
+                    <button className="linklike" style={{ fontSize: 12, color: "var(--danger)" }} onClick={() => delOne(h.id)} title="Delete this search">✕</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginTop: 16 }}>
         {turns.map((t, i) => (
           <div key={i} style={{ borderTop: "1px solid var(--line)", paddingTop: 12, marginTop: 12 }}>
