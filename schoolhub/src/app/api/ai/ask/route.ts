@@ -29,7 +29,8 @@ export async function POST(req: Request) {
       answer = a.answer; citations = a.citations; found = a.found;
       // Rephrase the computed facts to answer the question naturally. The model
       // may only restate the given facts — it must not add or change numbers.
-      if (found) {
+      // Skip for verbatim/long list answers so no items get dropped.
+      if (found && !a.verbatim && answer.length < 600) {
         const phrased = await llmComplete(
           "You rephrase a factual answer so it directly and naturally answers the user's question. Use ONLY the facts and numbers provided — never add, drop, or change any number, name or fact. If the facts are a list, keep every item. Be concise and conversational: 1–3 sentences, no preamble." + (lang && lang !== "en" ? ` Reply in ${lang}.` : ""),
           `Question: ${question}\n\nFacts to convey:\n${a.answer}`,

@@ -1,10 +1,31 @@
 import { SourceRecord } from "./retrieval";
 import { LANGUAGES } from "../constants";
 
-const STOPWORDS = new Set("a an the is are was were do does did what when where who how why my our your their for to of on in at do i my child children school need tomorrow today this week is there any will can".split(/\s+/));
+const STOPWORDS = new Set("a an the is are was were do does did what when where who how why my our your their for to of on in at do i my need tomorrow today this week there any will can list show give me all please tell about".split(/\s+/));
+
+// Canonicalise synonyms so pupil/student/child, staff/teacher, parent/guardian
+// all match, and singular/plural are equivalent (light plural stripping).
+const SYN: Record<string, string> = {
+  pupil: "student", child: "student", kid: "student", learner: "student", student: "student",
+  teacher: "staff", staff: "staff", employee: "staff",
+  guardian: "parent", carer: "parent", parent: "parent",
+  bus: "transport", coach: "transport", route: "transport", transport: "transport",
+  menu: "meal", meal: "meal", lunch: "meal", dinner: "meal", food: "meal",
+  trip: "trip", excursion: "trip", visit: "trip",
+  behaviour: "behaviour", merit: "behaviour", detention: "behaviour", incident: "behaviour", reward: "behaviour",
+  policy: "document", document: "document", allergy: "allergy", allergies: "allergy", allergen: "allergy",
+};
+function canon(t: string): string {
+  let w = t;
+  if (w.length > 3 && w.endsWith("es")) w = w.slice(0, -2);
+  else if (w.length > 3 && w.endsWith("s")) w = w.slice(0, -1);
+  return SYN[w] || SYN[t] || w;
+}
 
 function tokenize(s: string): string[] {
-  return (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  return (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+    .filter((t) => t.length > 1 && !STOPWORDS.has(t))
+    .map(canon);
 }
 
 export type Ranked = { record: SourceRecord; score: number };
@@ -41,7 +62,7 @@ function fmtDateTime(d: Date | null): string {
   return new Date(d).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
-export type Answer = { answer: string; citations: any[]; found: boolean };
+export type Answer = { answer: string; citations: any[]; found: boolean; verbatim?: boolean };
 
 /**
  * Compose a grounded answer purely from retrieved records. No fabrication: every
@@ -76,7 +97,7 @@ export function composeAnswer(question: string, ranked: Ranked[], opts: { lang?:
     citations.push({ title: r.title, type: r.type, source: r.sourceLabel, date: r.date, url: r.url });
   }
 
-  lines.push(`\n_Source: SchoolHub records above (school information, not an AI opinion). If something looks out of date, the school's published version is authoritative._${langNote}`);
+  lines.push(`\n_Source: SIPlat records above (school information, not an AI opinion). If something looks out of date, the school's published version is authoritative._${langNote}`);
 
   return { answer: lines.join("\n"), citations, found: true };
 }

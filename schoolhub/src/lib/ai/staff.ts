@@ -18,6 +18,54 @@ export async function staffAnalytics(question: string, schoolIds: string[], now 
   const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
 
+  // Roster listing — "list / show / who are the pupils / students / staff /
+  // teachers", optionally filtered by year group or status. Enumerates records.
+  {
+    const listIntent = hasAny(q, "list", "show", "who are", "who's", "name the", "names of", "roster", "everyone", "all pupils", "all students", "all the pupils", "all the students", "all staff", "all teachers", "which pupils", "which students");
+    const countWord = hasAny(q, "how many", "number of", "count", "total", "how much");
+    const aboutStudentsL = hasAny(q, "student", "pupil", "children", "child", "learner");
+    const aboutStaffL = hasAny(q, "staff", "employee", "member of staff", "teaching staff");
+    const aboutTeachersL = q.includes("teacher");
+    if (listIntent && !countWord && (aboutStudentsL || aboutStaffL || aboutTeachersL)) {
+      const yr = q.match(/\b(?:year|yr|grade|y)\s*(\d{1,2})\b/);
+      const st = /\b(enrolled|applicant|leaver|archived)\b/.exec(q);
+      const CAP = 60;
+
+      if (aboutStudentsL) {
+        const where: any = { schoolId: { in: schoolIds } };
+        if (st) where.status = st[1];
+        const all = await prisma.student.findMany({ where, orderBy: [{ yearGroup: "asc" }, { lastName: "asc" }], take: 500 });
+        const list = yr ? all.filter((s) => (String(s.yearGroup || "").match(/\d+/)?.[0] ?? "") === yr[1]) : all;
+        const scope = yr ? `Year ${yr[1]} pupil(s)` : st ? `${st[1]} pupil(s)` : "pupil(s)";
+        if (list.length === 0) return { answer: `I don't have any ${scope} on record.`, citations: [], found: true };
+        const shown = list.slice(0, CAP);
+        const lines = [`${list.length} ${scope}${list.length > CAP ? ` (showing the first ${CAP})` : ""}:\n`,
+          ...shown.map((s) => `• ${s.firstName} ${s.lastName}${s.yearGroup ? ` — ${s.yearGroup}` : ""}${s.status !== "enrolled" ? ` (${s.status})` : ""}`)];
+        if (list.length > CAP) lines.push(`\n…and ${list.length - CAP} more. Open the Students tab to view or export the full roster.`);
+        return { answer: lines.join("\n"), citations: [], found: true, verbatim: true };
+      }
+
+      // Staff / teachers — names come from memberships (roles) joined to users.
+      const roleFilter = aboutTeachersL && !aboutStaffL ? [ROLES.TEACHER] : STAFF_ROLES;
+      const mem = await prisma.membership.findMany({ where: { schoolId: { in: schoolIds }, role: { in: roleFilter } }, include: { user: { select: { fullName: true, email: true } } }, take: 400 });
+      const seen = new Map<string, { name: string; roles: string[] }>();
+      for (const m of mem) {
+        const key = m.userId;
+        const name = m.user?.fullName || m.user?.email || "Unknown";
+        const e = seen.get(key) || { name, roles: [] };
+        e.roles.push(ROLE_LABELS[m.role] || m.role);
+        seen.set(key, e);
+      }
+      const people = Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name));
+      const noun = aboutTeachersL && !aboutStaffL ? "teacher(s)" : "staff member(s)";
+      if (people.length === 0) return { answer: `I don't have any ${noun} with portal accounts on record.`, citations: [], found: true };
+      const shown = people.slice(0, CAP);
+      const lines = [`${people.length} ${noun}:\n`, ...shown.map((p) => `• ${p.name} — ${Array.from(new Set(p.roles)).join(", ")}`)];
+      if (people.length > CAP) lines.push(`\n…and ${people.length - CAP} more.`);
+      return { answer: lines.join("\n"), citations: [], found: true, verbatim: true };
+    }
+  }
+
   // Roster headcounts — "how many students / teachers / staff / parents", incl.
   // a specific year group / status. Computed live; answers only what was asked.
   {
