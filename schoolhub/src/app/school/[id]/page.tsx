@@ -3,6 +3,7 @@ import { getAuthContext } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { isMemberOf, rolesInSchool } from "@/lib/rbac";
 import { ROLE_LABELS } from "@/lib/constants";
+import { specialistPortalPath } from "@/lib/portal";
 import TopBar from "@/components/TopBar";
 import SchoolPortal from "./SchoolPortal";
 
@@ -10,6 +11,12 @@ export default async function SchoolAdminPage({ params }: { params: { id: string
   const ctx = await getAuthContext();
   if (!ctx) redirect("/login");
   if (!isMemberOf(ctx, params.id)) notFound();
+
+  // If the caller's role in THIS school is a specialist one (driver, teacher,
+  // transport manager, parent) and not a school-management role, send them to
+  // their own portal rather than the School portal's stripped "Member" view.
+  const specialist = specialistPortalPath(rolesInSchool(ctx, params.id));
+  if (specialist) redirect(specialist);
 
   const school = await prisma.school.findUnique({
     where: { id: params.id },

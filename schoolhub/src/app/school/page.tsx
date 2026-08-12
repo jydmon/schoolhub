@@ -4,12 +4,19 @@ import { cookies } from "next/headers";
 import { getAuthContext } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/constants";
+import { specialistPortalPath } from "@/lib/portal";
 import TopBar from "@/components/TopBar";
 
 export default async function SchoolIndex({ searchParams }: { searchParams?: { choose?: string } }) {
   const ctx = await getAuthContext();
   if (!ctx) redirect("/login");
   if (ctx.isPlatformAdmin && ctx.memberships.length === 0) redirect("/admin");
+
+  // A specialist (driver / teacher / transport manager / parent) doesn't belong
+  // in the School portal — send them to their own portal instead of the school
+  // "Member" view.
+  const portal = specialistPortalPath(ctx.memberships.map((m) => m.role));
+  if (portal) redirect(portal);
 
   const schoolIds = Array.from(new Set(ctx.memberships.map((m) => m.schoolId)));
   const schools = await prisma.school.findMany({ where: { id: { in: schoolIds } } });
