@@ -7,6 +7,9 @@ import ParentDashboard from "./ParentDashboard";
 const PARENT_NAV: NavGroup[] = [
   { label: "Family", items: [
     { key: "overview", label: "Overview", icon: "🏠" },
+    { key: "children", label: "My children", icon: "👧" },
+    { key: "calendar", label: "Calendar", icon: "📅" },
+    { key: "timetable", label: "Timetable", icon: "🗓️" },
     { key: "notifications", label: "Notifications", icon: "🔔" },
     { key: "transport", label: "Transport", icon: "🚌" },
     { key: "trips", label: "Trips", icon: "🧳" },

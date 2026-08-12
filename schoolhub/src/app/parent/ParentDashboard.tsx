@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import AssistantChat from "@/components/AssistantChat";
+import ParentCalendar from "./ParentCalendar";
+import ParentTimetable from "./ParentTimetable";
+import ParentChildren from "./ParentChildren";
 import { ParentNotifications, ParentTransport, ParentTrips, ParentRewards, ParentPreferences, ParentReports, ParentMessaging, ParentProfile } from "./ParentExtra";
 
 const PARENT_EXAMPLES = ["What does my child need tomorrow?", "When is Sports Day?", "What is the uniform policy?", "How do I report an absence?", "What did the latest newsletter say?", "When is Parents' Evening?"];
@@ -52,6 +55,7 @@ export default function ParentDashboard() {
 
   if (!data) return <div className="panel">Loading…</div>;
   const children = data.children || [];
+  const schools = Array.from(new Map(children.map((c: any) => [c.schoolId, c.schoolName])).entries()).map(([id, name]) => ({ id: id as string, name: name as string }));
   const inChild = (item: any) => childId === "all" || (item.childIds || []).includes(childId);
   const events = (data.events || []).filter(inChild);
   const homework = (data.homework || []).filter(inChild);
@@ -92,6 +96,10 @@ export default function ParentDashboard() {
       </div>
 
       {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+
+      <ParentChildren children={children} />
+      <ParentCalendar children={children} schools={schools} />
+      <ParentTimetable children={children} />
 
       <div id="p-notifications"><ParentNotifications /></div>
       <div id="p-transport"><ParentTransport children={children} /></div>
