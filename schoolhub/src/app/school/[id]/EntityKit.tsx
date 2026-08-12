@@ -5,6 +5,30 @@ import { useState } from "react";
 // Shared list/detail toolkit reused across module tabs (Meals, Trips, …):
 // multi-select, a 3-dot action menu, a source badge, and a detail modal.
 
+// Reusable column sorting for list tables. `sort(rows, get)` returns a sorted
+// copy; `SortTh` renders a clickable header showing the active direction.
+export function useSort(initialKey: string, initialDir: 1 | -1 = 1) {
+  const [key, setKey] = useState(initialKey);
+  const [dir, setDir] = useState<1 | -1>(initialDir);
+  const toggle = (k: string) => { if (k === key) setDir((d) => (d === 1 ? -1 : 1)); else { setKey(k); setDir(1); } };
+  const arrow = (k: string) => (key === k ? (dir === 1 ? " ▲" : " ▼") : "");
+  function sort<T>(rows: T[], get: (r: T, k: string) => any): T[] {
+    return [...rows].sort((a, b) => {
+      const av = get(a, key), bv = get(b, key);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+  }
+  return { key, dir, toggle, arrow, sort };
+}
+
+export function SortTh({ k, label, sort, className }: { k: string; label: string; sort: { toggle: (k: string) => void; arrow: (k: string) => string }; className?: string }) {
+  return <th className={className} style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }} onClick={() => sort.toggle(k)}>{label}{sort.arrow(k)}</th>;
+}
+
 export function useSel() {
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const ids = Object.keys(sel).filter((k) => sel[k]);

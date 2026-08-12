@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSort, SortTh } from "./EntityKit";
 
 const RELATIONSHIPS = ["Mother", "Father", "Parent", "Guardian", "Carer", "Grandparent", "Step-parent", "Foster carer", "Other"];
 const STAFF_ROLES = ["Teacher", "SchoolLeader", "TransportManager", "Driver", "SupportStaff", "SchoolAdministrator"];
@@ -79,14 +80,23 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [fStatus, setFStatus] = useState("");
+  const [fYear, setFYear] = useState("");
   const [form, setForm] = useState<any>({ reference: "", firstName: "", lastName: "", yearGroup: "", className: "", house: "", status: "enrolled", medicalAlert: false, sendIndicator: false, transportEligible: false });
   const sel = useSel();
+  const srt = useSort("name");
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/students?q=${encodeURIComponent(q)}`).then((r) => r.json());
     setStudents(d.students ?? []); sel.clear();
   }, [schoolId, q]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
+
+  const years = Array.from(new Set(students.map((s) => s.yearGroup).filter(Boolean))).sort();
+  const view = srt.sort(
+    students.filter((s) => (!fStatus || s.status === fStatus) && (!fYear || s.yearGroup === fYear)),
+    (s, k) => k === "name" ? `${s.lastName} ${s.firstName}`.toLowerCase() : k === "year" ? (s.yearGroup || "") : k === "guardians" ? (s._count?.guardianLinks ?? 0) : k === "status" ? s.status : "",
+  );
 
   const editable = (s: any) => ((s.source ?? "manual") !== "api");
   async function setStatus(id: string, status: string): Promise<boolean> {
@@ -102,7 +112,7 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
     sel.clear(); load();
     setMsg({ kind: "ok", text: `Archived ${n} student${n === 1 ? "" : "s"}${skipped ? ` · ${skipped} API-fed skipped (read-only)` : ""}.` });
   }
-  const allOn = students.length > 0 && students.every((s) => sel.on(s.id));
+  const allOn = view.length > 0 && view.every((s) => sel.on(s.id));
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -121,11 +131,14 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
     <>
       <div className="panel">
         <div className="flex-between">
-          <div><h2>Students</h2><p className="sub" style={{ marginBottom: 0 }}>{students.length} record(s)</p></div>
+          <div><h2>Students</h2><p className="sub" style={{ marginBottom: 0 }}>{q || fStatus || fYear ? `${view.length} of ${students.length}` : `${students.length}`} record(s)</p></div>
           <button onClick={() => setShowAdd((s) => !s)}>{showAdd ? "Close" : "Add student"}</button>
         </div>
-        <div style={{ marginTop: 14 }}>
-          <input placeholder="Search name or reference…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input placeholder="Search name or reference…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 2, minWidth: 180 }} />
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}><option value="">All statuses</option><option value="enrolled">Enrolled</option><option value="applicant">Applicant</option><option value="leaver">Leaver</option><option value="archived">Archived</option></select>
+          <select value={fYear} onChange={(e) => setFYear(e.target.value)}><option value="">All years</option>{years.map((y) => <option key={y} value={y}>{y}</option>)}</select>
+          {(fStatus || fYear) && <button className="secondary small" onClick={() => { setFStatus(""); setFYear(""); }}>Clear</button>}
         </div>
         {showAdd && (
           <form onSubmit={add} style={{ marginTop: 16, borderTop: "1px solid var(--line)", paddingTop: 16 }}>
@@ -166,11 +179,11 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
         )}
         <table>
           <thead><tr>
-            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(students.map((s) => s.id), e.target.checked)} /></th>
-            <th>Pupil</th><th>Year / Class</th><th>Flags</th><th>Guardians</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(view.map((s) => s.id), e.target.checked)} /></th>
+            <SortTh k="name" label="Pupil" sort={srt} /><SortTh k="year" label="Year / Class" sort={srt} /><th>Flags</th><SortTh k="guardians" label="Guardians" sort={srt} /><SortTh k="status" label="Status" sort={srt} /><th>Source</th><th className="right">Actions</th>
           </tr></thead>
           <tbody>
-            {students.map((s) => (
+            {view.map((s) => (
               <tr key={s.id}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(s.id)} onChange={() => sel.toggle(s.id)} /></td>
                 <td>
@@ -202,7 +215,7 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
                 </td>
               </tr>
             ))}
-            {students.length === 0 && <tr><td colSpan={8} className="muted">No students. Add one above or use the Import tab.</td></tr>}
+            {view.length === 0 && <tr><td colSpan={8} className="muted">{students.length ? "No students match your filters." : "No students. Add one above or use the Import tab."}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -390,10 +403,12 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const sel = useSel();
+  const srt = useSort("name");
   const load = useCallback(() => { fetch(`/api/schools/${schoolId}/guardians`).then((r) => r.json()).then((d) => { setGuardians(d.guardians ?? []); sel.clear(); }); }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   const rows = guardians.filter((g) => { const s = q.trim().toLowerCase(); if (!s) return true; return [g.fullName, g.email, g.phone, g.city].some((v) => String(v ?? "").toLowerCase().includes(s)); });
-  const allOn = rows.length > 0 && rows.every((g) => sel.on(g.id));
+  const view = srt.sort(rows, (g, k) => k === "name" ? String(g.fullName ?? "").toLowerCase() : k === "children" ? g.children.length : "");
+  const allOn = view.length > 0 && view.every((g) => sel.on(g.id));
   async function invite(g: any) {
     setMsg(null);
     const res = await fetch(`/api/schools/${schoolId}/guardians/${g.id}/invite`, { method: "POST" });
@@ -415,11 +430,11 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
         )}
         <table>
           <thead><tr>
-            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((g) => g.id), e.target.checked)} /></th>
-            <th>Parent / guardian</th><th>Contact</th><th>Language</th><th>Children</th><th>Source</th><th className="right">Actions</th>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(view.map((g) => g.id), e.target.checked)} /></th>
+            <SortTh k="name" label="Parent / guardian" sort={srt} /><th>Contact</th><th>Language</th><SortTh k="children" label="Children" sort={srt} /><th>Source</th><th className="right">Actions</th>
           </tr></thead>
           <tbody>
-            {rows.map((g) => (
+            {view.map((g) => (
               <tr key={g.id}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(g.id)} onChange={() => sel.toggle(g.id)} /></td>
                 <td>
@@ -435,7 +450,7 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
                 <td className="right"><Kebab items={[{ label: "Open / expand", onClick: () => setSelected(g.id) }, { label: "Invite to platform", onClick: () => invite(g) }]} /></td>
               </tr>
             ))}
-            {guardians.length === 0 && <tr><td colSpan={7} className="muted">No parents/guardians yet. Add them from a pupil, or import.</td></tr>}
+            {view.length === 0 && <tr><td colSpan={7} className="muted">{guardians.length ? "No parents/guardians match your search." : "No parents/guardians yet. Add them from a pupil, or import."}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -523,6 +538,7 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const sel = useSel();
+  const srt = useSort("name");
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/staff`).then((r) => r.json());
@@ -530,7 +546,8 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
   }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   const rows = staff.filter((s) => { const t = q.trim().toLowerCase(); if (!t) return true; return [s.user.fullName, s.user.email, s.reference, s.jobTitle, s.department].some((v) => String(v ?? "").toLowerCase().includes(t)); });
-  const allOn = rows.length > 0 && rows.every((s) => sel.on(s.id));
+  const view = srt.sort(rows, (s, k) => k === "name" ? String(s.user.fullName ?? "").toLowerCase() : k === "job" ? (s.jobTitle || "") : k === "status" ? (s.status || "active") : "");
+  const allOn = view.length > 0 && view.every((s) => sel.on(s.id));
   const editable = (s: any) => (s.source ?? "manual") !== "api";
   async function setStatus(s: any, status: string) {
     setMsg(null);
@@ -560,11 +577,11 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
         </div>
         <table>
           <thead><tr>
-            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((s) => s.id), e.target.checked)} /></th>
-            <th>Staff</th><th>Roles</th><th>Job title</th><th>Classes</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(view.map((s) => s.id), e.target.checked)} /></th>
+            <SortTh k="name" label="Staff" sort={srt} /><th>Roles</th><SortTh k="job" label="Job title" sort={srt} /><th>Classes</th><SortTh k="status" label="Status" sort={srt} /><th>Source</th><th className="right">Actions</th>
           </tr></thead>
           <tbody>
-            {rows.map((s) => (
+            {view.map((s) => (
               <tr key={s.id}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(s.id)} onChange={() => sel.toggle(s.id)} /></td>
                 <td>
@@ -584,7 +601,7 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
                 ]} /></td>
               </tr>
             ))}
-            {staff.length === 0 && <tr><td colSpan={8} className="muted">No staff yet.</td></tr>}
+            {view.length === 0 && <tr><td colSpan={8} className="muted">{staff.length ? "No staff match your search." : "No staff yet."}</td></tr>}
           </tbody>
         </table>
       </div>
