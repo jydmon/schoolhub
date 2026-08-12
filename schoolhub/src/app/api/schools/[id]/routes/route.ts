@@ -33,6 +33,7 @@ export async function POST(req: Request, { params }: Params) {
       data: {
         schoolId: params.id, name: input.name, type: input.type || "fixed",
         vehicleId: input.vehicleId || null, driverUserId: input.driverUserId || null, cutoffTime: input.cutoffTime || "07:00",
+        termlyFee: input.termlyFee ?? null,
         stops: input.stops?.length ? { create: input.stops.map((s, i) => ({ name: s.name, kind: s.kind || "pickup", address: s.address || null, lat: s.lat ?? null, lng: s.lng ?? null, plannedArrival: s.plannedArrival || null, sequence: i })) } : undefined,
       },
       include: { stops: true },

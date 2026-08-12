@@ -348,6 +348,7 @@ export const routeSchema = z.object({
   vehicleId: z.string().optional().nullable(),
   driverUserId: z.string().optional().nullable(),
   cutoffTime: z.string().optional(),
+  termlyFee: z.number().optional().nullable(),
   stops: z.array(z.object({
     name: z.string().min(1),
     kind: z.enum(["pickup", "dropoff", "school", "shared"]).optional(),
@@ -363,6 +364,7 @@ export const routeUpdateSchema = z.object({
   vehicleId: z.string().optional().nullable(),
   driverUserId: z.string().optional().nullable(),
   cutoffTime: z.string().optional(),
+  termlyFee: z.number().optional().nullable(),
   active: z.boolean().optional(),
 });
 
@@ -381,6 +383,20 @@ export const transportProfileSchema = z.object({
   emergencyContact: z.string().optional(),
   approvedDropoffs: z.array(z.string()).optional(),
   altLocations: z.array(z.string()).optional(),
+  feeStatus: z.string().optional(),
+});
+
+export const transportEnquirySchema = z.object({
+  name: z.string().min(1),
+  contact: z.string().optional(),
+  studentId: z.string().optional().nullable(),
+  subject: z.string().min(1),
+  message: z.string().optional(),
+});
+
+export const transportEnquiryUpdateSchema = z.object({
+  status: z.enum(["open", "in_progress", "resolved"]).optional(),
+  responseNote: z.string().optional().nullable(),
 });
 
 export const transportRequestSchema = z.object({

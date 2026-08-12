@@ -35,6 +35,9 @@ export async function PUT(req: Request, { params }: Params) {
       transportDays: i.transportDays ?? "Mon,Tue,Wed,Thu,Fri", morningOnly: !!i.morningOnly, afternoonOnly: !!i.afternoonOnly,
       accessibility: i.accessibility ?? null, emergencyContact: i.emergencyContact ?? null,
       approvedDropoffs: JSON.stringify(i.approvedDropoffs ?? []), altLocations: JSON.stringify(i.altLocations ?? []),
+      // fee status is managed via the dedicated /transport/fees endpoint so a
+      // route assignment here never clobbers it.
+      ...(i.feeStatus !== undefined ? { feeStatus: i.feeStatus } : {}),
     };
     const profile = await prisma.studentTransportProfile.upsert({
       where: { studentId: params.studentId }, update: data, create: { studentId: params.studentId, ...data },

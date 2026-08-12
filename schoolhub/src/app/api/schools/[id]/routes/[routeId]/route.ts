@@ -21,6 +21,7 @@ export async function PATCH(req: Request, { params }: Params) {
     if (input.vehicleId !== undefined) data.vehicleId = input.vehicleId || null;
     if (input.driverUserId !== undefined) data.driverUserId = input.driverUserId || null;
     if (input.cutoffTime !== undefined) data.cutoffTime = input.cutoffTime;
+    if (input.termlyFee !== undefined) data.termlyFee = input.termlyFee;
     if (input.active !== undefined) data.active = input.active;
     const route = await prisma.route.update({ where: { id: existing.id }, data });
     return ok({ route });

@@ -898,6 +898,7 @@ model Route {
   vehicle     Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   driverUserId String?
   cutoffTime  String  @default("07:00") // HH:MM — late change cut-off
+  termlyFee   Float?  // cost charged per pupil per term for this route
   active      Boolean @default(true)
   createdAt   DateTime @default(now())
 
@@ -946,6 +947,7 @@ model StudentTransportProfile {
   emergencyContact String?
   approvedDropoffs String @default("[]") // JSON
   altLocations     String @default("[]") // JSON approved alternative locations
+  feeStatus     String @default("none") // none | invoiced | paid | waived
 
   updatedAt DateTime @updatedAt
 
@@ -1028,6 +1030,25 @@ model VehiclePosition {
 
   @@index([vehicleId])
   @@index([journeyId])
+}
+
+/// A general transport enquiry (availability, eligibility, a question or a
+/// complaint) that the office triages. Distinct from a daily TransportRequest.
+model TransportEnquiry {
+  id           String  @id @default(cuid())
+  schoolId     String
+  studentId    String?
+  name         String  // who is asking
+  contact      String? // email or phone
+  subject      String
+  message      String?
+  status       String  @default("open") // open | in_progress | resolved
+  responseNote String?
+  source       String  @default("manual") // manual | parent
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([schoolId, status])
 }
 
 /// Transport or trip incident.
