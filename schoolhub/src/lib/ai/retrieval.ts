@@ -7,7 +7,7 @@ const STAFF_ROLES: string[] = [ROLES.SCHOOL_ADMIN, ROLES.SCHOOL_LEADER, ROLES.TE
 
 export type SourceRecord = {
   id: string;
-  type: "document" | "event" | "homework";
+  type: "document" | "event" | "homework" | "announcement" | "student" | "staff" | "behaviour" | "trip" | "meal" | "page" | "route";
   title: string;
   text: string;
   date: Date | null;
@@ -15,6 +15,8 @@ export type SourceRecord = {
   url: string | null;
   schoolId: string;
 };
+
+const stripHtml = (s: string) => (s || "").replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim();
 
 export type Context = {
   records: SourceRecord[];
@@ -100,6 +102,61 @@ export async function gatherContext(userId: string, opts: { schoolId?: string } 
         id: h.id, type: "homework", title: h.title, text: `Homework: ${h.title}. ${h.subject || ""} ${h.description || ""}`,
         date: h.dueAt, sourceLabel: "Homework", url: null, schoolId: sid,
       });
+    }
+
+    // Announcements — staff see all; parents see those addressed to them.
+    const anns = await prisma.announcement.findMany({ where: { schoolId: sid, ...(staff ? {} : { status: "sent" }) }, orderBy: { createdAt: "desc" }, take: 150 });
+    for (const a of anns) {
+      if (!staff) {
+        let aud: any = {}; try { aud = JSON.parse(a.audienceJson || "{}"); } catch { aud = {}; }
+        const applies = a.audienceKind === "all"
+          || (a.audienceKind === "year" && Array.isArray(aud.years) && children.some((c) => aud.years.includes(c.yearGroup)))
+          || (a.audienceKind === "class" && Array.isArray(aud.classes) && children.some((c) => aud.classes.includes(c.classId)))
+          || (a.audienceKind === "list" && Array.isArray(aud.userIds) && aud.userIds.includes(userId));
+        if (!applies) continue;
+      }
+      records.push({ id: a.id, type: "announcement", title: a.title, text: `Announcement: ${a.title}. ${a.body}`, date: a.sentAt ?? a.createdAt, sourceLabel: "Announcement", url: null, schoolId: sid });
+    }
+
+    // Published website / CMS pages (public content) — everyone.
+    const pages = await prisma.cmsPage.findMany({ where: { status: "published" }, take: 100 });
+    for (const p of pages) {
+      records.push({ id: p.id, type: "page", title: p.title, text: `${p.title}. ${p.seoDescription || ""} ${stripHtml(p.contentHtml).slice(0, 1200)}`, date: p.updatedAt, sourceLabel: "Website", url: `/site/${p.slug}`, schoolId: sid });
+    }
+
+    // Meals / menus — everyone (allergen + dietary info is safe to share).
+    const menus = await prisma.menuItem.findMany({ where: { schoolId: sid, active: true }, take: 300 });
+    for (const m of menus) {
+      const diet = [m.vegetarian && "vegetarian", m.vegan && "vegan"].filter(Boolean).join(", ");
+      records.push({ id: m.id, type: "meal", title: `${m.name} (${m.meal})`, text: `Menu: ${m.name}. ${m.day}${m.weekOf ? ` w/c ${m.weekOf}` : ""}. ${m.meal}/${m.course}. ${m.description || ""}${m.allergens ? ` Allergens: ${m.allergens}.` : ""}${diet ? ` ${diet}.` : ""}${m.yearGroup ? ` For ${m.yearGroup}.` : ""}`, date: null, sourceLabel: "Meals & menus", url: null, schoolId: sid });
+    }
+
+    // ---- Staff-only records (pupil roster, staff, behaviour, trips, transport) ----
+    if (!staff) continue;
+
+    const students = await prisma.student.findMany({ where: { schoolId: sid }, take: 1000 });
+    for (const s of students) {
+      records.push({ id: s.id, type: "student", title: `${s.firstName} ${s.lastName}`, text: `Pupil: ${s.firstName} ${s.lastName}. Reference ${s.reference}.${s.yearGroup ? ` Year ${s.yearGroup}.` : ""}${s.house ? ` House ${s.house}.` : ""} Status ${s.status}.${s.allergies ? ` Allergies: ${s.allergies}.` : ""}${s.medicalAlert ? " Has a medical alert." : ""}`, date: null, sourceLabel: "Pupil roster", url: null, schoolId: sid });
+    }
+
+    const staffProfiles = await prisma.staffProfile.findMany({ where: { schoolId: sid }, include: { user: { select: { fullName: true, email: true } } }, take: 500 });
+    for (const sp of staffProfiles) {
+      records.push({ id: sp.id, type: "staff", title: sp.user?.fullName || sp.reference, text: `Staff: ${sp.user?.fullName || ""}. ${sp.jobTitle || ""}${sp.department ? `, ${sp.department}` : ""}. Reference ${sp.reference}. Status ${sp.status}.`, date: null, sourceLabel: "Staff", url: null, schoolId: sid });
+    }
+
+    const rewards = await prisma.rewardRecord.findMany({ where: { schoolId: sid }, include: { student: { select: { firstName: true, lastName: true } } }, orderBy: { at: "desc" }, take: 300 });
+    for (const r of rewards) {
+      records.push({ id: r.id, type: "behaviour", title: `${r.student.firstName} ${r.student.lastName} — ${r.type}`, text: `Behaviour record: ${r.student.firstName} ${r.student.lastName}, ${r.type} (${r.points} point(s))${r.positive ? " positive" : " negative"}.${r.note ? ` ${r.note}.` : ""}${r.teacherName ? ` By ${r.teacherName}.` : ""}`, date: r.at, sourceLabel: "Behaviour", url: null, schoolId: sid });
+    }
+
+    const trips = await prisma.trip.findMany({ where: { schoolId: sid }, orderBy: { date: "desc" }, take: 100 });
+    for (const t of trips) {
+      records.push({ id: t.id, type: "trip", title: t.title, text: `Trip: ${t.title}. ${t.purpose || ""} Destination ${t.destination || t.venue || "?"}. Date ${t.date}.${t.departureTime ? ` Departs ${t.departureTime}.` : ""}${t.consentRequired ? " Consent required." : ""}${t.paymentStatus ? ` Payment: ${t.paymentStatus}.` : ""}`, date: t.date ? new Date(`${t.date}T00:00:00`) : null, sourceLabel: "Trips", url: null, schoolId: sid });
+    }
+
+    const routes = await prisma.route.findMany({ where: { schoolId: sid }, include: { stops: { orderBy: { sequence: "asc" }, select: { name: true } }, vehicle: { select: { label: true, reference: true } } }, take: 100 });
+    for (const rt of routes) {
+      records.push({ id: rt.id, type: "route", title: `Route: ${rt.name}`, text: `Transport route ${rt.name} (${rt.type}). Vehicle ${rt.vehicle?.label || rt.vehicle?.reference || "unassigned"}. Stops: ${rt.stops.map((s) => s.name).join(", ") || "none"}. Cut-off ${rt.cutoffTime}.${rt.termlyFee != null ? ` Termly fee £${rt.termlyFee}.` : ""}`, date: null, sourceLabel: "Transport", url: null, schoolId: sid });
     }
   }
 

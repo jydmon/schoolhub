@@ -27,7 +27,7 @@ export async function POST(req: Request) {
       const a = (sa || pa)!;
       answer = a.answer; citations = a.citations; found = a.found;
     } else {
-      const ranked = rank(context.records, question);
+      const ranked = rank(context.records, question, 10);
       const composed = composeAnswer(question, ranked, { lang, isStaff: context.isStaff });
       const llm = await maybeLlmAnswer(question, ranked, lang || "en");
       answer = llm ? `${llm}` : composed.answer;
