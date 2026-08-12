@@ -11,6 +11,8 @@ export default function ParentChildren({ children }: { children: { id: string; n
   const [childId, setChildId] = useState<string>("");
   const [tab, setTab] = useState("Profile");
   const [data, setData] = useState<any>(null);
+  const [report, setReport] = useState<any>(null);
+  const [rerr, setRerr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/parent/child${childId ? `?student=${childId}` : ""}`).then((r) => r.json());
@@ -18,6 +20,13 @@ export default function ParentChildren({ children }: { children: { id: string; n
     if (!childId && d.child) setChildId(d.child.id);
   }, [childId]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setReport(null); setRerr(null); }, [childId, tab]);
+
+  async function viewReport(id: string) {
+    setRerr(null);
+    try { const d = await fetch(`/api/parent/reports/${id}`).then((r) => r.json()); if (d.error) throw new Error(d.error); setReport(d.report); }
+    catch (e: any) { setRerr(e.message || "Could not open report"); }
+  }
 
   const ch = data?.child;
 
@@ -88,10 +97,17 @@ export default function ParentChildren({ children }: { children: { id: string; n
             )}
 
             {tab === "Reports" && (
-              <table><thead><tr><th>Report</th><th>Term</th><th>Released</th><th></th></tr></thead><tbody>
-                {data.reports.map((r: any) => <tr key={r.id}><td>{r.title}</td><td className="muted">{r.term || "—"}</td><td className="mono muted">{dt(r.releasedAt)}</td><td className="right">{r.url ? <a className="linklike" href={r.url} target="_blank" rel="noreferrer">Open</a> : null}</td></tr>)}
-                {data.reports.length === 0 && <tr><td colSpan={4} className="muted">No released reports yet.</td></tr>}
-              </tbody></table>
+              rerr ? <div className="notice err">{rerr}</div> : null || report ? (
+                <div>
+                  <button className="secondary small" onClick={() => setReport(null)}>← Back to reports</button>
+                  <ReportReader report={report} />
+                </div>
+              ) : (
+                <table><thead><tr><th>Report</th><th>Term</th><th>Released</th><th className="right"></th></tr></thead><tbody>
+                  {data.reports.map((r: any) => <tr key={r.id}><td><strong>{r.title}</strong></td><td className="muted">{r.term || "—"}</td><td className="mono muted">{dt(r.releasedAt)}</td><td className="right"><button className="small" onClick={() => viewReport(r.id)}>View</button></td></tr>)}
+                  {data.reports.length === 0 && <tr><td colSpan={4} className="muted">No released reports yet.</td></tr>}
+                </tbody></table>
+              )
             )}
 
             {tab === "Trips" && (
@@ -123,6 +139,58 @@ export default function ParentChildren({ children }: { children: { id: string; n
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Renders a released report as a readable document (same structured fields the
+// school authors: attendance, per-subject attainment, comments, targets).
+function ReportReader({ report }: { report: any }) {
+  const b = report.body && typeof report.body === "object" ? report.body : {};
+  const subjects: any[] = Array.isArray(b.subjects) ? b.subjects : [];
+  const known = new Set(["attendancePct", "authAbs", "unauthAbs", "lates", "conduct", "subjects", "formTutorComment", "headComment", "targets"]);
+  const other = Object.entries(b).filter(([k, v]) => !known.has(k) && v != null && v !== "");
+  const nm = report.student ? `${report.student.preferredName || report.student.firstName} ${report.student.lastName || ""}`.trim() : "";
+  return (
+    <div style={{ marginTop: 12, fontSize: 14, lineHeight: 1.55 }}>
+      <h3 style={{ margin: "0 0 2px" }}>{report.title}</h3>
+      <div className="mono muted" style={{ fontSize: 12 }}>{[nm, report.term || report.type].filter(Boolean).join(" · ")}</div>
+      {report.summary && <p style={{ marginTop: 10 }}>{report.summary}</p>}
+
+      {(b.attendancePct || b.conduct) && (
+        <>
+          <h4 style={{ margin: "14px 0 4px" }}>Attendance &amp; conduct</h4>
+          {b.attendancePct != null && <p style={{ margin: "2px 0" }}>Attendance: <strong>{b.attendancePct}%</strong>{b.authAbs ? ` · ${b.authAbs} authorised absence(s)` : ""}{b.unauthAbs ? ` · ${b.unauthAbs} unauthorised` : ""}{b.lates ? ` · ${b.lates} late(s)` : ""}</p>}
+          {b.conduct && <p style={{ margin: "2px 0" }}>Conduct: {b.conduct}</p>}
+        </>
+      )}
+
+      {subjects.length > 0 && (
+        <>
+          <h4 style={{ margin: "14px 0 4px" }}>Attainment</h4>
+          <table><thead><tr><th>Subject</th><th>Attainment</th><th>Effort</th><th>Comment</th></tr></thead>
+            <tbody>{subjects.map((s, i) => <tr key={i}><td><strong>{s.name}</strong></td><td>{s.attainment || "—"}</td><td>{s.effort || "—"}</td><td className="muted">{s.comment || ""}</td></tr>)}</tbody>
+          </table>
+        </>
+      )}
+
+      {(b.formTutorComment || b.headComment) && (
+        <>
+          <h4 style={{ margin: "14px 0 4px" }}>Comments</h4>
+          {b.formTutorComment && <p style={{ margin: "2px 0" }}><strong>Form tutor:</strong> {b.formTutorComment}</p>}
+          {b.headComment && <p style={{ margin: "2px 0" }}><strong>Head teacher:</strong> {b.headComment}</p>}
+        </>
+      )}
+
+      {b.targets && (<><h4 style={{ margin: "14px 0 4px" }}>Targets</h4><p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{b.targets}</p></>)}
+
+      {other.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          {other.map(([k, v]: any) => <div key={k} style={{ borderTop: "1px solid var(--line)", padding: "6px 0" }}><strong style={{ textTransform: "capitalize" }}>{k.replace(/_/g, " ")}</strong><div className="muted">{typeof v === "object" ? JSON.stringify(v) : String(v)}</div></div>)}
+        </div>
+      )}
+
+      {report.fileUrl && <p style={{ marginTop: 12 }}><a className="linklike" href={report.fileUrl} target="_blank" rel="noreferrer">📎 Download attached report file</a></p>}
     </div>
   );
 }
