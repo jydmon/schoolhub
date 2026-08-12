@@ -1,51 +1,62 @@
-import React, { useState } from "react";
+import React from "react";
 import { View, Text } from "react-native";
-import { Screen, Card, CardTitle, Sub, Badge, Button, Kpis, Kpi, LineItem, Seg, Note, T, toast } from "@/ui/kit";
-import { TRIP_UPDATE_TEXT } from "@/data/mock";
+import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Note, T, toast } from "@/ui/kit";
+import { useApi } from "@/data/useApi";
+
+function hhmm(t?: string) { return t || ""; }
 
 function Trips() {
-  const [feed, setFeed] = useState<[string, string][]>([["10:12", "Arrived at Ecomuseum — all 28 pupils accounted for"]]);
-  const send = (kind: string) => { setFeed((f) => [["now", TRIP_UPDATE_TEXT[kind]], ...f]); toast("Update sent to 28 families"); };
+  const { data, loading, error } = useApi<any>("/api/teacher/dashboard");
+  const d = data || {};
+  const st = d.stats || {};
+  if (loading && !data) return <Screen><Loading label="Loading your day…" /></Screen>;
   return (
     <Screen>
       <Kpis>
-        <Kpi k="Trip" v="Ecomuseum" vSize={16} h="28 pupils · you lead" />
-        <Kpi warn k="Consents out" v="4" h="£51 unpaid" />
+        <Kpi k="My pupils" v={String(st.students ?? "—")} h={d.scope?.schoolName || ""} />
+        <Kpi k="Lessons today" v={String(st.lessonsToday ?? 0)} h={`${st.classes ?? 0} classes`} />
+        <Kpi k="Reports to write" v={String(st.reportsOutstanding ?? 0)} h="draft / submitted" warn={(st.reportsOutstanding ?? 0) > 0} />
+        <Kpi k="Positive points" v={`+${st.positivePoints ?? 0}`} h="last 30 days" vColor={T.ok} />
       </Kpis>
+
       <Card>
-        <CardTitle right={<Badge tone="info">to parents</Badge>}>Live trip updates</CardTitle>
-        <Sub>Tap to broadcast to all trip families instantly.</Sub>
-        <Seg options={[
-          { label: "🚌 Started", onPress: () => send("start") },
-          { label: "📍 Arrived", onPress: () => send("arrived") },
-          { label: "🚧 Traffic", onPress: () => send("traffic") },
-          { label: "⏱️ Delay", onPress: () => send("delay") },
-          { label: "🕒 ETA", onPress: () => send("eta") },
-          { label: "✅ Back", onPress: () => send("done") },
-        ]} />
-        {feed.map((u, i) => (
-          <LineItem key={i} first={i === 0} t={u[1]} m={`${u[0]} · sent to 28 families`} right={<Badge tone="ok">sent</Badge>} />
-        ))}
+        <CardTitle right={<Badge tone="info">today</Badge>}>Today's lessons</CardTitle>
+        {(d.lessons || []).length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No lessons scheduled today.</Text> :
+          (d.lessons || []).map((l: any, i: number) => (
+            <LineItem key={l.id || i} first={i === 0} t={`${l.subject}${l.className ? " · " + l.className : ""}`}
+              m={`${hhmm(l.startTime)}${l.endTime ? "–" + hhmm(l.endTime) : ""}${l.room ? " · " + l.room : ""}`}
+              right={l.period ? <Badge tone="mut">{l.period}</Badge> : null} />
+          ))}
       </Card>
-      <Card>
-        <CardTitle>Register — 4B AM</CardTitle>
-        <LineItem first t="Ella Blake" right={<Badge tone="ok">present</Badge>} />
-        <LineItem t="Max Turner" m="parent reported: dentist" right={<Badge tone="warn">absent</Badge>} />
-        <Button tone="secondary" title="Submit register" onPress={() => toast("Register submitted (demo)")} />
-      </Card>
+
+      {(d.trips || []).length > 0 ? (
+        <Card>
+          <CardTitle>Upcoming trips</CardTitle>
+          {(d.trips || []).map((t: any, i: number) => (
+            <LineItem key={t.id || i} first={i === 0} t={t.title} m={t.destination || ""}
+              right={<Button sm title="Open" onPress={() => toast("Open in web portal")} />} />
+          ))}
+        </Card>
+      ) : null}
+
+      {error ? <Note>Showing saved data — couldn't refresh right now.</Note> : null}
     </Screen>
   );
 }
 
 function Reports() {
+  const { data, loading } = useApi<any>("/api/teacher/dashboard");
+  const reports: any[] = data?.reportsToWrite || [];
+  if (loading && !data) return <Screen><Loading /></Screen>;
   return (
     <Screen>
       <Card>
         <CardTitle right={<Badge tone="warn">draft</Badge>}>Pupil reports</CardTitle>
-        <LineItem first t="Year 4 annual — Ella Blake" m="2 of 5 sections complete"
-          right={<Button sm title="Continue" onPress={() => toast("Report editor (demo)")} />} />
-        <LineItem t="Attendance & behaviour" m="28 pupils · ready to submit"
-          right={<Button sm tone="secondary" title="Submit" onPress={() => toast("Submitted for approval (demo)")} />} />
+        {reports.length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No reports in progress.</Text> :
+          reports.map((r, i) => (
+            <LineItem key={r.id || i} first={i === 0} t={`${r.student ? r.student + " — " : ""}${r.title}`} m={r.status}
+              right={<Button sm title="Continue" onPress={() => toast("Open in web portal")} />} />
+          ))}
       </Card>
       <Note>You author; leadership approves and sets the release time; parents are notified when it's released.</Note>
     </Screen>

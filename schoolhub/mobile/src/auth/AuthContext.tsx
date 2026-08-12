@@ -1,37 +1,85 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import * as LocalAuthentication from "expo-local-authentication";
-import { RoleKey, ACCOUNTS } from "@/data/mock";
+import { api, loadToken, setToken, hasToken } from "@/api/client";
+import { RoleKey } from "@/data/mock";
 
 /**
- * Auth for the SIPlat demo build. In production this reads a server bootstrap
- * (role, user, schools) after login; here we open straight into a chosen role
- * so every screen renders from the built-in demo data. Swap signInAs() for the
- * real /api/auth/login + /api/mobile/bootstrap flow (see src/api/client.ts).
+ * Real authentication against the SIPlat backend (dev.siplat.com).
+ *  login  -> POST /api/auth/login  (returns { token, user } or { mfaRequired })
+ *  then   -> GET  /api/mobile/bootstrap  (role, identity, children, unread)
+ * The token is stored in the secure keystore and sent as a Bearer header.
  */
-type Boot = { role: RoleKey; user: { name: string; email: string } };
+export type Boot = {
+  role: RoleKey;
+  user: { id: string; name: string; email: string };
+  roles: string[];
+  schools: string[];
+  children: { id: string; name: string; yearGroup?: string }[];
+  unread: number;
+};
+
 type Ctx = {
   loading: boolean;
   boot: Boot | null;
-  signInAs: (role: RoleKey) => void;
+  error: string | null;
+  mfaRequired: boolean;
+  hasStoredSession: boolean;
+  login: (email: string, password: string, mfaToken?: string) => Promise<void>;
   biometricUnlock: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  refreshBadge: (n: number) => void;
 };
 
 const AuthCtx = createContext<Ctx>(null as any);
 export const useAuth = () => useContext(AuthCtx);
 
+const APP_ROLES: RoleKey[] = ["parent", "teacher", "driver", "admin"];
+function toRole(appRole: string): RoleKey {
+  return (APP_ROLES.includes(appRole as RoleKey) ? appRole : "parent") as RoleKey;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [boot, setBoot] = useState<Boot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [hasStoredSession, setHasStored] = useState(false);
 
-  useEffect(() => { const t = setTimeout(() => setLoading(false), 350); return () => clearTimeout(t); }, []);
-
-  const signInAs = useCallback((role: RoleKey) => {
-    const a = ACCOUNTS[role];
-    setBoot({ role, user: { name: a.name, email: a.email } });
+  const loadBoot = useCallback(async () => {
+    const b = await api.get<any>("/api/mobile/bootstrap");
+    setBoot({
+      role: toRole(b.appRole),
+      user: { id: b.user?.id, name: b.user?.name || b.user?.email || "You", email: b.user?.email || "" },
+      roles: b.roles || [],
+      schools: b.schools || [],
+      children: b.children || [],
+      unread: b.unreadNotifications || 0,
+    });
   }, []);
 
+  // On launch: restore a stored token; if present, offer biometric unlock.
+  useEffect(() => {
+    (async () => {
+      await loadToken();
+      setHasStored(hasToken());
+      setLoading(false);
+    })();
+  }, []);
+
+  const login = useCallback(async (email: string, password: string, mfaToken?: string) => {
+    setError(null);
+    try {
+      const res = await api.post<any>("/api/auth/login", { email: email.trim(), password, mfaToken });
+      if (res?.mfaRequired) { setMfaRequired(true); return; }
+      if (res?.token) { await setToken(res.token); setHasStored(true); setMfaRequired(false); }
+      await loadBoot();
+    } catch (e: any) {
+      setError(e?.data?.error || e?.message || "Sign-in failed");
+    }
+  }, [loadBoot]);
+
   const biometricUnlock = useCallback(async () => {
+    setError(null);
     try {
       const hasHw = await LocalAuthentication.hasHardwareAsync();
       const enrolled = await LocalAuthentication.isEnrolledAsync();
@@ -39,11 +87,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const r = await LocalAuthentication.authenticateAsync({ promptMessage: "Unlock SIPlat", fallbackLabel: "Use passcode" });
         if (!r.success) return;
       }
-      signInAs("parent");
-    } catch { signInAs("parent"); }
-  }, [signInAs]);
+      await loadBoot();
+    } catch (e: any) {
+      setError("Session expired — please sign in again.");
+      await setToken(null); setHasStored(false);
+    }
+  }, [loadBoot]);
 
-  const logout = useCallback(() => setBoot(null), []);
+  const logout = useCallback(async () => {
+    try { await api.post("/api/auth/logout"); } catch {}
+    await setToken(null);
+    setBoot(null); setHasStored(false); setMfaRequired(false);
+  }, []);
 
-  return <AuthCtx.Provider value={{ loading, boot, signInAs, biometricUnlock, logout }}>{children}</AuthCtx.Provider>;
+  const refreshBadge = useCallback((n: number) => {
+    setBoot((b) => (b ? { ...b, unread: n } : b));
+  }, []);
+
+  return (
+    <AuthCtx.Provider value={{ loading, boot, error, mfaRequired, hasStoredSession, login, biometricUnlock, logout, refreshBadge }}>
+      {children}
+    </AuthCtx.Provider>
+  );
 }

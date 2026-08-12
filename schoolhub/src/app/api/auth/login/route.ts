@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { verifyPassword } from "@/lib/auth";
+import { verifyPassword, signSession } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session";
 import { verifyTotp } from "@/lib/mfa";
 import { loginSchema } from "@/lib/validation";
@@ -55,7 +55,18 @@ export async function POST(req: Request) {
     await recordAudit({ action: AUDIT.USER_LOGIN, actorUserId: user.id, actorEmail: user.email, ip });
     await recordLoginEvent({ userId: user.id, email: user.email, ip, device, result: "success" });
 
+    // Native (mobile) clients can't read the httpOnly cookie, so also return the
+    // signed session token in the body. They store it securely and send it as an
+    // `Authorization: Bearer <token>` header (see getAuthContext). Web ignores it.
+    const token = signSession({
+      sub: user.id,
+      email: user.email,
+      isPlatformAdmin: user.isPlatformAdmin,
+      ver: user.sessionVersion ?? 0,
+    });
+
     return ok({
+      token,
       user: {
         id: user.id,
         email: user.email,

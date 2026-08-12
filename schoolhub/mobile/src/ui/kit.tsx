@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, Pressable, ScrollView, TextInput, StyleSheet, Image, Modal,
+  View, Text, Pressable, ScrollView, TextInput, StyleSheet, Image, Modal, ActivityIndicator,
 } from "react-native";
 
 /* ------------------------------------------------------------------ *
@@ -123,6 +123,19 @@ export function Field({ label, style, ...props }: any) {
 
 /* ---------------- note / notice ---------------- */
 export function Note({ children }: any) { return <Text style={s.note}>{children}</Text>; }
+
+/* ---------------- loading / empty ---------------- */
+export function Loading({ label }: { label?: string }) {
+  return (
+    <View style={{ padding: 26, alignItems: "center" }}>
+      <ActivityIndicator color={T.brand} />
+      {label ? <Text style={{ color: T.muted, fontSize: 12, marginTop: 8 }}>{label}</Text> : null}
+    </View>
+  );
+}
+export function Empty({ children }: any) {
+  return <Card><Text style={{ color: T.muted, fontSize: 13, textAlign: "center", paddingVertical: 6 }}>{children}</Text></Card>;
+}
 
 /* ---------------- chat bubble ---------------- */
 export function Bubble({ who, children }: { who: "me" | "ai"; children: any }) {

@@ -1,61 +1,72 @@
 import React, { useState } from "react";
 import { View, Text } from "react-native";
-import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, Row, LineItem, Seg, Avatar, Note, T, toast } from "@/ui/kit";
-import { DRIVER_ROUTES, DriverRoute } from "@/data/mock";
+import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Empty, Note, T, toast } from "@/ui/kit";
+import { useApi } from "@/data/useApi";
+import { api } from "@/api/client";
 
-function clone(): DriverRoute[] { return DRIVER_ROUTES.map((r) => ({ ...r, pupils: r.pupils.map((p) => ({ ...p })) })); }
+function statusTone(s?: string) {
+  if (s === "in_progress" || s === "active") return "ok";
+  if (s === "completed") return "mut";
+  if (s === "cancelled") return "danger";
+  return "info";
+}
 
 function Journeys() {
-  const [routes, setRoutes] = useState<DriverRoute[]>(clone);
-  const [sel, setSel] = useState(0);
-  const r = routes[sel];
-  const bump = () => setRoutes((rs) => rs.slice());
+  const { data, loading, error, reload } = useApi<any>("/api/driver/home");
+  const d = data || {};
+  const journeys: any[] = d.journeys || [];
+  const [busy, setBusy] = useState<string | null>(null);
 
-  const toggleJourney = () => { r.started = !r.started; toast(r.started ? "Journey started · parents notified & tracking live" : "Journey ended · families notified"); bump(); };
-  const setMode = (m: "pickup" | "dropoff") => { r.mode = m; bump(); };
-  const check = (i: number) => { const p = r.pupils[i]; p.in = !p.in; toast(`${p.n} ${p.in ? (r.mode === "pickup" ? "checked in — parent notified" : "dropped — parent notified") : "unchecked"}`); bump(); };
+  async function act(id: string, kind: "start" | "complete") {
+    setBusy(id);
+    try {
+      await api.post(`/api/driver/journeys/${id}/${kind}`, {});
+      toast(kind === "start" ? "Journey started · families notified" : "Journey ended · families notified");
+      await reload();
+    } catch (e: any) { toast(e?.data?.error || "Couldn't update"); }
+    finally { setBusy(null); }
+  }
 
-  const n = r.pupils.length, done = r.pupils.filter((p) => p.in).length;
-  const modeWord = r.mode === "pickup" ? "picked up" : "dropped off";
+  if (loading && !data) return <Screen><Loading label="Loading today's journeys…" /></Screen>;
 
   return (
     <Screen>
-      <Card>
-        <CardTitle right={<Badge tone="info">{routes.length}</Badge>}>Today's routes</CardTitle>
-        <Seg options={routes.map((rt, i) => ({ label: `${rt.name.replace("Route ", "")}${rt.started ? " 🟢" : ""}`, active: i === sel, onPress: () => setSel(i) }))} />
-      </Card>
       <Kpis>
-        <Kpi k="Route" v={r.name} vSize={15} h={`${n} pupils`} />
-        <Kpi warn={!r.started} k="Journey" v={r.started ? "Live" : "Ready"} vSize={18} vColor={r.started ? T.ok : undefined} h={r.started ? "tracking on" : "tap start"} />
+        <Kpi k="Journeys today" v={String(journeys.length)} h={d.schoolName || ""} />
+        <Kpi k="Messages" v={String(d.unreadMessages ?? 0)} h="from office" warn={(d.unreadMessages ?? 0) > 0} />
       </Kpis>
-      <Card>
-        <CardTitle>Vehicle</CardTitle>
-        <LineItem first t={r.veh} m="Minibus · MOT valid" right={<Badge tone="ok">GPS live</Badge>} />
-        <Button tone={r.started ? "danger" : "brand"} title={r.started ? "End journey" : "Start journey"} onPress={toggleJourney} />
-      </Card>
-      <Card>
-        <CardTitle right={<Badge tone="info">{r.mode}</Badge>}>Check-in</CardTitle>
-        <Row first>
-          <Text style={{ fontWeight: "600", fontSize: 13, color: T.ink }}>Pupils {modeWord}</Text>
-          <Badge tone={done === n ? "ok" : "info"}>{done}/{n}</Badge>
-        </Row>
-        <Seg options={[
-          { label: "Pickup", active: r.mode === "pickup", onPress: () => setMode("pickup") },
-          { label: "Drop-off", active: r.mode === "dropoff", onPress: () => setMode("dropoff") },
-        ]} />
-        {r.pupils.map((p, i) => (
-          <Row key={i} first={i === 0}>
-            <View style={{ flexDirection: "row", gap: 9, alignItems: "center", flex: 1 }}>
-              <Avatar name={p.n} size={32} />
-              <View><Text style={{ fontWeight: "600", fontSize: 13, color: T.ink }}>{p.n}</Text><Text style={{ fontSize: 11, color: T.muted }}>{p.stop}</Text></View>
-            </View>
-            {p.in
-              ? <Button sm tone="secondary" title={`✓ ${r.mode === "pickup" ? "aboard" : "dropped"}`} onPress={() => check(i)} />
-              : <Button sm title={`Check ${r.mode === "pickup" ? "in" : "off"}`} onPress={() => check(i)} />}
-          </Row>
-        ))}
-      </Card>
-      <Note>A driver can run several routes a day. Photos help confirm each child; each check-in notifies that child's parent.</Note>
+
+      {journeys.length === 0 ? <Empty>No journeys assigned today.</Empty> :
+        journeys.map((j, i) => {
+          const running = j.status === "in_progress" || j.status === "active";
+          const done = j.status === "completed";
+          return (
+            <Card key={j.id || i}>
+              <CardTitle right={<Badge tone={statusTone(j.status) as any}>{j.status}</Badge>}>
+                {j.routeName} · {j.session === "am" ? "AM" : "PM"}
+              </CardTitle>
+              <LineItem first t={j.vehicle || "Vehicle"} m={`${j.onboard}/${j.total} aboard`} right={<Badge tone="ok">GPS</Badge>} />
+              {!done ? (
+                <Button tone={running ? "danger" : "brand"} disabled={busy === j.id}
+                  title={busy === j.id ? "Working…" : running ? "End journey" : "Start journey"}
+                  onPress={() => act(j.id, running ? "complete" : "start")} />
+              ) : null}
+            </Card>
+          );
+        })}
+
+      {(d.reminders || []).length > 0 ? (
+        <Card>
+          <CardTitle right={<Badge tone="warn">action</Badge>}>Reminders</CardTitle>
+          {(d.reminders || []).map((r: any, i: number) => (
+            <LineItem key={i} first={i === 0} t={r.key} m={r.date ? String(r.date) : ""}
+              right={<Badge tone={r.tone === "warn" ? "warn" : "info"}>{r.label}</Badge>} />
+          ))}
+        </Card>
+      ) : null}
+
+      <Note>Each check-in and journey start/stop notifies the office and affected parents. Per-pupil boarding opens on the journey.</Note>
+      {error ? <Note>Showing saved data — couldn't refresh right now.</Note> : null}
     </Screen>
   );
 }

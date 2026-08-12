@@ -2,25 +2,20 @@ import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { T, Avatar } from "@/ui/kit";
-import { APPS, MOBILE_INBOX, RoleKey, InboxItem } from "@/data/mock";
+import { APPS, RoleKey } from "@/data/mock";
 import { SCREENS } from "@/app/registry";
-import { RoleContext, RoleCtx } from "@/app/ctx";
+import { RoleContext } from "@/app/ctx";
 import { useAuth } from "@/auth/AuthContext";
 
 export default function AppShell({ roleKey }: { roleKey: RoleKey }) {
   const insets = useSafeAreaInsets();
-  const { logout } = useAuth();
+  const { boot, logout } = useAuth();
   const meta = APPS[roleKey];
   const [tab, setTab] = useState(meta.tabs[0].key);
-  const [inbox, setInbox] = useState<InboxItem[]>(() => (MOBILE_INBOX[roleKey] || []).map((x) => ({ ...x })));
 
-  const unread = inbox.filter((n) => !n.read).length;
-  const ctx = useMemo<RoleCtx>(() => ({
-    roleKey, tab, setTab, inbox, unread,
-    mark: (id) => setInbox((b) => b.map((n) => (n.id === id ? { ...n, read: true } : n))),
-    markAll: () => setInbox((b) => b.map((n) => ({ ...n, read: true }))),
-  }), [roleKey, tab, inbox, unread]);
-
+  const userName = boot?.user?.name || meta.who;
+  const unread = boot?.unread || 0;
+  const ctx = useMemo(() => ({ setTab }), []);
   const ScreenComp = SCREENS[roleKey][tab];
 
   return (
@@ -30,15 +25,13 @@ export default function AppShell({ roleKey }: { roleKey: RoleKey }) {
         <View style={[s.appbar, { paddingTop: insets.top + 6 }]}>
           <View style={{ flex: 1 }}>
             <Text style={s.title}>{meta.title} app</Text>
-            <Text style={s.school}>{meta.school}</Text>
+            <Text style={s.school}>{userName}</Text>
           </View>
-          <Pressable onLongPress={logout} hitSlop={8}><Avatar name={meta.who} size={32} /></Pressable>
+          <Pressable onLongPress={logout} hitSlop={8}><Avatar name={userName} size={32} /></Pressable>
         </View>
 
         {/* body */}
-        <View style={{ flex: 1 }}>
-          {ScreenComp ? <ScreenComp /> : <View />}
-        </View>
+        <View style={{ flex: 1 }}>{ScreenComp ? <ScreenComp /> : <View />}</View>
 
         {/* tab bar */}
         <View style={[s.tabbar, { paddingBottom: Math.max(insets.bottom, 8) }]}>

@@ -1,73 +1,123 @@
 import React from "react";
 import { View, Text } from "react-native";
-import { Screen, Card, CardTitle, Badge, Button, Row, LineItem, Avatar, RouteMap, Note, T, toast } from "@/ui/kit";
+import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Empty, Note, RouteMap, T, toast } from "@/ui/kit";
+import { useApi } from "@/data/useApi";
+
+function when(iso?: string) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) +
+      (iso.length > 10 ? " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "");
+  } catch { return iso; }
+}
+const tone = (t?: string) => (t === "warn" ? "warn" : t === "good" ? "ok" : "info");
 
 function Home() {
+  const { data, loading, error } = useApi<any>("/api/parent/dashboard");
+  const d = data || {};
+  const children: any[] = d.children || [];
+  const per = new Map((d.perChild || []).map((p: any) => [p.id, p]));
+  if (loading && !data) return <Screen><Loading label="Loading your dashboard…" /></Screen>;
+
   return (
     <Screen>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
-        <Kpi k="Ella — status" v="Present" h="registered 08:41" color={T.ok} />
-        <Kpi k="On the bus" v="Route B" h="ETA home 15:42" />
-      </View>
-      <Card>
-        <CardTitle right={<Badge tone="warn">1</Badge>}>Action needed</CardTitle>
-        <LineItem first t="Ecomuseum trip" m="Consent + £8.50 · closes Thu 17:00"
-          right={<Button sm title="Review" onPress={() => toast("Consent + payment (demo)")} />} />
-      </Card>
+      <Kpis>
+        <Kpi k="Children" v={String(children.length)} h={children.map((c) => c.firstName || c.name).slice(0, 2).join(", ") || "—"} />
+        <Kpi k="Homework due" v={String((d.homeworkDue || []).length)} h="next 7 days" warn={(d.homeworkDue || []).length > 0} />
+      </Kpis>
+
+      {(d.insights || []).length > 0 ? (
+        <Card>
+          <CardTitle>Insights</CardTitle>
+          {(d.insights || []).map((i: any, idx: number) => (
+            <LineItem key={idx} first={idx === 0} t={i.text} right={<Badge tone={tone(i.tone)}>{i.tone === "good" ? "good" : i.tone}</Badge>} />
+          ))}
+        </Card>
+      ) : null}
+
+      {(d.outstandingPolicies || []).length > 0 ? (
+        <Card>
+          <CardTitle right={<Badge tone="warn">{(d.outstandingPolicies || []).length}</Badge>}>Action needed</CardTitle>
+          {(d.outstandingPolicies || []).map((p: any, idx: number) => (
+            <LineItem key={p.id || idx} first={idx === 0} t={p.title} m={p.category ? `${p.category} · needs acknowledgement` : "needs acknowledgement"}
+              right={<Button sm title="Review" onPress={() => toast("Open in web portal")} />} />
+          ))}
+        </Card>
+      ) : null}
+
       <Card>
         <CardTitle>My children</CardTitle>
-        <LineItem first t="Ella Blake · 4B" m="+12 merits this week · 1 homework due" right={<Badge tone="ok">98%</Badge>} />
-        <LineItem t="Max Blake · 2A" m="+6 merits this week" right={<Badge tone="ok">96%</Badge>} />
+        {children.length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No children linked to your account.</Text> :
+          children.map((c: any, idx: number) => {
+            const p: any = per.get(c.id);
+            const rate = p?.attendance?.rate;
+            const pos = p?.behaviour?.positivePoints;
+            return (
+              <LineItem key={c.id || idx} first={idx === 0}
+                t={`${c.name}${c.yearGroup ? " · " + c.yearGroup : ""}`}
+                m={`${pos != null ? `+${pos} points` : "—"}${c.schoolName ? " · " + c.schoolName : ""}`}
+                right={<Badge tone={rate == null ? "mut" : rate >= 95 ? "ok" : rate >= 90 ? "info" : "warn"}>{rate == null ? "—" : rate + "%"}</Badge>} />
+            );
+          })}
       </Card>
-      <Card>
-        <CardTitle>Today at school</CardTitle>
-        <LineItem first t="Sports Day reminder" m="Fri 09:30 · field" right={<Badge tone="info">event</Badge>} />
-        <LineItem t="Lunch menu — allergen notice" m="Week 2 · nut-free Friday" right={<Badge tone="mut">info</Badge>} />
-      </Card>
+
+      {(d.upcomingEvents || []).length > 0 ? (
+        <Card>
+          <CardTitle>Coming up</CardTitle>
+          {(d.upcomingEvents || []).slice(0, 5).map((e: any, idx: number) => (
+            <LineItem key={e.id || idx} first={idx === 0} t={e.title} m={when(e.startsAt)} right={<Badge tone="info">{e.type || "event"}</Badge>} />
+          ))}
+        </Card>
+      ) : null}
+
+      {error ? <Note>Showing saved data — couldn't refresh from dev.siplat.com right now.</Note> : null}
     </Screen>
   );
 }
 
 function Transport() {
+  const { data, loading, error } = useApi<any>("/api/parent/transport");
+  const items: any[] = data?.items || [];
+  if (loading && !data) return <Screen><Loading label="Loading transport…" /></Screen>;
+
   return (
     <Screen>
-      <Card>
-        <CardTitle right={<Badge tone="ok">en route</Badge>}>Route B — afternoon</CardTitle>
-        <RouteMap />
-        <LineItem t="ETA — Elm Street" m="15:42 · 3 stops away" right={<Badge tone="ok">on time</Badge>} />
-      </Card>
-      <Card>
-        <CardTitle>Your driver & vehicle</CardTitle>
-        <Row first>
-          <View style={{ flexDirection: "row", gap: 10, alignItems: "center", flex: 1 }}>
-            <Avatar name="Dan Cole" size={40} />
-            <View><Text style={{ fontWeight: "600", color: T.ink }}>Dan Cole</Text><Text style={{ fontSize: 11, color: T.muted }}>DBS valid · Route B</Text></View>
-          </View>
-          <Button sm tone="secondary" title="Contact" onPress={() => toast("Calling office (demo)")} />
-        </Row>
-        <LineItem t="Vehicle" m="Minibus · GPS live" right={<Badge tone="ok">NB07 SCH</Badge>} />
-        <LineItem t="Ella checked in" m="15:06 · Oak Road" right={<Badge tone="ok">aboard</Badge>} />
-      </Card>
-      <Card>
-        <CardTitle>Journey history</CardTitle>
-        <LineItem first t="Tue 4 Aug · Route B" m="Dan Cole · NB07 · 38 min" right={<Badge tone="ok">on time</Badge>} />
-        <LineItem t="Mon 3 Aug · Route B" m="Dan Cole · NB07 · 44 min" right={<Badge tone="warn">+6 min</Badge>} />
-      </Card>
-      <Note>Approximate location only; sharing stops when the journey ends. Past journeys are kept so you can see who collected your child.</Note>
+      {items.length === 0 ? (
+        <Empty>No active school-bus journey right now. Tracking appears here while your child's bus is en route.</Empty>
+      ) : items.map((j, idx) => {
+        const st = j.status === "completed" ? "ended" : j.status === "scheduled" ? "not started" : "en route";
+        const stTone = j.status === "in_progress" || j.status === "active" ? "ok" : j.status === "completed" ? "mut" : "info";
+        return (
+          <Card key={j.journeyId || idx}>
+            <CardTitle right={<Badge tone={stTone as any}>{st}</Badge>}>{j.routeName || "Route"} — {j.session === "am" ? "morning" : "afternoon"}</CardTitle>
+            {j.hasGps ? <RouteMap /> : null}
+            <LineItem first t={j.childName} m={j.approxLocation || ""} right={j.childStatus ? <Badge tone="ok">{j.childStatus}</Badge> : null} />
+            {j.nextStop ? <LineItem t="Next stop" m={`${j.nextStop}${j.stopsRemaining != null ? " · " + j.stopsRemaining + " stops away" : ""}`}
+              right={<Badge tone={j.delayMinutes ? "warn" : "ok"}>{j.delayMinutes ? `+${j.delayMinutes} min` : "on time"}</Badge>} /> : null}
+            {j.eta ? <LineItem t="ETA" m={when(j.eta)} /> : null}
+          </Card>
+        );
+      })}
+      <Note>Approximate location only; sharing stops when the journey ends.</Note>
+      {error ? <Note>Couldn't refresh transport right now.</Note> : null}
     </Screen>
   );
 }
 
 function Reports() {
+  const { data, loading } = useApi<any>("/api/parent/dashboard");
+  const reports: any[] = data?.recentReports || [];
+  if (loading && !data) return <Screen><Loading /></Screen>;
   return (
     <Screen>
       <Card>
         <CardTitle>Reports</CardTitle>
-        <LineItem first t="Ella — Year 4 annual" m="Released 5 Aug · you viewed 5 Aug"
-          right={<Button sm title="Open" onPress={() => toast("Opening PDF (demo)")} />} />
-        <LineItem t="Ella — Autumn progress" m="Embargoed until Fri 09:00" right={<Badge tone="warn">scheduled</Badge>} />
-        <LineItem t="Max — Year 2 annual" m="Released 5 Aug"
-          right={<Button sm title="Open" onPress={() => toast("Opening PDF (demo)")} />} />
+        {reports.length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No released reports yet. You'll see them here once your school releases them.</Text> :
+          reports.map((r, idx) => (
+            <LineItem key={r.id || idx} first={idx === 0} t={`${r.childName ? r.childName + " — " : ""}${r.title}`} m={`${r.term || ""}${r.releasedAt ? " · " + when(r.releasedAt) : ""}`}
+              right={<Button sm title="Open" onPress={() => toast("Open in web portal")} />} />
+          ))}
       </Card>
       <Note>You can't see a report until the school releases it; first-view is recorded.</Note>
     </Screen>
@@ -75,31 +125,21 @@ function Reports() {
 }
 
 function Messaging() {
+  const { data, loading } = useApi<any>("/api/messages");
+  const threads: any[] = data?.threads || data?.items || (Array.isArray(data) ? data : []);
+  if (loading && !data) return <Screen><Loading /></Screen>;
   return (
     <Screen>
       <Card>
         <CardTitle>Messages</CardTitle>
-        <LineItem first t="Northwind Office" m="“Thanks — consent received for Ella.”" right={<Badge tone="ok">2m</Badge>} />
-        <LineItem t="Mr Reed (4B)" m="“Ella did brilliantly in science today.”" right={<Badge tone="mut">1h</Badge>} />
+        {threads.length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No conversations yet. Your school can start a secure thread with you here.</Text> :
+          threads.map((th, idx) => (
+            <LineItem key={th.id || idx} first={idx === 0} t={th.title || th.name || th.withName || "Conversation"} m={th.lastMessage || th.preview || th.subject || ""}
+              right={th.unread ? <Badge tone="warn">{th.unread}</Badge> : null} />
+          ))}
       </Card>
-      <Card>
-        <CardTitle>Channel preferences</CardTitle>
-        <LineItem first t="Push" right={<Badge tone="ok">on</Badge>} />
-        <LineItem t="SMS" right={<Badge tone="ok">on (opt-out)</Badge>} />
-        <LineItem t="WhatsApp" right={<Badge tone="warn">opt-in</Badge>} />
-        <LineItem t="Language" right={<Badge tone="info">English</Badge>} />
-      </Card>
+      <Note>Secure in-app messaging with your school, same-tenant only.</Note>
     </Screen>
-  );
-}
-
-function Kpi({ k, v, h, color }: any) {
-  return (
-    <View style={{ width: "48.5%", backgroundColor: "#fff", borderColor: T.line, borderWidth: 1, borderRadius: 14, padding: 11, marginBottom: 11 }}>
-      <Text style={{ fontSize: 11, color: T.muted }}>{k}</Text>
-      <Text style={{ fontSize: 18, fontWeight: "800", color: color || T.ink, marginTop: 1 }}>{v}</Text>
-      <Text style={{ fontSize: 10, color: T.muted }}>{h}</Text>
-    </View>
   );
 }
 

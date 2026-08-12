@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { prisma } from "./db";
 import {
   SESSION_COOKIE,
@@ -8,9 +8,16 @@ import {
 } from "./auth";
 import type { AuthContext } from "./rbac";
 
-/** Read the current session from the request cookie and load the auth context. */
+/** Read the current session and load the auth context.
+ *  Web clients send the httpOnly session cookie; native (mobile) clients can't
+ *  reliably persist/resend cookies, so they send the same signed JWT as an
+ *  `Authorization: Bearer <token>` header. We accept either. */
 export async function getAuthContext(): Promise<AuthContext | null> {
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  let token = cookies().get(SESSION_COOKIE)?.value;
+  if (!token) {
+    const auth = headers().get("authorization") || headers().get("Authorization");
+    if (auth && auth.toLowerCase().startsWith("bearer ")) token = auth.slice(7).trim();
+  }
   if (!token) return null;
   const claims = verifySession(token);
   if (!claims) return null;
