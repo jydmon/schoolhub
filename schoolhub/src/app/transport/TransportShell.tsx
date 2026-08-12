@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
+import AccountProfile from "@/components/AccountProfile";
+import HelpSupport from "@/components/HelpSupport";
+import Messaging from "@/components/Messaging";
 import { Control, Routes, Profiles, Fees, Requests, Enquiries } from "../school/[id]/TransportTab";
 import { TMDashboard, TMFleet, TMDrivers, TMIncidents, TMMessages, TMTravelLogs, TMDriverLogs } from "./TransportPages";
 
 const TITLES: Record<string, string> = {
   dashboard: "Transport dashboard", control: "Control centre", incidents: "Incidents", messages: "Driver messages",
   routes: "Routes & stops", fleet: "Fleet", drivers: "Drivers", profiles: "Student transport",
-  requests: "Parent requests", enquiries: "Enquiries", fees: "Fees & cost", travellogs: "Travel logs", driverlogs: "Driver logs",
+  requests: "Parent requests", enquiries: "Enquiries", fees: "Fees & cost", travellogs: "Travel logs", driverlogs: "Driver logs", profile: "My profile", dm: "Messages", help: "Help & support",
 };
 
 export default function TransportShell({ email = "" }: { email?: string }) {
@@ -54,9 +57,17 @@ export default function TransportShell({ email = "" }: { email?: string }) {
       { key: "enquiries", label: "Enquiries", icon: "❓" },
       { key: "fees", label: "Fees & cost", icon: "💷" },
     ] },
+    { label: "Account", items: [
+      { key: "dm", label: "Messages", icon: "💬" },
+      { key: "profile", label: "My profile", icon: "🙂" },
+      { key: "help", label: "Help & support", icon: "🆘" },
+    ] },
   ];
 
   function body() {
+    if (active === "profile") return <AccountProfile />;
+    if (active === "dm") return <Messaging />;
+    if (active === "help") return <HelpSupport />;
     if (!schoolId) return <div className="panel">Loading your transport service…</div>;
     switch (active) {
       case "dashboard": return <TMDashboard schoolId={schoolId} onNavigate={nav} />;
@@ -72,6 +83,8 @@ export default function TransportShell({ email = "" }: { email?: string }) {
       case "requests": return <Requests schoolId={schoolId} />;
       case "enquiries": return <Enquiries schoolId={schoolId} />;
       case "fees": return <Fees schoolId={schoolId} />;
+      case "profile": return <AccountProfile />;
+      case "help": return <HelpSupport />;
       default: return <TMDashboard schoolId={schoolId} onNavigate={nav} />;
     }
   }

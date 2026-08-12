@@ -2,12 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
+import AccountProfile from "@/components/AccountProfile";
+import HelpSupport from "@/components/HelpSupport";
+import Messaging from "@/components/Messaging";
 import DriverApp from "./DriverApp";
 import DriverHome from "./DriverHome";
 import { DriverHistory, DriverChecks, DriverMessages } from "./DriverExtra";
 
 const TITLES: Record<string, string> = {
   home: "Driver home", journeys: "Today's journeys", checks: "Vehicle checks", history: "My journey log", messages: "Transport office",
+  profile: "My profile", dm: "Messages", help: "Help & support",
 };
 
 export default function DriverShell({ email = "" }: { email?: string }) {
@@ -30,6 +34,11 @@ export default function DriverShell({ email = "" }: { email?: string }) {
       { key: "history", label: "Journey log", icon: "🗂️" },
       { key: "messages", label: "Office", icon: "✉️", badge: unread },
     ] },
+    { label: "Account", items: [
+      { key: "dm", label: "Messages", icon: "💬" },
+      { key: "profile", label: "My profile", icon: "🙂" },
+      { key: "help", label: "Help & support", icon: "🆘" },
+    ] },
   ];
 
   function body() {
@@ -39,6 +48,9 @@ export default function DriverShell({ email = "" }: { email?: string }) {
       case "checks": return <DriverChecks />;
       case "history": return <DriverHistory />;
       case "messages": return <DriverMessages />;
+      case "profile": return <AccountProfile />;
+      case "dm": return <Messaging />;
+      case "help": return <HelpSupport />;
       default: return <DriverHome onNavigate={nav} />;
     }
   }

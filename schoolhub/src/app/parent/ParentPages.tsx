@@ -8,6 +8,9 @@ import ParentTimetable from "./ParentTimetable";
 import ParentChildren from "./ParentChildren";
 import ParentMenu from "./ParentMenu";
 import ParentReportsCentre from "./ParentReportsCentre";
+import AccountProfile from "@/components/AccountProfile";
+import HelpSupport from "@/components/HelpSupport";
+import Messaging from "@/components/Messaging";
 import { ParentNotifications, ParentTransport, ParentTrips, ParentRewards, ParentPreferences, ParentMessaging, ParentProfile } from "./ParentExtra";
 
 const PARENT_EXAMPLES = [
@@ -56,7 +59,10 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
     case "rewards": return <ParentRewards />;
     case "reports": return <ParentReportsCentre children={kids} schools={schools} />;
     case "messaging": return <ParentMessaging />;
-    case "profile": return <ParentProfile />;
+    case "profile": return <AccountProfile />;
+    case "compliance": return <ParentProfile />;
+    case "dm": return <Messaging />;
+    case "help": return <HelpSupport contactHint="Your school office can also help with account questions." />;
     case "preferences": return <ParentPreferences />;
     default: return <ParentOverview onNavigate={onNavigate} />;
   }

@@ -15,8 +15,8 @@ export async function GET() {
     if (!user) return ok({ error: "Not found" }, 404);
     return ok({
       profile: {
-        id: user.id, email: user.email, fullName: user.fullName, phone: user.phone,
-        photoUrl: user.photoUrl, mfaEnabled: user.mfaEnabled, status: user.status,
+        id: user.id, email: user.email, username: (user as any).username || null, fullName: user.fullName, phone: user.phone,
+        photoUrl: user.photoUrl, mfaEnabled: user.mfaEnabled, status: user.status, emailVerified: user.emailVerified,
         isPlatformAdmin: user.isPlatformAdmin,
         roles: Array.from(new Set(user.memberships.map((m) => ROLE_LABELS[m.role] ?? m.role))),
         schools: Array.from(new Set(user.memberships.map((m) => m.school?.name).filter(Boolean))),
@@ -34,6 +34,7 @@ export async function PATCH(req: Request) {
     if (typeof b.fullName === "string" && b.fullName.trim().length >= 2) data.fullName = b.fullName.trim();
     if (typeof b.phone === "string") data.phone = b.phone.trim() || null;
     if (typeof b.photoUrl === "string") data.photoUrl = b.photoUrl.trim() || null;
+    if (typeof b.username === "string") data.username = b.username.trim() || null;
     if (!Object.keys(data).length) return ok({ ok: true });
     await prisma.user.update({ where: { id: ctx.userId }, data });
     await recordAudit({ action: "PROFILE_UPDATED", actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "User", targetId: ctx.userId, metadata: { updated: Object.keys(data) } });

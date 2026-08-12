@@ -8,7 +8,7 @@ const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", overview: "Family dashboard", children: "My children",
   calendar: "Calendar", timetable: "Timetable", notifications: "Notifications", menu: "Menu",
   transport: "Transport", trips: "Trips", rewards: "Rewards", reports: "Reports centre",
-  messaging: "Messaging", profile: "My profile", preferences: "Preferences",
+  messaging: "Contact preferences", dm: "Messages", profile: "My profile", compliance: "Terms & compliance", preferences: "Preferences", help: "Help & support",
 };
 
 export default function ParentShell({ email = "" }: { email?: string }) {
@@ -42,9 +42,14 @@ export default function ParentShell({ email = "" }: { email?: string }) {
       { key: "trips", label: "Trips", icon: "🧳" },
       { key: "rewards", label: "Rewards", icon: "⭐" },
       { key: "reports", label: "Reports centre", icon: "📄" },
-      { key: "messaging", label: "Messaging", icon: "✉️" },
+      { key: "dm", label: "Messages", icon: "💬" },
+      { key: "messaging", label: "Contact preferences", icon: "✉️" },
+    ] },
+    { label: "Account", items: [
       { key: "profile", label: "My profile", icon: "🙂" },
+      { key: "compliance", label: "Terms & compliance", icon: "📋" },
       { key: "preferences", label: "Preferences", icon: "⚙️" },
+      { key: "help", label: "Help & support", icon: "🆘" },
     ] },
   ];
 

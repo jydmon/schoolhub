@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import AccountProfile from "@/components/AccountProfile";
+import HelpSupport from "@/components/HelpSupport";
+import Messaging from "@/components/Messaging";
 import { useSort, SortTh } from "./EntityKit";
 import { StudentsTab, GuardiansTab, StaffTab, ImportTab } from "./PeopleTabs";
 import GuardianRelationshipsTab from "./GuardianRelationshipsTab";
@@ -48,6 +51,7 @@ const SCHOOL_NAV: NavGroup[] = [
   ] },
   { label: "Communication", items: [
     { key: "comms", label: "Comms", icon: "✉️" },
+    { key: "dm", label: "Messages", icon: "💬" },
     { key: "assistant", label: "Ask AI Assistant", icon: "🤖" },
   ] },
   { label: "Data & integrations", items: [
@@ -62,6 +66,7 @@ const SCHOOL_NAV: NavGroup[] = [
     { key: "notifications", label: "Notifications", icon: "🔔" },
     { key: "profile", label: "My profile", icon: "🙂" },
     { key: "security", label: "My security", icon: "🔐" },
+    { key: "help", label: "Help & support", icon: "🆘" },
   ] },
 ];
 const SCHOOL_TITLES: Record<string, string> = {
@@ -96,7 +101,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
   const [focusStudentId, setFocusStudentId] = useState<string | null>(null);
   // Remember this as the user's current school so future logins land here.
   useEffect(() => { try { document.cookie = `siplat_last_school=${schoolId}; path=/; max-age=${60 * 60 * 24 * 180}; SameSite=Lax`; } catch { /* ignore */ } }, [schoolId]);
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "timetable" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security" | "insights";
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "timetable" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security" | "insights" | "help" | "dm";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
   const manageTabs: [Tab, string][] = [
@@ -124,9 +129,11 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
     ["audit", "History"],
     ["notifications", "Notifications"],
     ["profile", "My profile"],
+    ["help", "Help & support"],
+    ["dm", "Messages"],
   ];
 
-  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }] }];
+  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }, { key: "help", label: "Help & support", icon: "🆘" }] }];
   return (
     <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
@@ -156,8 +163,10 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
       {tab === "insights" && canManage && <AdminReportsTab schoolId={schoolId} onNavigate={(t) => setTab(t as Tab)} />}
       {tab === "audit" && canManage && <HistoryTab schoolId={schoolId} />}
       {tab === "notifications" && <NotificationsTab />}
-      {tab === "profile" && <ProfileTab email={email} />}
+      {tab === "profile" && <AccountProfile />}
       {tab === "security" && <SecurityTab />}
+      {tab === "help" && <HelpSupport />}
+      {tab === "dm" && canManage && <Messaging />}
     </AppShell>
   );
 }

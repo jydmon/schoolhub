@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
+import AccountProfile from "@/components/AccountProfile";
+import HelpSupport from "@/components/HelpSupport";
+import Messaging from "@/components/Messaging";
 import { TDashboard, TTimetable, TCalendar, TStudents, TAttendance, TBehaviour, TReports, TTrips, TNotifications, THistory, TProfile, TAssistant } from "./TeacherPages";
 
 const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", dashboard: "Dashboard", students: "My pupils", attendance: "Attendance",
   behaviour: "Behaviour", reports: "Pupil reports", timetable: "Timetable", calendar: "Calendar",
-  trips: "My trips", notifications: "Notifications", history: "My history", profile: "My profile",
+  trips: "My trips", notifications: "Notifications", history: "My history", profile: "My profile", dm: "Messages", help: "Help & support",
 };
 
 export default function TeacherShell({ email = "" }: { email?: string }) {
@@ -43,9 +46,11 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
       { key: "trips", label: "My trips", icon: "🧳" },
     ] },
     { label: "Account", items: [
+      { key: "dm", label: "Messages", icon: "💬" },
       { key: "notifications", label: "Notifications", icon: "🔔", badge: unread },
       { key: "history", label: "My history", icon: "🗂️" },
       { key: "profile", label: "My profile", icon: "🙂" },
+      { key: "help", label: "Help & support", icon: "🆘" },
     ] },
   ];
 
@@ -65,7 +70,9 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
       case "trips": return <TTrips schoolId={schoolId} />;
       case "notifications": return <TNotifications />;
       case "history": return <THistory schoolId={schoolId} />;
-      case "profile": return <TProfile />;
+      case "profile": return <AccountProfile />;
+      case "dm": return <Messaging />;
+      case "help": return <HelpSupport />;
       default: return <TDashboard schoolId={schoolId} onNavigate={nav} />;
     }
   }

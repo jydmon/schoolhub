@@ -163,6 +163,7 @@ model Campus {
 model User {
   id            String  @id @default(cuid())
   email         String  @unique
+  username      String? // optional display/login alias (defaults to email if unset)
   fullName      String
   photoUrl      String? // profile image (parents/guardians and staff)
   source        String  @default("manual") // manual | import | api — api rows are read-only
@@ -2348,4 +2349,80 @@ model VehicleCheck {
   @@index([schoolId])
   @@index([vehicleId])
   @@index([driverUserId])
+}
+
+// ----------------------------------------------------------------------------
+// Help & Support (user-raised tickets) + In-App direct messaging
+// ----------------------------------------------------------------------------
+
+/// A support request raised by any user. Scoped to their school where relevant.
+model SupportTicket {
+  id           String @id @default(cuid())
+  schoolId     String?
+  userId       String
+  userEmail    String?
+  userName     String?
+  category     String @default("question") // question | issue | bug | account | billing | other
+  subject      String
+  status       String @default("open") // open | in_progress | waiting | resolved | closed
+  priority     String @default("normal") // low | normal | high | urgent
+  assignedToUserId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  messages     SupportTicketMessage[]
+
+  @@index([schoolId])
+  @@index([userId])
+  @@index([status])
+}
+
+model SupportTicketMessage {
+  id           String @id @default(cuid())
+  ticketId     String
+  ticket       SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderUserId String?
+  senderName   String?
+  senderRole   String? // requester | support | admin
+  body         String
+  createdAt    DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+/// A direct message conversation between users of the same school (1:1 or group).
+model DirectThread {
+  id        String @id @default(cuid())
+  schoolId  String
+  subject   String?
+  createdById String?
+  createdAt DateTime @default(now())
+  lastAt    DateTime @default(now())
+
+  members   DirectThreadMember[]
+  messages  DirectMessageItem[]
+
+  @@index([schoolId])
+}
+
+model DirectThreadMember {
+  id         String @id @default(cuid())
+  threadId   String
+  thread     DirectThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId     String
+  lastReadAt DateTime?
+
+  @@unique([threadId, userId])
+  @@index([userId])
+}
+
+model DirectMessageItem {
+  id           String @id @default(cuid())
+  threadId     String
+  thread       DirectThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  senderUserId String
+  body         String
+  createdAt    DateTime @default(now())
+
+  @@index([threadId])
 }

@@ -173,11 +173,11 @@ export default function ParentOverview({ onNavigate }: { onNavigate?: (k: string
                 </div>
               )) : <p className="muted" style={{ margin: 0 }}>No announcements.</p>}
             </Widget>
-            <Widget title="Outstanding policies" action={<button className="secondary small" onClick={() => go("profile")}>Compliance</button>}>
+            <Widget title="Outstanding policies" action={<button className="secondary small" onClick={() => go("compliance")}>Compliance</button>}>
               {dash.outstandingPolicies?.length ? dash.outstandingPolicies.map((p: any) => (
                 <div key={p.id} className="flex-between" style={{ borderBottom: "1px solid var(--line)", padding: "7px 0", fontSize: 13 }}>
                   <div><strong>{p.title}</strong> <span className="muted" style={{ fontSize: 12 }}>v{p.version}{p.category ? ` · ${p.category}` : ""}</span></div>
-                  <button className="secondary small" onClick={() => go("profile")}>Review</button>
+                  <button className="secondary small" onClick={() => go("compliance")}>Review</button>
                 </div>
               )) : <p className="muted" style={{ margin: 0 }}>All policies acknowledged. ✅</p>}
             </Widget>
