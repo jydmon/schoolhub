@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 const STATUS_LABEL: Record<string, string> = { boarded: "Boarded", absent: "Absent", not_present: "Not present", dropped_off: "Dropped off" };
 const STATUS_BADGE: Record<string, string> = { boarded: "active", dropped_off: "active", absent: "suspended", not_present: "archived" };
@@ -59,11 +59,14 @@ export default function DriverApp() {
           {j.status === "scheduled" && <button onClick={() => act("start")}>Start journey</button>}
         </div>
         {j.status !== "scheduled" && j.status !== "completed" && (
-          <div className="chips" style={{ marginTop: 10 }}>
-            <button className="secondary small" onClick={() => act("position", { advance: true })}>Approaching</button>
-            <button className="secondary small" onClick={() => act("position", { delayMinutes: (j.delayMinutes || 0) + 10 })}>Running late (+10)</button>
-            <button className="small" onClick={() => act("complete")}>Complete journey</button>
-          </div>
+          <>
+            <div className="chips" style={{ marginTop: 10 }}>
+              <button className="secondary small" onClick={() => act("position", { advance: true })}>Approaching</button>
+              <button className="secondary small" onClick={() => act("position", { delayMinutes: (j.delayMinutes || 0) + 10 })}>Running late (+10)</button>
+              <button className="small" onClick={() => act("complete")}>Complete journey</button>
+            </div>
+            <LiveShare journeyId={open!} active={j.status !== "completed"} />
+          </>
         )}
       </div>
 
@@ -104,6 +107,60 @@ export default function DriverApp() {
         <IncidentForm journeyId={open} onDone={() => setMsg("Incident reported.")} />
       </div>
     </>
+  );
+}
+
+// Share the driver phone's GPS as the live-tracking source. No third-party
+// provider: the browser's geolocation is posted to the journey every ~15s while
+// sharing is on, and stops the moment it's turned off or the journey ends.
+function LiveShare({ journeyId, active }: { journeyId: string; active: boolean }) {
+  const [on, setOn] = useState(false);
+  const [status, setStatus] = useState("");
+  const [lastAt, setLastAt] = useState<number | null>(null);
+  const watchId = useRef<number | null>(null);
+  const lastSent = useRef<number>(0);
+
+  const stop = useCallback(() => {
+    if (watchId.current != null && typeof navigator !== "undefined" && navigator.geolocation) navigator.geolocation.clearWatch(watchId.current);
+    watchId.current = null;
+  }, []);
+
+  useEffect(() => { if (!active && on) { setOn(false); stop(); } }, [active, on, stop]);
+  useEffect(() => () => stop(), [stop]);
+
+  function start() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) { setStatus("This device can't share location."); return; }
+    setOn(true); setStatus("Starting…");
+    watchId.current = navigator.geolocation.watchPosition(
+      async (pos) => {
+        const now = Date.now();
+        if (now - lastSent.current < 15000) return; // throttle to ~15s
+        lastSent.current = now;
+        const { latitude: lat, longitude: lng } = pos.coords;
+        try {
+          const res = await fetch(`/api/driver/journeys/${journeyId}/position`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat, lng }) });
+          const d = await res.json().catch(() => ({}));
+          if (d.error) { setStatus(d.error); }
+          else { setLastAt(now); setStatus(""); }
+        } catch { setStatus("Couldn't reach the server — will retry."); }
+      },
+      (err) => { setStatus(err.code === err.PERMISSION_DENIED ? "Location permission denied — allow it to share." : "Couldn't get a GPS fix."); },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
+    );
+  }
+  function toggle() { if (on) { setOn(false); stop(); setStatus(""); } else start(); }
+
+  return (
+    <div style={{ marginTop: 12, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+      <div className="flex-between">
+        <div>
+          <strong>Live location {on ? <span className="badge active">sharing</span> : <span className="badge archived">off</span>}</strong>
+          <div className="muted" style={{ fontSize: 12 }}>{on ? (lastAt ? `Last sent ${new Date(lastAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "Waiting for a GPS fix…") : "Share your position so the school can track this journey."}</div>
+        </div>
+        <button className={on ? "danger small" : "small"} onClick={toggle}>{on ? "Stop sharing" : "Share live location"}</button>
+      </div>
+      {status && <div className="notice info" style={{ marginTop: 8 }}>{status}</div>}
+    </div>
   );
 }
 

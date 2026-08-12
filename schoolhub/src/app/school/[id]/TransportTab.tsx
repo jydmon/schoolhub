@@ -28,8 +28,20 @@ function Control({ schoolId }: { schoolId: string }) {
   const [msg, setMsg] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [register, setRegister] = useState<Record<string, any[]>>({});
+  const [mapId, setMapId] = useState<string | null>(null);
+  const [track, setTrack] = useState<any>(null);
   const load = useCallback(async () => { setData(await fetch(`/api/schools/${schoolId}/transport/journeys`).then((r) => r.json())); }, [schoolId]);
   useEffect(() => { load(); }, [load]);
+  // Poll the live track every 10s while a map is open.
+  useEffect(() => {
+    if (!mapId) return;
+    let alive = true;
+    const fetchTrack = async () => { const d = await fetch(`/api/schools/${schoolId}/transport/journeys/${mapId}/track`).then((r) => r.json()); if (alive) setTrack(d); };
+    fetchTrack();
+    const t = setInterval(fetchTrack, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, [mapId, schoolId]);
+  function toggleMap(jid: string) { if (mapId === jid) { setMapId(null); setTrack(null); } else { setTrack(null); setMapId(jid); } }
   async function gen(session: string) {
     const r = await fetch(`/api/schools/${schoolId}/transport/generate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session }) }).then((x) => x.json());
     setMsg(`Generated ${r.created ?? 0} ${session.toUpperCase()} journey(s).`); load();
@@ -48,7 +60,7 @@ function Control({ schoolId }: { schoolId: string }) {
   return (
     <>
       <div className="panel">
-        <div className="flex-between"><div><h2>Transport control centre</h2><p className="sub" style={{ marginBottom: 0 }}>{data.date} · click a journey to open its check-in / check-out register</p></div>
+        <div className="flex-between"><div><h2>Transport control centre</h2><p className="sub" style={{ marginBottom: 0 }}>{data.date} · open a journey&apos;s check-in/out register or its live map</p></div>
           <div><button className="secondary" onClick={() => gen("am")}>Generate AM</button> <button className="secondary" onClick={() => gen("pm")}>Generate PM</button></div></div>
         {msg && <div className="notice ok" style={{ marginTop: 10 }}>{msg}</div>}
         <table style={{ marginTop: 12 }}>
@@ -60,8 +72,15 @@ function Control({ schoolId }: { schoolId: string }) {
                   <td>{j.routeName}<div className="muted" style={{ fontSize: 11 }}>{j.vehicle || "—"}</div></td><td>{j.session.toUpperCase()}</td>
                   <td><span className={`badge ${j.status === "completed" ? "active" : j.status === "cancelled" ? "suspended" : "trial"}`}>{j.status}</span></td>
                   <td>{j.onboard}</td><td>{j.droppedOff}</td><td>{j.absent}</td><td>{j.delayMinutes ? `+${j.delayMinutes}m` : "—"}</td>
-                  <td className="right"><button className="linklike" style={{ fontSize: 12 }} onClick={() => toggleRegister(j.id)}>{openId === j.id ? "Hide register" : "Register"}</button></td>
+                  <td className="right"><button className="linklike" style={{ fontSize: 12 }} onClick={() => toggleMap(j.id)}>{mapId === j.id ? "Hide map" : "Live map"}</button>{" · "}<button className="linklike" style={{ fontSize: 12 }} onClick={() => toggleRegister(j.id)}>{openId === j.id ? "Hide register" : "Register"}</button></td>
                 </tr>
+                {mapId === j.id && (
+                  <tr>
+                    <td colSpan={8} style={{ background: "#fafbfe" }}>
+                      {!track ? <span className="muted">Loading live position…</span> : <LiveMap track={track} />}
+                    </td>
+                  </tr>
+                )}
                 {openId === j.id && (
                   <tr>
                     <td colSpan={8} style={{ background: "#fafbfe" }}>
@@ -299,6 +318,63 @@ function Enquiries({ schoolId }: { schoolId: string }) {
           {rows.length === 0 && <tr><td colSpan={6} className="muted">No enquiries logged.</td></tr>}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// Self-contained live map: projects the driver's GPS trail + geocoded route
+// stops into an SVG (no map tiles, no API key). Shows the current position, the
+// recent trail, stops, and a keyless "open in OpenStreetMap" link.
+function LiveMap({ track }: { track: any }) {
+  const stops: any[] = track.stops || [];
+  const trail: any[] = track.trail || [];
+  const last = track.last;
+  const pts = [...stops.map((s) => ({ lat: s.lat, lng: s.lng })), ...trail.map((t) => ({ lat: t.lat, lng: t.lng }))].filter((p) => p.lat != null && p.lng != null);
+  const W = 620, H = 300, PAD = 26;
+  const ageMin = last ? Math.round((Date.now() - new Date(last.at).getTime()) / 60000) : null;
+
+  if (pts.length === 0) {
+    return (
+      <div style={{ padding: "6px 2px" }}>
+        <p className="muted" style={{ margin: 0 }}>No GPS positions yet. Ask the driver to tap <strong>Share live location</strong> in the driver app once the journey has started{stops.length === 0 ? ", and add coordinates to the route stops to show them here." : "."}</p>
+      </div>
+    );
+  }
+  const lats = pts.map((p) => p.lat), lngs = pts.map((p) => p.lng);
+  let minLat = Math.min(...lats), maxLat = Math.max(...lats), minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  if (maxLat - minLat < 0.002) { minLat -= 0.001; maxLat += 0.001; }
+  if (maxLng - minLng < 0.002) { minLng -= 0.001; maxLng += 0.001; }
+  const x = (lng: number) => PAD + ((lng - minLng) / (maxLng - minLng)) * (W - 2 * PAD);
+  const y = (lat: number) => PAD + ((maxLat - lat) / (maxLat - minLat)) * (H - 2 * PAD);
+  const trailPath = trail.filter((t) => t.lat != null).map((t, i) => `${i === 0 ? "M" : "L"}${x(t.lng).toFixed(1)},${y(t.lat).toFixed(1)}`).join(" ");
+
+  return (
+    <div style={{ padding: "6px 2px" }}>
+      <div className="flex-between" style={{ marginBottom: 6 }}>
+        <div className="muted" style={{ fontSize: 12 }}>
+          {track.journey?.vehicle || "Vehicle"} · <span className={`badge ${track.sharing ? "active" : "archived"}`}>{track.sharing ? "live" : "not sharing"}</span>
+          {last ? ` · last fix ${ageMin === 0 ? "just now" : `${ageMin} min ago`}` : " · awaiting first fix"}
+          {track.journey?.delayMinutes ? ` · running +${track.journey.delayMinutes}m` : ""}
+        </div>
+        {last && <a className="linklike" style={{ fontSize: 12 }} href={`https://www.openstreetmap.org/?mlat=${last.lat}&mlon=${last.lng}#map=16/${last.lat}/${last.lng}`} target="_blank" rel="noreferrer">Open in OpenStreetMap ↗</a>}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", background: "#eef4ff", border: "1px solid var(--line)", borderRadius: 10 }}>
+        {trailPath && <path d={trailPath} fill="none" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 4" />}
+        {stops.map((s, i) => (
+          <g key={i}>
+            <circle cx={x(s.lng)} cy={y(s.lat)} r={5} fill={s.kind === "school" ? "#12a150" : "#4f46e5"} />
+            <text x={x(s.lng) + 8} y={y(s.lat) + 4} fontSize={11} fill="#334155">{s.name}{s.plannedArrival ? ` (${s.plannedArrival})` : ""}</text>
+          </g>
+        ))}
+        {last && (
+          <g>
+            <circle cx={x(last.lng)} cy={y(last.lat)} r={11} fill="#e11d48" opacity={0.18} />
+            <circle cx={x(last.lng)} cy={y(last.lat)} r={6} fill="#e11d48" stroke="#fff" strokeWidth={2} />
+            <text x={x(last.lng) + 9} y={y(last.lat) - 8} fontSize={12} fontWeight={700} fill="#e11d48">🚌</text>
+          </g>
+        )}
+      </svg>
+      <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>Live map updates every 10 seconds while open. Positions come from the driver&apos;s device — no external tracking provider is used.</p>
     </div>
   );
 }
