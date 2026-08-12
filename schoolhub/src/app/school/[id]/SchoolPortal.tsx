@@ -81,10 +81,13 @@ type Props = {
   roles: string[];
   initial: { school: any };
   email?: string;
+  schoolCount?: number;
 };
 
-export default function SchoolPortal({ schoolId, roles, initial, email = "" }: Props) {
+export default function SchoolPortal({ schoolId, roles, initial, email = "", schoolCount = 1 }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
+  // Remember this as the user's current school so future logins land here.
+  useEffect(() => { try { document.cookie = `siplat_last_school=${schoolId}; path=/; max-age=${60 * 60 * 24 * 180}; SameSite=Lax`; } catch { /* ignore */ } }, [schoolId]);
   type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
@@ -118,6 +121,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
     <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
       email={email} role={canManage ? "School Administrator" : "Member"}>
+      {schoolCount > 1 && <div style={{ marginBottom: 10 }}><a className="linklike" href="/school?choose=1" style={{ fontSize: 13 }}>← Switch school</a></div>}
       {tab === "ops" && canManage && <OpsTab schoolId={schoolId} subscription={initial.school?.subscription} />}
       {tab === "students" && canManage && <StudentsTab schoolId={schoolId} />}
       {tab === "guardians" && canManage && <GuardiansTab schoolId={schoolId} />}

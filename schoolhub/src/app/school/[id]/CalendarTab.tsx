@@ -148,11 +148,25 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
   const [editForm, setEditForm] = useState<any>(null);
 
   const load = useCallback(async () => {
-    const [e, h] = await Promise.all([
+    const [e, h, tr] = await Promise.all([
       fetch(`/api/schools/${schoolId}/events`).then((r) => r.json()),
       fetch(`/api/schools/${schoolId}/homework`).then((r) => r.json()),
+      fetch(`/api/schools/${schoolId}/trips`).then((r) => r.json()).catch(() => ({})),
     ]);
-    setEvents(e.events ?? []);
+    // Trips show automatically on the calendar as read-only "trip" events
+    // (managed in the Trips tab). Synthetic ids are prefixed "trip:".
+    const tripEvents = (tr.trips ?? []).filter((t: any) => t.date).map((t: any) => {
+      const t0 = /^\d{1,2}:\d{2}$/.test(t.departureTime || "") ? String(t.departureTime).padStart(5, "0") : null;
+      const t1 = /^\d{1,2}:\d{2}$/.test(t.returnTime || "") ? String(t.returnTime).padStart(5, "0") : null;
+      return {
+        id: `trip:${t.id}`, title: t.title, category: "trip",
+        startsAt: `${t.date}T${t0 || "09:00"}:00`, endsAt: t1 ? `${t.date}T${t1}:00` : null,
+        allDay: !t0, location: t.destination || t.venue || "", description: t.purpose || "",
+        audienceScope: "school", status: "published", source: "api",
+        consentRequired: !!t.consentRequired, transportRequired: true, _isTrip: true,
+      };
+    });
+    setEvents([...(e.events ?? []), ...tripEvents]);
     setHomework(h.homework ?? []);
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
@@ -324,7 +338,8 @@ export default function CalendarTab({ schoolId }: { schoolId: string }) {
                   </tbody>
                 </table>
                 <div className="chips" style={{ marginTop: 14 }}>
-                  <a className="chip" href={`/api/schools/${schoolId}/events/${detail.id}/ics`}>Download .ics</a>
+                  {!detail._isTrip && <a className="chip" href={`/api/schools/${schoolId}/events/${detail.id}/ics`}>Download .ics</a>}
+                  {detail._isTrip && <span className="muted" style={{ fontSize: 12 }}>This is a school trip — manage it in the Trips tab.</span>}
                   {!readOnly && <button className="danger small" onClick={() => del(detail.id)}>Delete event</button>}
                 </div>
               </div>

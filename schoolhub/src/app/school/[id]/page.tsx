@@ -19,12 +19,14 @@ export default async function SchoolAdminPage({ params }: { params: { id: string
 
   const roles = rolesInSchool(ctx, params.id);
   const roleLabel = roles.map((r) => ROLE_LABELS[r] ?? r).join(", ") || "Member";
+  const schoolCount = new Set(ctx.memberships.map((m) => m.schoolId)).size;
 
   return (
     <SchoolPortal
       schoolId={params.id}
       roles={roles}
       email={ctx.email}
+      schoolCount={schoolCount}
       initial={JSON.parse(JSON.stringify({ school }))}
     />
   );

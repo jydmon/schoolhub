@@ -1,17 +1,28 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { getAuthContext } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { ROLE_LABELS } from "@/lib/constants";
 import TopBar from "@/components/TopBar";
 
-export default async function SchoolIndex() {
+export default async function SchoolIndex({ searchParams }: { searchParams?: { choose?: string } }) {
   const ctx = await getAuthContext();
   if (!ctx) redirect("/login");
   if (ctx.isPlatformAdmin && ctx.memberships.length === 0) redirect("/admin");
 
   const schoolIds = Array.from(new Set(ctx.memberships.map((m) => m.schoolId)));
   const schools = await prisma.school.findMany({ where: { id: { in: schoolIds } } });
+  const openable = schools.filter((s) => s.status !== "suspended");
+
+  // Auto-direct to the relevant school portal (unless the user explicitly asked
+  // to choose). One school → straight in; several → the last one they opened.
+  if (!searchParams?.choose) {
+    const last = cookies().get("siplat_last_school")?.value;
+    const remembered = last && openable.find((s) => s.id === last);
+    if (remembered) redirect(`/school/${remembered.id}`);
+    if (openable.length === 1) redirect(`/school/${openable[0].id}`);
+  }
 
   const rolesBySchool = new Map<string, string[]>();
   for (const m of ctx.memberships) {
