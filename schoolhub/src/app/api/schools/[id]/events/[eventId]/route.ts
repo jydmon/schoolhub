@@ -38,6 +38,7 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const existing = await prisma.calendarEvent.findFirst({ where: { id: params.eventId, schoolId: params.id } });
     if (!existing) return ok({ error: "Not found" }, 404);
+    if (existing.source === "api") return ok({ error: "This event is fed by an integration and is read-only here. Edit it in the source system." }, 409);
 
     const input = eventUpdateSchema.parse(await req.json());
     const data: Record<string, unknown> = {};
@@ -71,6 +72,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     assertCan(ctx, PERMISSIONS.MANAGE_CALENDAR, params.id);
     const existing = await prisma.calendarEvent.findFirst({ where: { id: params.eventId, schoolId: params.id } });
     if (!existing) return ok({ error: "Not found" }, 404);
+    if (existing.source === "api") return ok({ error: "This event is fed by an integration and is read-only here." }, 409);
     await prisma.calendarEvent.delete({ where: { id: existing.id } });
     await recordAudit({ action: AUDIT.EVENT_CHANGED, schoolId: params.id, actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "CalendarEvent", targetId: existing.id, metadata: { op: "delete" } });
     return ok({ ok: true });

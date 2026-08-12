@@ -693,6 +693,7 @@ model CalendarEvent {
   consentRequired Boolean @default(false)
   paymentRef      String?
   status          String  @default("published") // draft|published|cancelled
+  source          String  @default("manual") // manual|import|api — api rows are read-only in the UI
 
   createdById String?
   createdAt   DateTime @default(now())

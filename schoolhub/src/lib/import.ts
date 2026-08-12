@@ -404,6 +404,7 @@ export async function runImport(opts: {
           yearGroup: yearGroup || null,
           classId,
           status: "published",
+          source: "import",
           createdById: opts.actorUserId || null,
         };
         const existing = await prisma.calendarEvent.findFirst({ where: { schoolId, title, startsAt } });
