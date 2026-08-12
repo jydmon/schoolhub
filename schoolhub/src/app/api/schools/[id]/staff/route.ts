@@ -31,10 +31,12 @@ export async function GET(_req: Request, { params }: Params) {
         reference: s.reference,
         jobTitle: s.jobTitle,
         department: s.department,
+        status: (s as any).status ?? "active",
+        source: (s as any).source ?? "manual",
         activities: JSON.parse(s.activities || "[]"),
         trips: JSON.parse(s.trips || "[]"),
         classes: s.classes.map((c) => c.class.name),
-        user: { id: s.user.id, fullName: s.user.fullName, email: s.user.email, phone: s.user.phone },
+        user: { id: s.user.id, fullName: s.user.fullName, email: s.user.email, phone: s.user.phone, photoUrl: (s.user as any).photoUrl ?? null },
         roles: s.user.memberships.map((m) => ROLE_LABELS[m.role] ?? m.role),
       })),
     });

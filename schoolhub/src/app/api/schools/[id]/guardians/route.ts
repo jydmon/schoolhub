@@ -32,6 +32,8 @@ export async function GET(_req: Request, { params }: Params) {
         email: p.email,
         phone: p.phone,
         city: p.city,
+        photoUrl: p.photoUrl,
+        source: (p as any).source ?? "manual",
         preferredLanguage: p.preferredLanguage,
         preferredLanguageLabel: LANGUAGES[p.preferredLanguage] ?? p.preferredLanguage,
         status: p.status,

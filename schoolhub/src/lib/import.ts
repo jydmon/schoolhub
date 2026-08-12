@@ -163,7 +163,7 @@ export async function runImport(opts: {
         };
         if (!user) {
           user = await prisma.user.create({
-            data: { email, status: "invited", ...contact },
+            data: { email, status: "invited", source: "import", ...contact },
           });
           created++;
         } else {

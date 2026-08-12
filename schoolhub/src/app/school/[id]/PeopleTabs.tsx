@@ -386,46 +386,158 @@ function StudentModal({ schoolId, studentId, onClose, onChange }: { schoolId: st
 /* ============================ GUARDIANS ============================ */
 export function GuardiansTab({ schoolId }: { schoolId: string }) {
   const [guardians, setGuardians] = useState<any[]>([]);
-  useEffect(() => {
-    fetch(`/api/schools/${schoolId}/guardians`).then((r) => r.json()).then((d) => setGuardians(d.guardians ?? []));
-  }, [schoolId]);
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const sel = useSel();
+  const load = useCallback(() => { fetch(`/api/schools/${schoolId}/guardians`).then((r) => r.json()).then((d) => { setGuardians(d.guardians ?? []); sel.clear(); }); }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [load]);
+  const rows = guardians.filter((g) => { const s = q.trim().toLowerCase(); if (!s) return true; return [g.fullName, g.email, g.phone, g.city].some((v) => String(v ?? "").toLowerCase().includes(s)); });
+  const allOn = rows.length > 0 && rows.every((g) => sel.on(g.id));
+  async function invite(g: any) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/guardians/${g.id}/invite`, { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    setMsg(res.ok && !d.error ? { kind: "ok", text: d.message || "Invited." } : { kind: "err", text: d.error || "Invite failed" });
+  }
+  async function bulkInvite() { setMsg(null); let n = 0; for (const id of sel.ids) { const g = guardians.find((x) => x.id === id); if (g) { const res = await fetch(`/api/schools/${schoolId}/guardians/${id}/invite`, { method: "POST" }); if (res.ok) n++; } } sel.clear(); setMsg({ kind: "ok", text: `Invited/notified ${n} parent(s).` }); }
   return (
-    <div className="panel">
-      <h2>Parents &amp; guardians</h2>
-      <p className="sub">One parent can link to several children; each link carries its own settings.</p>
-      <table>
-        <thead><tr><th>Name</th><th>Contact</th><th>Language</th><th>Linked children</th></tr></thead>
-        <tbody>
-          {guardians.map((g) => (
-            <tr key={g.id}>
-              <td>{g.fullName}<div className="mono muted">{g.email}</div></td>
-              <td className="muted">{g.phone || "—"}{g.city ? ` · ${g.city}` : ""}</td>
-              <td>{g.preferredLanguageLabel}</td>
-              <td>{g.children.map((c: any) => (
-                <div key={c.linkId}>
-                  {c.student.firstName} {c.student.lastName} <span className="muted">({c.relationship}{c.isEmergencyContact ? ", emergency" : ""}{c.collectionAuthorised ? ", collect" : ""})</span>
-                </div>
-              ))}{g.children.length === 0 && <span className="muted">—</span>}</td>
-            </tr>
-          ))}
-          {guardians.length === 0 && <tr><td colSpan={4} className="muted">No guardians yet.</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="panel">
+        <div className="flex-between"><div><h2>Parents &amp; guardians</h2><p className="sub" style={{ marginBottom: 0 }}>{guardians.length} record(s). Click a name to open the full profile. One parent can link to several children.</p></div></div>
+        {msg && <Msg m={msg} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "10px 0 12px" }}>
+          <input placeholder="Filter parents…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+          <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${guardians.length}` : `${guardians.length}`}</span>
+        </div>
+        {sel.ids.length > 0 && (
+          <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="small" onClick={bulkInvite}>Invite to platform</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>
+        )}
+        <table>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((g) => g.id), e.target.checked)} /></th>
+            <th>Parent / guardian</th><th>Contact</th><th>Language</th><th>Children</th><th>Source</th><th className="right">Actions</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((g) => (
+              <tr key={g.id}>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(g.id)} onChange={() => sel.toggle(g.id)} /></td>
+                <td>
+                  <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <Avatar url={g.photoUrl} name={g.fullName} />
+                    <span><button className="linklike" onClick={() => setSelected(g.id)}><strong>{g.fullName}</strong></button><div className="mono muted" style={{ fontSize: 11 }}>{g.email}</div></span>
+                  </span>
+                </td>
+                <td className="muted">{g.phone || "—"}{g.city ? ` · ${g.city}` : ""}</td>
+                <td className="muted">{g.preferredLanguageLabel}</td>
+                <td>{g.children.length === 0 ? <span className="muted">—</span> : g.children.map((c: any) => <div key={c.linkId} style={{ fontSize: 13 }}>{c.student.firstName} {c.student.lastName} <span className="muted">({c.relationship})</span></div>)}</td>
+                <td>{SOURCE_BADGE(g.source)}</td>
+                <td className="right"><Kebab items={[{ label: "Open / expand", onClick: () => setSelected(g.id) }, { label: "Invite to platform", onClick: () => invite(g) }]} /></td>
+              </tr>
+            ))}
+            {guardians.length === 0 && <tr><td colSpan={7} className="muted">No parents/guardians yet. Add them from a pupil, or import.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {selected && <GuardianModal schoolId={schoolId} guardianId={selected} onClose={() => setSelected(null)} onChange={load} />}
+    </>
+  );
+}
+
+function GuardianModal({ schoolId, guardianId, onClose, onChange }: { schoolId: string; guardianId: string; onClose: () => void; onChange: () => void }) {
+  const [g, setG] = useState<any>(null);
+  const [tab, setTab] = useState("Overview");
+  const [f, setF] = useState<any>({ fullName: "", phone: "", city: "", preferredLanguage: "en", photoUrl: "" });
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const load = useCallback(async () => {
+    const d = await fetch(`/api/schools/${schoolId}/guardians/${guardianId}`).then((r) => r.json());
+    setG(d.guardian); if (d.guardian) setF({ fullName: d.guardian.fullName || "", phone: d.guardian.phone || "", city: d.guardian.city || "", preferredLanguage: d.guardian.preferredLanguage || "en", photoUrl: d.guardian.photoUrl || "" });
+  }, [schoolId, guardianId]);
+  useEffect(() => { load(); }, [load]);
+  if (!g) return <PersonModal title="Loading…" onClose={onClose}><div className="muted">Loading…</div></PersonModal>;
+  const readOnly = (g.source ?? "manual") === "api";
+  async function save() {
+    const res = await fetch(`/api/schools/${schoolId}/guardians/${guardianId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; }
+    setMsg({ kind: "ok", text: "Saved." }); load(); onChange();
+  }
+  async function invite() {
+    const res = await fetch(`/api/schools/${schoolId}/guardians/${guardianId}/invite`, { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    setMsg(res.ok && !d.error ? { kind: "ok", text: d.message || "Invited." } : { kind: "err", text: d.error || "Failed" });
+  }
+  return (
+    <PersonModal
+      title={g.fullName}
+      subtitle={<>{g.email}{g.phone ? ` · ${g.phone}` : ""} · {g.onPlatform ? <span className="badge active">on platform</span> : <span className="badge draft">not on platform</span>} · {SOURCE_BADGE(g.source)}</>}
+      avatar={<Avatar url={g.photoUrl} name={g.fullName} size={54} />}
+      onClose={onClose} tabs={["Overview", "Children"]} active={tab} onTab={setTab}
+    >
+      <Msg m={msg} />
+      {readOnly && <div className="notice info" style={{ marginTop: 8 }}>This guardian is fed from an integration — details are read-only here.</div>}
+      {tab === "Overview" && (
+        <>
+          <div style={{ marginTop: 8 }}><button className="small" onClick={invite}>Invite to platform</button> <span className="muted" style={{ fontSize: 12 }}>In-app if already registered; otherwise emails an activation link (SMS/WhatsApp too when configured).</span></div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <div><label>Full name</label><input value={f.fullName} disabled={readOnly} onChange={(e) => setF({ ...f, fullName: e.target.value })} /></div>
+            <div><label>Phone</label><input value={f.phone} disabled={readOnly} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
+          </div>
+          <div className="row">
+            <div><label>City</label><input value={f.city} disabled={readOnly} onChange={(e) => setF({ ...f, city: e.target.value })} /></div>
+            <div><label>Preferred language</label><input value={f.preferredLanguage} disabled={readOnly} onChange={(e) => setF({ ...f, preferredLanguage: e.target.value })} /></div>
+          </div>
+          <label>Profile image URL</label>
+          <input value={f.photoUrl} disabled={readOnly} onChange={(e) => setF({ ...f, photoUrl: e.target.value })} placeholder="https://…" />
+          {!readOnly && <div style={{ marginTop: 12 }}><button onClick={save}>Save changes</button></div>}
+        </>
+      )}
+      {tab === "Children" && (
+        <table style={{ marginTop: 12 }}>
+          <thead><tr><th>Child</th><th>Class</th><th>Relationship</th><th>Flags</th></tr></thead>
+          <tbody>
+            {g.children.map((c: any) => (
+              <tr key={c.linkId}>
+                <td><span style={{ display: "flex", alignItems: "center", gap: 8 }}><Avatar url={c.student.photoUrl} name={`${c.student.firstName} ${c.student.lastName}`} size={28} /><span><strong>{c.student.firstName} {c.student.lastName}</strong><div className="mono muted" style={{ fontSize: 11 }}>{c.student.reference}</div></span></span></td>
+                <td className="muted">{c.student.yearGroup || "—"}{c.student.class?.name ? ` · ${c.student.class.name}` : ""}</td>
+                <td>{c.relationship}</td>
+                <td>{c.isPrimaryContact && <span className="badge role">Primary</span>} {c.isEmergencyContact && <span className="badge suspended">Emergency</span>} {c.collectionAuthorised && <span className="badge active">Collect</span>}</td>
+              </tr>
+            ))}
+            {g.children.length === 0 && <tr><td colSpan={4} className="muted">No children linked.</td></tr>}
+          </tbody>
+        </table>
+      )}
+    </PersonModal>
   );
 }
 
 /* ============================ STAFF ============================ */
+const STAFF_STATUS_OPTS = ["active", "inactive", "holiday", "onleave", "sick"];
+const staffStatusBadge = (st: string) => st === "active" ? "active" : st === "sick" || st === "inactive" ? "suspended" : "trial";
 export function StaffTab({ schoolId }: { schoolId: string }) {
   const [staff, setStaff] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [form, setForm] = useState({ reference: "", fullName: "", email: "", role: "Teacher", jobTitle: "", department: "" });
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const sel = useSel();
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/staff`).then((r) => r.json());
-    setStaff(d.staff ?? []);
-  }, [schoolId]);
+    setStaff(d.staff ?? []); sel.clear();
+  }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
+  const rows = staff.filter((s) => { const t = q.trim().toLowerCase(); if (!t) return true; return [s.user.fullName, s.user.email, s.reference, s.jobTitle, s.department].some((v) => String(v ?? "").toLowerCase().includes(t)); });
+  const allOn = rows.length > 0 && rows.every((s) => sel.on(s.id));
+  const editable = (s: any) => (s.source ?? "manual") !== "api";
+  async function setStatus(s: any, status: string) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/staff/${s.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; }
+    setMsg({ kind: "ok", text: `${s.user.fullName} → ${status}.` }); load();
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
@@ -439,24 +551,43 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
   return (
     <>
       <div className="panel">
-        <h2>Staff</h2><p className="sub">Employment profiles, roles, departments and the classes each member teaches.</p>
+        <div className="flex-between"><div><h2>Staff</h2><p className="sub" style={{ marginBottom: 0 }}>Employment profiles, roles, classes and status. Click a name for the full profile.</p></div></div>
+        {msg && <Msg m={msg} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "10px 0 12px" }}>
+          <input placeholder="Filter staff…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+          <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${staff.length}` : `${staff.length}`}</span>
+        </div>
         <table>
-          <thead><tr><th>Ref</th><th>Name</th><th>Roles</th><th>Job title</th><th>Department</th><th>Classes</th></tr></thead>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((s) => s.id), e.target.checked)} /></th>
+            <th>Staff</th><th>Roles</th><th>Job title</th><th>Classes</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+          </tr></thead>
           <tbody>
-            {staff.map((s) => (
+            {rows.map((s) => (
               <tr key={s.id}>
-                <td className="mono">{s.reference}</td>
-                <td>{s.user.fullName}<div className="mono muted">{s.user.email}</div></td>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(s.id)} onChange={() => sel.toggle(s.id)} /></td>
+                <td>
+                  <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <Avatar url={s.user.photoUrl} name={s.user.fullName} />
+                    <span><button className="linklike" onClick={() => setSelected(s.id)}><strong>{s.user.fullName}</strong></button><div className="mono muted" style={{ fontSize: 11 }}>{s.reference}</div></span>
+                  </span>
+                </td>
                 <td>{s.roles.map((r: string) => <span key={r} className="badge role" style={{ marginRight: 4 }}>{r}</span>)}</td>
                 <td>{s.jobTitle || "—"}</td>
-                <td>{s.department || "—"}</td>
-                <td>{s.classes.join(", ") || "—"}</td>
+                <td className="muted">{s.classes.join(", ") || "—"}</td>
+                <td><span className={`badge ${staffStatusBadge(s.status || "active")}`}>{s.status || "active"}</span></td>
+                <td>{SOURCE_BADGE(s.source)}</td>
+                <td className="right"><Kebab items={[
+                  { label: "Open / expand", onClick: () => setSelected(s.id) },
+                  ...(editable(s) ? STAFF_STATUS_OPTS.filter((st) => st !== (s.status || "active")).map((st) => ({ label: `Set ${st}`, onClick: () => setStatus(s, st) })) : []),
+                ]} /></td>
               </tr>
             ))}
-            {staff.length === 0 && <tr><td colSpan={6} className="muted">No staff yet.</td></tr>}
+            {staff.length === 0 && <tr><td colSpan={8} className="muted">No staff yet.</td></tr>}
           </tbody>
         </table>
       </div>
+      {selected && <StaffModal schoolId={schoolId} staffId={selected} onClose={() => setSelected(null)} onChange={load} />}
       <div className="panel">
         <h2>Add staff member</h2>
         <Msg m={msg} />
@@ -479,6 +610,72 @@ export function StaffTab({ schoolId }: { schoolId: string }) {
 }
 
 /* ============================ IMPORT ============================ */
+function StaffModal({ schoolId, staffId, onClose, onChange }: { schoolId: string; staffId: string; onClose: () => void; onChange: () => void }) {
+  const [s, setS] = useState<any>(null);
+  const [tab, setTab] = useState("Overview");
+  const [f, setF] = useState<any>({ jobTitle: "", department: "", status: "active", photoUrl: "" });
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const load = useCallback(async () => {
+    const d = await fetch(`/api/schools/${schoolId}/staff/${staffId}`).then((r) => r.json());
+    setS(d.staff); if (d.staff) setF({ jobTitle: d.staff.jobTitle || "", department: d.staff.department || "", status: d.staff.status || "active", photoUrl: d.staff.user.photoUrl || "" });
+  }, [schoolId, staffId]);
+  useEffect(() => { load(); }, [load]);
+  if (!s) return <PersonModal title="Loading…" onClose={onClose}><div className="muted">Loading…</div></PersonModal>;
+  const readOnly = (s.source ?? "manual") === "api";
+  async function save() {
+    const res = await fetch(`/api/schools/${schoolId}/staff/${staffId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; }
+    setMsg({ kind: "ok", text: "Saved." }); load(); onChange();
+  }
+  return (
+    <PersonModal
+      title={s.user.fullName}
+      subtitle={<>{s.reference}{s.jobTitle ? ` · ${s.jobTitle}` : ""}{s.department ? ` · ${s.department}` : ""} · <span className={`badge ${staffStatusBadge(s.status || "active")}`}>{s.status || "active"}</span> · {SOURCE_BADGE(s.source)}</>}
+      avatar={<Avatar url={s.user.photoUrl} name={s.user.fullName} size={54} />}
+      onClose={onClose} tabs={["Overview", "Classes & subjects", "Pupils"]} active={tab} onTab={setTab}
+    >
+      <Msg m={msg} />
+      {readOnly && <div className="notice info" style={{ marginTop: 8 }}>This staff record is fed from an integration — details are read-only here.</div>}
+      {tab === "Overview" && (
+        <>
+          <div className="row" style={{ marginTop: 8 }}>
+            <div><label>Email</label><input value={s.user.email} disabled /></div>
+            <div><label>Phone</label><input value={s.user.phone || ""} disabled /></div>
+          </div>
+          <div className="row">
+            <div><label>Job title</label><input value={f.jobTitle} disabled={readOnly} onChange={(e) => setF({ ...f, jobTitle: e.target.value })} /></div>
+            <div><label>Department</label><input value={f.department} disabled={readOnly} onChange={(e) => setF({ ...f, department: e.target.value })} /></div>
+            <div><label>Status</label><select value={f.status} disabled={readOnly} onChange={(e) => setF({ ...f, status: e.target.value })}>{STAFF_STATUS_OPTS.map((st) => <option key={st}>{st}</option>)}</select></div>
+          </div>
+          <label>Profile image URL</label>
+          <input value={f.photoUrl} disabled={readOnly} onChange={(e) => setF({ ...f, photoUrl: e.target.value })} placeholder="https://…" />
+          <div style={{ marginTop: 8 }}><span className="muted" style={{ fontSize: 12 }}>Roles: {s.roles.join(", ") || "—"}</span></div>
+          {!readOnly && <div style={{ marginTop: 12 }}><button onClick={save}>Save changes</button></div>}
+        </>
+      )}
+      {tab === "Classes & subjects" && (
+        <table style={{ marginTop: 12 }}>
+          <thead><tr><th>Class</th><th>Year group</th></tr></thead>
+          <tbody>
+            {s.classes.map((c: any) => <tr key={c.id}><td><strong>{c.name}</strong></td><td className="muted">{c.yearGroup || "—"}</td></tr>)}
+            {s.classes.length === 0 && <tr><td colSpan={2} className="muted">No classes assigned.</td></tr>}
+          </tbody>
+        </table>
+      )}
+      {tab === "Pupils" && (
+        <table style={{ marginTop: 12 }}>
+          <thead><tr><th>Pupil</th><th>Reference</th><th>Class</th></tr></thead>
+          <tbody>
+            {s.pupils.map((p: any) => <tr key={p.id}><td><strong>{p.firstName} {p.lastName}</strong></td><td className="mono muted">{p.reference}</td><td className="muted">{p.class?.name || "—"}</td></tr>)}
+            {s.pupils.length === 0 && <tr><td colSpan={3} className="muted">No pupils in this member&apos;s classes.</td></tr>}
+          </tbody>
+        </table>
+      )}
+    </PersonModal>
+  );
+}
+
 export function ImportTab({ schoolId }: { schoolId: string }) {
   const [type, setType] = useState("students");
   const [csvText, setCsvText] = useState("");

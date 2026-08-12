@@ -164,6 +164,7 @@ model User {
   email         String  @unique
   fullName      String
   photoUrl      String? // profile image (parents/guardians and staff)
+  source        String  @default("manual") // manual | import | api — api rows are read-only
   passwordHash  String? // null for pure-SSO accounts
   authProvider  String  @default("local") // local | google | microsoft | saml
   isPlatformAdmin Boolean @default(false)
