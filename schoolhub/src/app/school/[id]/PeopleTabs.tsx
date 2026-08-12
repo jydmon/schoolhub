@@ -11,6 +11,67 @@ function Msg({ m }: { m: { kind: string; text: string } | null }) {
   return <div className={`notice ${m.kind}`}>{m.text}</div>;
 }
 
+/* ---- shared people toolkit: avatar, bulk-select, kebab menu, modal ---- */
+function initials(name: string): string {
+  return (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() || "").join("") || "?";
+}
+function Avatar({ url, name, size = 34 }: { url?: string | null; name: string; size?: number }) {
+  if (url) return <img src={url} alt={name} width={size} height={size} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flex: "0 0 auto" }} />;
+  return <span style={{ width: size, height: size, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#0ea5e9)", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.4, fontWeight: 700, flex: "0 0 auto" }}>{initials(name)}</span>;
+}
+function useSel() {
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const ids = Object.keys(sel).filter((k) => sel[k]);
+  return {
+    ids, on: (id: string) => !!sel[id],
+    toggle: (id: string) => setSel((p) => ({ ...p, [id]: !p[id] })),
+    setMany: (list: string[], v: boolean) => setSel(v ? Object.fromEntries(list.map((i) => [i, true])) : {}),
+    clear: () => setSel({}),
+  };
+}
+function Kebab({ items }: { items: ({ label: string; onClick: () => void; danger?: boolean } | null)[] }) {
+  const [open, setOpen] = useState(false);
+  const list = items.filter(Boolean) as { label: string; onClick: () => void; danger?: boolean }[];
+  return (
+    <span className="kebab-wrap">
+      <button className="kebab-btn" aria-label="Actions" onClick={() => setOpen((o) => !o)}>⋯</button>
+      {open && (
+        <>
+          <div className="kebab-backdrop" onClick={() => setOpen(false)} />
+          <div className="kebab-menu">
+            {list.map((it, i) => <button key={i} className={it.danger ? "danger" : ""} onClick={() => { setOpen(false); it.onClick(); }}>{it.label}</button>)}
+          </div>
+        </>
+      )}
+    </span>
+  );
+}
+function PersonModal({ title, subtitle, avatar, onClose, tabs, active, onTab, children }: {
+  title: React.ReactNode; subtitle?: React.ReactNode; avatar?: React.ReactNode; onClose: () => void;
+  tabs?: string[]; active?: string; onTab?: (t: string) => void; children: React.ReactNode;
+}) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 860, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex-between" style={{ alignItems: "flex-start" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            {avatar}
+            <div><h2 style={{ margin: 0 }}>{title}</h2>{subtitle ? <div className="muted" style={{ fontSize: 13 }}>{subtitle}</div> : null}</div>
+          </div>
+          <button className="secondary small" onClick={onClose}>Close</button>
+        </div>
+        {tabs && (
+          <div className="tabs" style={{ margin: "14px 0 6px" }}>
+            {tabs.map((t) => <button key={t} className={active === t ? "active" : ""} onClick={() => onTab?.(t)}>{t}</button>)}
+          </div>
+        )}
+        <div style={{ maxHeight: "68vh", overflow: "auto", paddingRight: 4 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+const SOURCE_BADGE = (src?: string) => src === "api" ? <span className="badge role" title="From an integration — read-only">API</span> : src === "import" ? <span className="badge trial" title="Imported from CSV">imported</span> : <span className="muted" style={{ fontSize: 12 }}>manual</span>;
+
 /* ============================ STUDENTS ============================ */
 export function StudentsTab({ schoolId }: { schoolId: string }) {
   const [students, setStudents] = useState<any[]>([]);
@@ -19,12 +80,29 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState<any>({ reference: "", firstName: "", lastName: "", yearGroup: "", className: "", house: "", status: "enrolled", medicalAlert: false, sendIndicator: false, transportEligible: false });
+  const sel = useSel();
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/students?q=${encodeURIComponent(q)}`).then((r) => r.json());
-    setStudents(d.students ?? []);
-  }, [schoolId, q]);
+    setStudents(d.students ?? []); sel.clear();
+  }, [schoolId, q]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
+
+  const editable = (s: any) => ((s.source ?? "manual") !== "api");
+  async function setStatus(id: string, status: string): Promise<boolean> {
+    const res = await fetch(`/api/schools/${schoolId}/students/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Update failed" }); return false; }
+    return true;
+  }
+  async function rowStatus(s: any, status: string) { setMsg(null); if (await setStatus(s.id, status)) { setMsg({ kind: "ok", text: `${s.firstName} ${s.lastName} → ${status}.` }); load(); } }
+  async function bulkArchive() {
+    setMsg(null); let n = 0, skipped = 0;
+    for (const id of sel.ids) { const s = students.find((x) => x.id === id); if (!editable(s)) { skipped++; continue; } if (await setStatus(id, "archived")) n++; }
+    sel.clear(); load();
+    setMsg({ kind: "ok", text: `Archived ${n} student${n === 1 ? "" : "s"}${skipped ? ` · ${skipped} API-fed skipped (read-only)` : ""}.` });
+  }
+  const allOn = students.length > 0 && students.every((s) => sel.on(s.id));
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -78,13 +156,33 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
       </div>
 
       <div className="panel">
+        {msg && <Msg m={msg} />}
+        {sel.ids.length > 0 && (
+          <div className="bulkbar">
+            <span>{sel.ids.length} selected</span>
+            <button className="danger small" onClick={bulkArchive}>Archive</button>
+            <button className="secondary small" onClick={() => sel.clear()}>Clear</button>
+          </div>
+        )}
         <table>
-          <thead><tr><th>Ref</th><th>Name</th><th>Year / Class</th><th>Flags</th><th>Guardians</th><th>Status</th><th></th></tr></thead>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(students.map((s) => s.id), e.target.checked)} /></th>
+            <th>Pupil</th><th>Year / Class</th><th>Flags</th><th>Guardians</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+          </tr></thead>
           <tbody>
             {students.map((s) => (
               <tr key={s.id}>
-                <td className="mono">{s.reference}</td>
-                <td><strong>{s.firstName} {s.lastName}</strong>{s.preferredName && <span className="muted"> “{s.preferredName}”</span>}</td>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(s.id)} onChange={() => sel.toggle(s.id)} /></td>
+                <td>
+                  <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <Avatar url={s.photoUrl} name={`${s.firstName} ${s.lastName}`} />
+                    <span>
+                      <button className="linklike" onClick={() => setSelected(s.id)}><strong>{s.firstName} {s.lastName}</strong></button>
+                      {s.allergies ? <span className="badge suspended" title={`Allergies: ${s.allergies}`} style={{ marginLeft: 6 }}>ALG</span> : null}
+                      <div className="mono muted" style={{ fontSize: 11 }}>{s.reference}</div>
+                    </span>
+                  </span>
+                </td>
                 <td>{s.yearGroup || "—"}{s.class?.name ? ` · ${s.class.name}` : ""}</td>
                 <td>
                   {s.medicalAlert && <span className="badge suspended" title="Medical alert">MED</span>}{" "}
@@ -93,35 +191,44 @@ export function StudentsTab({ schoolId }: { schoolId: string }) {
                 </td>
                 <td>{s._count?.guardianLinks ?? 0}</td>
                 <td><span className={`badge ${s.status === "enrolled" ? "active" : s.status === "leaver" ? "archived" : "trial"}`}>{s.status}</span></td>
-                <td className="right"><button className="secondary small" onClick={() => setSelected(selected === s.id ? null : s.id)}>{selected === s.id ? "Hide" : "Open"}</button></td>
+                <td>{SOURCE_BADGE(s.source)}</td>
+                <td className="right">
+                  <Kebab items={[
+                    { label: "Open / expand", onClick: () => setSelected(s.id) },
+                    editable(s) && s.status !== "archived" ? { label: "Archive", onClick: () => rowStatus(s, "archived"), danger: true } : null,
+                    editable(s) && s.status !== "enrolled" ? { label: "Set enrolled", onClick: () => rowStatus(s, "enrolled") } : null,
+                    editable(s) && s.status !== "leaver" ? { label: "Set leaver", onClick: () => rowStatus(s, "leaver") } : null,
+                  ]} />
+                </td>
               </tr>
             ))}
-            {students.length === 0 && <tr><td colSpan={7} className="muted">No students. Add one above or use the Import tab.</td></tr>}
+            {students.length === 0 && <tr><td colSpan={8} className="muted">No students. Add one above or use the Import tab.</td></tr>}
           </tbody>
         </table>
       </div>
 
-      {selected && <StudentDetail schoolId={schoolId} studentId={selected} onChange={load} />}
+      {selected && <StudentModal schoolId={schoolId} studentId={selected} onClose={() => setSelected(null)} onChange={load} />}
     </>
   );
 }
 
-function StudentDetail({ schoolId, studentId, onChange }: { schoolId: string; studentId: string; onChange: () => void }) {
+function StudentModal({ schoolId, studentId, onClose, onChange }: { schoolId: string; studentId: string; onClose: () => void; onChange: () => void }) {
   const [s, setS] = useState<any>(null);
+  const [tab, setTab] = useState("Overview");
   const [g, setG] = useState({ email: "", fullName: "", relationship: "Parent", collectionAuthorised: true, isEmergencyContact: false });
   const [col, setCol] = useState({ name: "", relationship: "", phone: "" });
   const [ec, setEc] = useState({ name: "", relationship: "", phone: "", priority: 1 });
+  const [allergies, setAllergies] = useState("");
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/students/${studentId}`).then((r) => r.json());
-    setS(d.student);
+    setS(d.student); setAllergies(d.student?.allergies || "");
   }, [schoolId, studentId]);
   useEffect(() => { load(); }, [load]);
 
-  if (!s) return <div className="panel">Loading…</div>;
   const base = `/api/schools/${schoolId}/students/${studentId}`;
-
+  const readOnly = s && (s.source ?? "manual") === "api";
   async function post(url: string, body: any, okText: string) {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await res.json();
@@ -129,29 +236,52 @@ function StudentDetail({ schoolId, studentId, onChange }: { schoolId: string; st
     load(); onChange();
   }
   async function del(url: string) { await fetch(url, { method: "DELETE" }); load(); onChange(); }
-  async function toggleFlag(field: string, val: boolean) {
-    await fetch(base, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [field]: val }) });
-    load();
+  async function patch(body: any, okText?: string) {
+    const res = await fetch(base, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Failed" }); return; }
+    if (okText) setMsg({ kind: "ok", text: okText });
+    load(); onChange();
   }
 
+  if (!s) return <PersonModal title="Loading…" onClose={onClose}><div className="muted">Loading…</div></PersonModal>;
+
   return (
-    <div className="panel" style={{ borderColor: "var(--brand)" }}>
-      <div className="flex-between">
-        <div><h2 style={{ marginBottom: 2 }}>{s.firstName} {s.lastName} <span className="mono muted">{s.reference}</span></h2>
-          <div className="muted">{s.yearGroup || "—"}{s.class?.name ? ` · ${s.class.name}` : ""}{s.house ? ` · ${s.house} house` : ""}{s.dateOfBirth ? ` · DOB ${new Date(s.dateOfBirth).toLocaleDateString()}` : ""}</div>
-        </div>
-      </div>
+    <PersonModal
+      title={<>{s.firstName} {s.lastName} <span className="mono muted" style={{ fontSize: 13 }}>{s.reference}</span></>}
+      subtitle={<>{s.yearGroup || "—"}{s.class?.name ? ` · ${s.class.name}` : ""}{s.house ? ` · ${s.house} house` : ""}{s.dateOfBirth ? ` · DOB ${new Date(s.dateOfBirth).toLocaleDateString()}` : ""} · {SOURCE_BADGE(s.source)}</>}
+      avatar={<Avatar url={s.photoUrl} name={`${s.firstName} ${s.lastName}`} size={54} />}
+      onClose={onClose}
+      tabs={["Overview", "Parents & guardians", "Safety & collection", "Transport", "Reports", "Behaviour"]}
+      active={tab} onTab={setTab}
+    >
       <Msg m={msg} />
+      {readOnly && <div className="notice info" style={{ marginTop: 8 }}>This pupil is fed from an integration — records are read-only here.</div>}
 
-      <div className="chips" style={{ marginTop: 8 }}>
-        {[["medicalAlert", "Medical alert"], ["sendIndicator", "SEND"], ["transportEligible", "Transport eligible"]].map(([f, label]) => (
-          <label key={f} className="chip" style={{ margin: 0 }}>
-            <input type="checkbox" style={{ width: "auto" }} checked={!!s[f]} onChange={(e) => toggleFlag(f, e.target.checked)} /> {label}
-          </label>
-        ))}
-      </div>
+      {tab === "Overview" && (
+        <>
+          <div className="chips" style={{ marginTop: 8 }}>
+            {[["medicalAlert", "Medical alert"], ["sendIndicator", "SEND"], ["transportEligible", "Transport eligible"]].map(([f, label]) => (
+              <label key={f} className="chip" style={{ margin: 0 }}>
+                <input type="checkbox" style={{ width: "auto" }} disabled={readOnly} checked={!!s[f]} onChange={(e) => patch({ [f]: e.target.checked })} /> {label}
+              </label>
+            ))}
+          </div>
+          <label style={{ marginTop: 16 }}>Allergies <span className="muted" style={{ fontWeight: 400 }}>(school or parent flagged)</span></label>
+          <div className="row">
+            <div style={{ flex: 3 }}><input value={allergies} disabled={readOnly} onChange={(e) => setAllergies(e.target.value)} placeholder="e.g. peanuts, dairy" /></div>
+            <div style={{ display: "flex", alignItems: "flex-end" }}><button disabled={readOnly} onClick={() => patch({ allergies }, "Allergies saved.")}>Save</button></div>
+          </div>
+          <label style={{ marginTop: 14 }}>Status</label>
+          <select value={s.status} disabled={readOnly} onChange={(e) => patch({ status: e.target.value }, "Status updated.")} style={{ maxWidth: 220 }}>
+            <option>applicant</option><option>enrolled</option><option>leaver</option><option>archived</option>
+          </select>
+        </>
+      )}
 
-      <h2 style={{ fontSize: 15, marginTop: 20 }}>Parents &amp; guardians</h2>
+      {tab === "Parents & guardians" && (
+        <>
+          <h2 style={{ fontSize: 15, marginTop: 14 }}>Parents &amp; guardians</h2>
       <table>
         <thead><tr><th>Name</th><th>Relationship</th><th>Flags</th><th>Notify</th><th></th></tr></thead>
         <tbody>
@@ -184,10 +314,13 @@ function StudentDetail({ schoolId, studentId, onChange }: { schoolId: string; st
       <div className="chips" style={{ marginTop: 8 }}>
         <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={g.collectionAuthorised} onChange={(e) => setG({ ...g, collectionAuthorised: e.target.checked })} /> Collection authorised</label>
         <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={g.isEmergencyContact} onChange={(e) => setG({ ...g, isEmergencyContact: e.target.checked })} /> Emergency contact</label>
-        <button className="small" onClick={() => g.email && g.fullName && post(`${base}/guardians`, g, "Guardian linked.")}>Link guardian</button>
+        <button className="small" disabled={readOnly} onClick={() => g.email && g.fullName && post(`${base}/guardians`, g, "Guardian linked.")}>Link guardian</button>
       </div>
+        </>
+      )}
 
-      <div className="row" style={{ marginTop: 24 }}>
+      {tab === "Safety & collection" && (
+      <div className="row" style={{ marginTop: 14 }}>
         <div style={{ flex: 1 }}>
           <h2 style={{ fontSize: 15 }}>Approved collectors</h2>
           <ul style={{ paddingLeft: 18, margin: 0 }}>
@@ -226,7 +359,27 @@ function StudentDetail({ schoolId, studentId, onChange }: { schoolId: string; st
           </div>
         </div>
       </div>
-    </div>
+      )}
+
+      {tab === "Transport" && (
+        <div style={{ marginTop: 14 }}>
+          <p className="sub">Pick-up &amp; drop-off, route and stop for this pupil.</p>
+          <p className="muted">Transport eligibility: {s.transportEligible ? "eligible" : "not eligible"}. Route/stop assignment and live pick-up/drop-off are managed in the <strong>Transport</strong> module and surface here once the transport build lands. (Read-only for API-fed pupils.)</p>
+        </div>
+      )}
+      {tab === "Reports" && (
+        <div style={{ marginTop: 14 }}>
+          <p className="sub">This pupil&apos;s report cards.</p>
+          <p className="muted">Individual reports (imported, API-fed or authored) appear under <strong>Pupils reports</strong>; released reports are visible to this pupil&apos;s parents. Per-pupil report history will list here in the next pass.</p>
+        </div>
+      )}
+      {tab === "Behaviour" && (
+        <div style={{ marginTop: 14 }}>
+          <p className="sub">Rewards &amp; consequences for this pupil.</p>
+          <p className="muted">Behaviour events (API-fed read-only, or manually logged) connect here and notify parents. The per-pupil behaviour timeline lands with the Behaviour build.</p>
+        </div>
+      )}
+    </PersonModal>
   );
 }
 

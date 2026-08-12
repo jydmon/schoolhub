@@ -95,6 +95,7 @@ export const studentCreateSchema = z.object({
   medicalAlert: z.boolean().optional(),
   sendIndicator: z.boolean().optional(),
   transportEligible: z.boolean().optional(),
+  allergies: z.string().max(2000).optional().or(z.literal("")),
 });
 
 export const studentUpdateSchema = studentCreateSchema.partial();

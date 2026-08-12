@@ -28,7 +28,7 @@ const SCHOOL_NAV: NavGroup[] = [
   { label: "Learning & care", items: [
     { key: "calendar", label: "Calendar", icon: "📅" },
     { key: "behaviour", label: "Behaviour", icon: "⭐" },
-    { key: "reports", label: "Reports", icon: "📄" },
+    { key: "reports", label: "Pupils reports", icon: "📄" },
     { key: "knowledge", label: "Knowledge", icon: "📚" },
     { key: "meals", label: "Meals & menus", icon: "🍽️" },
   ] },
@@ -53,7 +53,7 @@ const SCHOOL_NAV: NavGroup[] = [
 ];
 const SCHOOL_TITLES: Record<string, string> = {
   ops: "Operations", students: "Students", guardians: "Guardians", staff: "Staff", users: "Users & roles",
-  calendar: "Calendar", behaviour: "Behaviour", reports: "Reports", knowledge: "Knowledge", meals: "Meals & menus",
+  calendar: "Calendar", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
   config: "Configuration", audit: "Audit", security: "My security",
@@ -92,7 +92,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
     ["trips", "Trips"],
     ["behaviour", "Behaviour"],
     ["comms", "Comms"],
-    ["reports", "Reports"],
+    ["reports", "Pupils reports"],
     ["knowledge", "Knowledge"],
     ["meals", "Meals & menus"],
     ["assistant", "Assistant"],

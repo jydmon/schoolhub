@@ -19,16 +19,38 @@ function fmt(d: any) { return d ? new Date(d).toLocaleString() : "—"; }
 
 export default function ReportsTab({ schoolId }: { schoolId: string }) {
   const [releases, setReleases] = useState<any[]>([]);
+  const [standalone, setStandalone] = useState<any[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [f, setF] = useState<any>({ name: "", type: "annual", term: "", channels: { inapp: true, push: true, email: true, sms: false, whatsapp: false } });
+  const [editId, setEditId] = useState<string | null>(null);
+  const [ef, setEf] = useState<any>({ title: "", term: "", summary: "", status: "draft" });
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/pupil-reports`).then((r) => r.json());
     setReleases(d.releases ?? []);
+    setStandalone(d.standaloneReports ?? []);
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
+
+  const sRows = standalone.filter((r) => { const s = q.trim().toLowerCase(); if (!s) return true; return [r.studentName, r.title, r.term, r.status, r.source].some((v) => String(v ?? "").toLowerCase().includes(s)); });
+  function startEdit(r: any) { setEditId(r.id); setEf({ title: r.title || "", term: r.term || "", summary: r.summary || "", status: r.status || "draft" }); }
+  async function saveEdit() {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/pupil-reports/reports/${editId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ef) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Could not save" }); return; }
+    setMsg({ kind: "ok", text: "Report updated." }); setEditId(null); load();
+  }
+  async function delReport(r: any) {
+    setMsg(null);
+    const res = await fetch(`/api/schools/${schoolId}/pupil-reports/reports/${r.id}`, { method: "DELETE" });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Could not delete" }); return; }
+    setMsg({ kind: "ok", text: "Report removed." }); load();
+  }
 
   const loadDetail = useCallback(async (id: string) => {
     const d = await fetch(`/api/schools/${schoolId}/pupil-reports/${id}`).then((r) => r.json());
@@ -66,8 +88,50 @@ export default function ReportsTab({ schoolId }: { schoolId: string }) {
   return (
     <>
       <ModuleImportCard schoolId={schoolId} type="pupil_reports" title="Import pupil reports" hint="No reporting system? Bulk-add report cards from a CSV (matched to pupils by student reference). They arrive as drafts." />
+
       <div className="panel">
-        <h2>Pupil reports</h2>
+        <div className="flex-between"><div><h2>Individual &amp; imported reports</h2><p className="sub" style={{ marginBottom: 0 }}>Per-pupil reports from a CSV import or API feed. Imported/manual reports can be edited; API-fed reports are read-only. Group these into a release above to approve and send them to parents.</p></div></div>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "8px 0 12px" }}>
+          <input placeholder="Filter reports…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+          <span className="muted" style={{ fontSize: 12 }}>{q ? `${sRows.length} of ${standalone.length}` : `${standalone.length} report${standalone.length === 1 ? "" : "s"}`}</span>
+        </div>
+        <table>
+          <thead><tr><th>Pupil</th><th>Title</th><th>Term</th><th>Status</th><th>Source</th><th className="right">Actions</th></tr></thead>
+          <tbody>
+            {sRows.map((r) => (
+              editId === r.id ? (
+                <tr key={r.id}>
+                  <td>{r.studentName}</td>
+                  <td><input value={ef.title} onChange={(e) => setEf({ ...ef, title: e.target.value })} /></td>
+                  <td><input value={ef.term} onChange={(e) => setEf({ ...ef, term: e.target.value })} style={{ maxWidth: 110 }} /></td>
+                  <td><select value={ef.status} onChange={(e) => setEf({ ...ef, status: e.target.value })}>{["draft", "submitted", "approved", "released", "withdrawn"].map((s) => <option key={s}>{s}</option>)}</select></td>
+                  <td colSpan={2} className="right nowrap">
+                    <input value={ef.summary} onChange={(e) => setEf({ ...ef, summary: e.target.value })} placeholder="summary" style={{ maxWidth: 160 }} />{" "}
+                    <button className="small" onClick={saveEdit}>Save</button>{" "}
+                    <button className="small secondary" onClick={() => setEditId(null)}>Cancel</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id}>
+                  <td><strong>{r.studentName}</strong>{r.studentRef ? <div className="mono muted" style={{ fontSize: 11 }}>{r.studentRef}</div> : null}</td>
+                  <td>{r.title}{r.summary ? <div className="muted" style={{ fontSize: 11 }}>{r.summary}</div> : null}</td>
+                  <td className="muted">{r.term || "—"}</td>
+                  <td><span className={`badge ${r.status === "released" ? "active" : r.status === "approved" ? "trial" : "archived"}`}>{r.status}</span></td>
+                  <td>{r.source === "api" ? <span className="badge role">API</span> : r.source === "import" ? <span className="badge trial">imported</span> : <span className="muted">manual</span>}</td>
+                  <td className="right nowrap">
+                    {r.editable ? <><button className="small secondary" onClick={() => startEdit(r)}>Edit</button>{" "}<button className="small danger" onClick={() => delReport(r)}>Delete</button></> : <span className="muted" style={{ fontSize: 12 }}>read-only</span>}
+                  </td>
+                </tr>
+              )
+            ))}
+            {standalone.length === 0 && <tr><td colSpan={6} className="muted">No individual reports yet — import a CSV above (matched to pupils by student reference).</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="panel">
+        <h2>Create a report release</h2>
         <p className="sub">Prepare report cards, get school-leadership sign-off, and release them to parents at a set time. Parents can&apos;t see a report until it&apos;s released; on release, guardians are notified through the notification centre honouring each family&apos;s channel preferences.</p>
         {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <form onSubmit={create}>

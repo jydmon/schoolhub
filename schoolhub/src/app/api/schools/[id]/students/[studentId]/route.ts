@@ -49,6 +49,8 @@ export async function PATCH(req: Request, { params }: Params) {
       where: { id: params.studentId, schoolId: params.id },
     });
     if (!existing) return ok({ error: "Not found" }, 404);
+    // API-sourced records are read-only; only imported/manual records may be edited.
+    if (((existing as any).source ?? "manual") === "api") return ok({ error: "This student is fed from an integration and is read-only." }, 403);
 
     let classId = existing.classId;
     if (input.className !== undefined) {
@@ -65,7 +67,7 @@ export async function PATCH(req: Request, { params }: Params) {
     }
 
     const data: Record<string, unknown> = { classId };
-    for (const k of ["firstName", "lastName", "preferredName", "yearGroup", "house", "status", "photoUrl", "campusId"] as const) {
+    for (const k of ["firstName", "lastName", "preferredName", "yearGroup", "house", "status", "photoUrl", "campusId", "allergies"] as const) {
       if (input[k] !== undefined) data[k] = input[k] || null;
     }
     for (const k of ["medicalAlert", "sendIndicator", "transportEligible"] as const) {

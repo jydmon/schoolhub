@@ -93,8 +93,10 @@ export const IMPORT_TEMPLATES: Record<
       "medicalAlert",
       "sendIndicator",
       "transportEligible",
+      "allergies",
+      "photoUrl",
     ],
-    example: ["STU-1001", "Ella", "Blake", "Ellie", "2016-04-12", "Year 4", "4B", "Oak", "enrolled", "2020-09-01", "false", "false", "true"],
+    example: ["STU-1001", "Ella", "Blake", "Ellie", "2016-04-12", "Year 4", "4B", "Oak", "enrolled", "2020-09-01", "false", "false", "true", "peanuts, dairy", "https://…/ella.jpg"],
   },
   parents: {
     headers: [
@@ -109,12 +111,13 @@ export const IMPORT_TEMPLATES: Record<
       "childReferences",
       "collectionAuthorised",
       "isEmergencyContact",
+      "photoUrl",
     ],
-    example: ["Sarah Blake", "sarah@parents.test", "07700 900001", "1 High St", "Manchester", "M1 1AA", "en", "Mother", "STU-1001;STU-1002", "true", "true"],
+    example: ["Sarah Blake", "sarah@parents.test", "07700 900001", "1 High St", "Manchester", "M1 1AA", "en", "Mother", "STU-1001;STU-1002", "true", "true", "https://…/sarah.jpg"],
   },
   staff: {
-    headers: ["reference", "fullName", "email", "role", "jobTitle", "department", "classNames"],
-    example: ["STF-2001", "Tom Reed", "tom@northwind.test", "Teacher", "Class Teacher", "Lower School", "4B;4C"],
+    headers: ["reference", "fullName", "email", "role", "jobTitle", "department", "classNames", "photoUrl"],
+    example: ["STF-2001", "Tom Reed", "tom@northwind.test", "Teacher", "Class Teacher", "Lower School", "4B;4C", "https://…/tom.jpg"],
   },
   messaging_consent: {
     // Seed messaging consent a school has already collected (paper/portal forms).

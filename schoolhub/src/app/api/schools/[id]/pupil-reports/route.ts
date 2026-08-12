@@ -56,7 +56,26 @@ export async function GET(_req: Request, { params }: Params) {
         };
       })
     );
-    return ok({ releases: withCounts });
+    // Standalone reports not attached to any release (e.g. bulk-imported or
+    // API-fed individual pupil reports). These previously never surfaced in the
+    // UI, so an import "did nothing" from the admin's point of view.
+    const standalone = await prisma.studentReport.findMany({
+      where: { schoolId: params.id, releaseId: null },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+      include: { student: { select: { firstName: true, lastName: true, reference: true } } },
+    });
+    const standaloneReports = standalone.map((r) => ({
+      id: r.id,
+      studentName: `${r.student?.firstName ?? ""} ${r.student?.lastName ?? ""}`.trim() || r.studentId,
+      studentRef: r.student?.reference ?? null,
+      type: r.type, title: r.title, term: r.term, summary: r.summary,
+      status: r.status, source: (r as any).source ?? "manual",
+      editable: ((r as any).source ?? "manual") !== "api",
+      createdAt: r.createdAt,
+    }));
+
+    return ok({ releases: withCounts, standaloneReports });
   } catch (err) { return handleError(err); }
 }
 

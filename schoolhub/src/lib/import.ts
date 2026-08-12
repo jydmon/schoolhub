@@ -127,6 +127,9 @@ export async function runImport(opts: {
           medicalAlert: parseBool(row.medicalAlert || ""),
           sendIndicator: parseBool(row.sendIndicator || ""),
           transportEligible: parseBool(row.transportEligible || ""),
+          allergies: row.allergies?.trim() || null,
+          photoUrl: row.photoUrl?.trim() || null,
+          source: "import",
         };
 
         const existing = await prisma.student.findUnique({
@@ -156,6 +159,7 @@ export async function runImport(opts: {
           city: row.city?.trim() || null,
           postcode: row.postcode?.trim() || null,
           preferredLanguage: row.preferredLanguage?.trim() || "en",
+          ...(row.photoUrl?.trim() ? { photoUrl: row.photoUrl.trim() } : {}),
         };
         if (!user) {
           user = await prisma.user.create({
@@ -222,14 +226,15 @@ export async function runImport(opts: {
         if (!SCHOOL_ROLES.includes(role as (typeof SCHOOL_ROLES)[number]))
           throw new Error(`role must be one of ${SCHOOL_ROLES.join(", ")}`);
 
+        const photoUrl = row.photoUrl?.trim() || null;
         let user = await prisma.user.findUnique({ where: { email } });
         if (!user) {
           user = await prisma.user.create({
-            data: { email, fullName, status: "invited" },
+            data: { email, fullName, status: "invited", ...(photoUrl ? { photoUrl } : {}) },
           });
           created++;
         } else {
-          await prisma.user.update({ where: { id: user.id }, data: { fullName } });
+          await prisma.user.update({ where: { id: user.id }, data: { fullName, ...(photoUrl ? { photoUrl } : {}) } });
           updated++;
         }
 
@@ -245,6 +250,7 @@ export async function runImport(opts: {
             reference,
             jobTitle: row.jobTitle?.trim() || null,
             department: row.department?.trim() || null,
+            source: "import",
           },
           create: {
             schoolId,
@@ -252,6 +258,7 @@ export async function runImport(opts: {
             reference,
             jobTitle: row.jobTitle?.trim() || null,
             department: row.department?.trim() || null,
+            source: "import",
           },
         });
 
@@ -432,7 +439,7 @@ export async function runImport(opts: {
         const dupKey = "pr:" + student.id + ":" + title.toLowerCase() + ":" + (term || "");
         if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "title", message: `duplicate report "${title}" for this pupil in file`, fatal: false }); continue; }
         seen.add(dupKey);
-        const data = { type: (row.type?.trim() || "termly").toLowerCase(), title, term, summary: row.summary?.trim() || null, status: "draft", authorId: opts.actorUserId || null };
+        const data = { type: (row.type?.trim() || "termly").toLowerCase(), title, term, summary: row.summary?.trim() || null, status: "draft", source: "import", authorId: opts.actorUserId || null };
         const existing = await prisma.studentReport.findFirst({ where: { schoolId, studentId: student.id, title, term } });
         if (existing) { await prisma.studentReport.update({ where: { id: existing.id }, data }); updated++; }
         else { await prisma.studentReport.create({ data: { schoolId, studentId: student.id, ...data } }); created++; }

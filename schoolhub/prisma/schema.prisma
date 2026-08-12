@@ -163,6 +163,7 @@ model User {
   id            String  @id @default(cuid())
   email         String  @unique
   fullName      String
+  photoUrl      String? // profile image (parents/guardians and staff)
   passwordHash  String? // null for pure-SSO accounts
   authProvider  String  @default("local") // local | google | microsoft | saml
   isPlatformAdmin Boolean @default(false)
@@ -267,6 +268,8 @@ model Student {
   house         String?
 
   status        String  @default("enrolled") // applicant | enrolled | leaver | archived
+  source        String  @default("manual") // manual | import | api — api rows are read-only
+  allergies     String? // free-text allergy flags (school or parent supplied)
   admissionDate DateTime?
 
   // Indicators / eligibility
@@ -393,6 +396,8 @@ model StaffProfile {
   jobTitle   String?
   department String?
   campusId   String?
+  source     String  @default("manual") // manual | import | api — api rows are read-only
+  status     String  @default("active") // active | inactive | holiday | onleave | sick
   // Extracurricular activities and trips led, JSON arrays of names (proper trip
   // linkage arrives with the Trips module in a later phase).
   activities String  @default("[]")
@@ -1380,6 +1385,7 @@ model StudentReport {
   summary       String? // short headline shown in lists
   bodyJson      String  @default("{}")
   fileUrl       String?
+  source        String  @default("manual") // manual | import | api — api rows are read-only
 
   status        String  @default("draft") // draft | submitted | approved | scheduled | released | withdrawn
   releaseAt     DateTime? // standalone embargo; if in a release, the release's timing wins
