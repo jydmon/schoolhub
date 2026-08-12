@@ -136,7 +136,8 @@ function Routes({ schoolId }: { schoolId: string }) {
   const [rows, setRows] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
-  const [f, setF] = useState({ name: "", type: "fixed", cutoffTime: "07:00", termlyFee: "", vehicleId: "", driverUserId: "", stops: "Green Lane|pickup|07:30\nMill Road|shared|07:40\nSchool|school|08:30" });
+  const [f, setF] = useState({ name: "", type: "fixed", cutoffTime: "07:00", termlyFee: "", vehicleId: "", driverUserId: "", stops: "Green Lane|pickup|07:30|Green Lane, town\nMill Road|shared|07:40|Mill Road, town\nSchool|school|08:30|" });
+  const [geo, setGeo] = useState<{ id: string; text: string } | null>(null);
   const load = useCallback(async () => {
     setRows((await fetch(`/api/schools/${schoolId}/routes`).then((r) => r.json())).routes ?? []);
     setVehicles((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []);
@@ -144,17 +145,41 @@ function Routes({ schoolId }: { schoolId: string }) {
     setDrivers(users.filter((u: any) => u.role === "Driver"));
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
+  // Parse a stop line: Name | kind | HH:MM | address-or-"lat,lng"
+  function parseStops(text: string) {
+    return text.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+      const [name, kind, plannedArrival, loc] = l.split("|").map((x) => (x || "").trim());
+      const stop: any = { name, kind: kind || "pickup", plannedArrival: plannedArrival || undefined };
+      const m = (loc || "").match(/^(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)$/);
+      if (m) { stop.lat = parseFloat(m[1]); stop.lng = parseFloat(m[2]); }
+      else if (loc) stop.address = loc;
+      return stop;
+    });
+  }
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    const stops = f.stops.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [name, kind, plannedArrival] = l.split("|").map((x) => x.trim()); return { name, kind: kind || "pickup", plannedArrival }; });
-    await fetch(`/api/schools/${schoolId}/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, type: f.type, cutoffTime: f.cutoffTime, termlyFee: f.termlyFee ? Number(f.termlyFee) : null, vehicleId: f.vehicleId || null, driverUserId: f.driverUserId || null, stops }) });
+    await fetch(`/api/schools/${schoolId}/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, type: f.type, cutoffTime: f.cutoffTime, termlyFee: f.termlyFee ? Number(f.termlyFee) : null, vehicleId: f.vehicleId || null, driverUserId: f.driverUserId || null, stops: parseStops(f.stops) }) });
     setF({ ...f, name: "", termlyFee: "" }); load();
   }
+  async function geocodeRoute(id: string) {
+    setGeo({ id, text: "Geocoding stops…" });
+    const d = await fetch(`/api/schools/${schoolId}/routes/${id}/geocode`, { method: "POST" }).then((r) => r.json()).catch(() => ({}));
+    if (d.error) setGeo({ id, text: d.error });
+    else setGeo({ id, text: `${d.mapped}/${d.total} stops mapped${d.remaining ? ` · ${d.remaining} left — click again to continue` : ""}.` });
+    load();
+  }
+  const mapped = (r: any) => r.stops.filter((s: any) => s.lat != null && s.lng != null).length;
   return (
     <div className="panel"><h2>Routes</h2>
-      <table><thead><tr><th>Name</th><th>Type</th><th>Vehicle</th><th>Stops</th><th>Students</th><th>Termly fee</th><th>Cut-off</th></tr></thead><tbody>
-        {rows.map((r) => <tr key={r.id}><td>{r.name}</td><td>{r.type}</td><td>{r.vehicle ? (r.vehicle.label || r.vehicle.reference) : "—"}</td><td>{r.stops.length}</td><td>{r._count.profiles}</td><td>{r.termlyFee != null ? `£${Number(r.termlyFee).toFixed(2)}` : "—"}</td><td>{r.cutoffTime}</td></tr>)}
-        {rows.length === 0 && <tr><td colSpan={7} className="muted">No routes.</td></tr>}
+      <p className="sub">Add stop addresses (or exact <span className="mono">lat,lng</span>) so stops and buses show on the live maps. Use <strong>Map stops</strong> to look up coordinates from addresses automatically — no map account needed.</p>
+      <table><thead><tr><th>Name</th><th>Type</th><th>Vehicle</th><th>Stops</th><th>Mapped</th><th>Students</th><th>Termly fee</th><th>Cut-off</th><th className="right"></th></tr></thead><tbody>
+        {rows.map((r) => { const m = mapped(r); return (
+          <tr key={r.id}><td>{r.name}</td><td>{r.type}</td><td>{r.vehicle ? (r.vehicle.label || r.vehicle.reference) : "—"}</td><td>{r.stops.length}</td>
+            <td>{r.stops.length ? <span className={`badge ${m === r.stops.length ? "active" : m ? "trial" : "archived"}`}>{m}/{r.stops.length}</span> : "—"}{geo && geo.id === r.id ? <div className="muted" style={{ fontSize: 11 }}>{geo.text}</div> : null}</td>
+            <td>{r._count.profiles}</td><td>{r.termlyFee != null ? `£${Number(r.termlyFee).toFixed(2)}` : "—"}</td><td>{r.cutoffTime}</td>
+            <td className="right">{m < r.stops.length && <button className="secondary small" onClick={() => geocodeRoute(r.id)}>Map stops</button>}</td></tr>
+        ); })}
+        {rows.length === 0 && <tr><td colSpan={9} className="muted">No routes.</td></tr>}
       </tbody></table>
       <form onSubmit={add} style={{ marginTop: 12 }}>
         <div className="row">
@@ -165,7 +190,7 @@ function Routes({ schoolId }: { schoolId: string }) {
           <div><label>Termly fee (£)</label><input type="number" step="0.01" value={f.termlyFee} onChange={(e) => setF({ ...f, termlyFee: e.target.value })} /></div>
           <div><label>Cut-off</label><input value={f.cutoffTime} onChange={(e) => setF({ ...f, cutoffTime: e.target.value })} /></div>
         </div>
-        <label>Stops (one per line: Name|kind|HH:MM)</label>
+        <label>Stops (one per line: Name|kind|HH:MM|address or lat,lng)</label>
         <textarea rows={4} value={f.stops} onChange={(e) => setF({ ...f, stops: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12 }} />
         <button style={{ marginTop: 10 }}>Add route</button>
       </form>
