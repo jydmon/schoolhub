@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "SIPlat",
-    "slug": "siplat",
+    "slug": "siplat-y6qlp2of8mkzesks1ph9",
+    "owner": "jydmon",
     "scheme": "siplat",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -59,7 +60,7 @@
     "extra": {
       "apiUrl": "https://dev.siplat.com",
       "eas": {
-        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+        "projectId": "df829a40-9fc7-42a9-b606-c66fee8b37f7"
       }
     }
   }
