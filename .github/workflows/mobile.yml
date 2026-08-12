@@ -1,23 +1,20 @@
 name: Mobile — EAS build & submit
 
-# Builds the SIPlat iOS (.ipa) and Android (.aab) apps on Expo Application
-# Services and, optionally, submits them to App Store Connect and Google Play.
-
 on:
   workflow_dispatch:
     inputs:
       platform:
-        description: "Platform to build"
+        description: Platform to build
         type: choice
-        options: ["all", "ios", "android"]
-        default: "all"
+        options: [all, ios, android]
+        default: all
       profile:
-        description: "EAS build profile"
+        description: Build profile
         type: choice
-        options: ["production", "preview"]
-        default: "production"
+        options: [production, preview]
+        default: production
       submit:
-        description: "Submit to the stores after build"
+        description: Submit to stores after build
         type: boolean
         default: false
   push:
@@ -26,7 +23,6 @@ on:
 
 jobs:
   build:
-    name: EAS build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,39 +31,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Set up EAS
+      - name: Setup EAS
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Check Expo auth
+        run: |
+          echo "EXPO_TOKEN present: ${{ secrets.EXPO_TOKEN != '' }}"
+          if ! eas whoami; then
+            echo "::error::Not logged in to Expo. EXPO_TOKEN is missing or invalid. Add it under repo Settings → Secrets and variables → Actions (name it exactly EXPO_TOKEN)."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm install
 
-      - name: Resolve build parameters
+      - name: Resolve build params
         id: params
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "platform=all"        >> "$GITHUB_OUTPUT"
-            echo "profile=production"  >> "$GITHUB_OUTPUT"
-            echo "submit=true"         >> "$GITHUB_OUTPUT"
-          else
-            echo "platform=${{ inputs.platform }}" >> "$GITHUB_OUTPUT"
-            echo "profile=${{ inputs.profile }}"   >> "$GITHUB_OUTPUT"
-            echo "submit=${{ inputs.submit }}"     >> "$GITHUB_OUTPUT"
-          fi
+          PLATFORM="${{ github.event.inputs.platform }}"
+          PROFILE="${{ github.event.inputs.profile }}"
+          SUBMIT="${{ github.event.inputs.submit }}"
+          [ -z "$PLATFORM" ] && PLATFORM="all"
+          [ -z "$PROFILE" ] && PROFILE="production"
+          [ -z "$SUBMIT" ] && SUBMIT="true"
+          echo "platform=$PLATFORM" >> "$GITHUB_OUTPUT"
+          echo "profile=$PROFILE" >> "$GITHUB_OUTPUT"
+          echo "submit=$SUBMIT" >> "$GITHUB_OUTPUT"
 
       - name: Build (and optionally submit)
         run: |
-          EXTRA=""
-          if [ "${{ steps.params.outputs.submit }}" = "true" ]; then EXTRA="--auto-submit"; fi
-          eas build \
-            --platform ${{ steps.params.outputs.platform }} \
-            --profile ${{ steps.params.outputs.profile }} \
-            --non-interactive \
-            $EXTRA
+          FLAGS="--platform ${{ steps.params.outputs.platform }} --profile ${{ steps.params.outputs.profile }} --non-interactive"
+          if [ "${{ steps.params.outputs.submit }}" = "true" ]; then FLAGS="$FLAGS --auto-submit"; fi
+          echo "Running: eas build $FLAGS"
+          eas build $FLAGS
