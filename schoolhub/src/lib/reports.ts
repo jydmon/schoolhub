@@ -33,6 +33,35 @@ export async function opsDashboard(schoolId: string) {
     prisma.message.count({ where: { schoolId, priority: "emergency", createdAt: { gte: new Date(Date.now() - 7 * 864e5) } } }),
   ]);
 
+  // ---- Insights: reflect ALL data in the school (imported, API-fed or manual),
+  // not just today's live operations. Powers the cards + charts + upcoming feed.
+  const nowD = new Date();
+  const [
+    studentsByStatus, studentsByYear, studentsBySource, staffCount, guardianCount,
+    vehiclesCount, routesCount, menuCount, tripsByStatus, reportsCount, classesCount,
+    upcomingEvents, upcomingTrips,
+  ] = await Promise.all([
+    prisma.student.groupBy({ by: ["status"], where: { schoolId }, _count: { _all: true } }),
+    prisma.student.groupBy({ by: ["yearGroup"], where: { schoolId, status: "enrolled" }, _count: { _all: true } }),
+    prisma.student.groupBy({ by: ["source"], where: { schoolId }, _count: { _all: true } }),
+    prisma.staffProfile.count({ where: { schoolId } }),
+    prisma.user.count({ where: { memberships: { some: { schoolId, role: "Parent" } } } }),
+    prisma.vehicle.count({ where: { schoolId } }),
+    prisma.route.count({ where: { schoolId } }),
+    prisma.menuItem.count({ where: { schoolId } }),
+    prisma.trip.groupBy({ by: ["status"], where: { schoolId }, _count: { _all: true } }),
+    prisma.studentReport.count({ where: { schoolId } }),
+    prisma.schoolClass.count({ where: { schoolId } }),
+    prisma.calendarEvent.findMany({ where: { schoolId, status: "published", startsAt: { gte: nowD } }, orderBy: { startsAt: "asc" }, take: 6, select: { id: true, title: true, category: true, startsAt: true } }),
+    prisma.trip.findMany({ where: { schoolId, date: { gte: today }, status: { in: ["planned", "active"] } }, orderBy: { date: "asc" }, take: 6, select: { id: true, title: true, date: true, destination: true } }),
+  ]);
+
+  const byKey = (arr: any[], k = "status") => Object.fromEntries(arr.map((g) => [g[k] ?? "—", g._count._all]));
+  const upcoming = [
+    ...upcomingEvents.map((e) => ({ kind: "event" as const, id: e.id, title: e.title, when: e.startsAt.toISOString(), meta: e.category })),
+    ...upcomingTrips.map((t) => ({ kind: "trip" as const, id: t.id, title: t.title, when: `${t.date}T00:00:00.000Z`, meta: t.destination || "trip" })),
+  ].sort((a, b) => a.when.localeCompare(b.when)).slice(0, 8);
+
   return {
     date: today,
     tiles: {
@@ -48,6 +77,26 @@ export async function opsDashboard(schoolId: string) {
       messagesAttention: emergencyMsgs,
       integrationFailures: integrations.filter((i) => i.status === "error").length,
       transportIncidents: incidentsToday,
+    },
+    insights: {
+      counts: {
+        students: studentsByStatus.reduce((n, g) => n + g._count._all, 0),
+        enrolled,
+        staff: staffCount,
+        guardians: guardianCount,
+        vehicles: vehiclesCount,
+        routes: routesCount,
+        menuItems: menuCount,
+        trips: tripsByStatus.reduce((n, g) => n + g._count._all, 0),
+        reports: reportsCount,
+        classes: classesCount,
+      },
+      studentsByStatus: byKey(studentsByStatus),
+      studentsBySource: byKey(studentsBySource, "source"),
+      studentsByYear: studentsByYear.map((g) => ({ label: g.yearGroup || "Unassigned", value: g._count._all })).sort((a, b) => a.label.localeCompare(b.label)),
+      tripsByStatus: byKey(tripsByStatus),
+      attendance: { present: Math.max(0, enrolled - absent), absent },
+      upcoming,
     },
   };
 }

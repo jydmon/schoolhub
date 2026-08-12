@@ -45,21 +45,134 @@ function SubscriptionBanner({ subscription }: { subscription?: any }) {
   );
 }
 
-function Dashboard({ schoolId, subscription }: { schoolId: string; subscription?: any }) {
-  const [d, setD] = useState<any>(null);
-  useEffect(() => { fetch(`/api/schools/${schoolId}/ops/dashboard`).then((r) => r.json()).then(setD); }, [schoolId]);
-  if (!d) return <><SubscriptionBanner subscription={subscription} /><div className="panel">Loading…</div></>;
+// ---- lightweight, dependency-free charts (accessible, theme-consistent) ----
+const CHART_COLORS = ["#4f46e5", "#0ea5e9", "#22c55e", "#f59e0b", "#ef4444", "#a855f7", "#14b8a6", "#64748b"];
+function BarChart({ data }: { data: { label: string; value: number }[] }) {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  if (!data.length) return <p className="muted">No data yet.</p>;
   return (
-    <>
-    <SubscriptionBanner subscription={subscription} />
-    <div className="panel">
-      <h2>Operations dashboard</h2><p className="sub">Live view · {d.date}</p>
-      <div className="stat-grid">
-        {TILE_LABELS.map(([k, l]) => (
-          <div className="stat" key={k}><div className="n" style={{ color: (k === "delayedRoutes" || k === "integrationFailures" || k === "transportIncidents" || k === "studentsAbsent") && d.tiles[k] > 0 ? "var(--danger)" : undefined }}>{d.tiles[k]}</div><div className="l">{l}</div></div>
-        ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {data.map((d, i) => (
+        <div key={d.label} style={{ display: "grid", gridTemplateColumns: "110px 1fr 42px", alignItems: "center", gap: 10 }}>
+          <span className="muted" style={{ fontSize: 12.5, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.label}</span>
+          <span style={{ background: "#eef2f7", borderRadius: 6, height: 16, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${(d.value / max) * 100}%`, background: CHART_COLORS[i % CHART_COLORS.length], borderRadius: 6, transition: "width .3s" }} /></span>
+          <strong style={{ fontSize: 13 }}>{d.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+function Donut({ segments, centerLabel }: { segments: { label: string; value: number; color: string }[]; centerLabel?: string }) {
+  const total = segments.reduce((n, s) => n + s.value, 0);
+  const R = 52, C = 2 * Math.PI * R;
+  let offset = 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+      <svg width="130" height="130" viewBox="0 0 130 130" role="img" aria-label="chart">
+        <circle cx="65" cy="65" r={R} fill="none" stroke="#eef2f7" strokeWidth="16" />
+        {total > 0 && segments.map((s, i) => {
+          const len = (s.value / total) * C;
+          const el = <circle key={i} cx="65" cy="65" r={R} fill="none" stroke={s.color} strokeWidth="16" strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} transform="rotate(-90 65 65)" />;
+          offset += len; return el;
+        })}
+        <text x="65" y="62" textAnchor="middle" fontSize="20" fontWeight="700" fill="#1e293b">{total}</text>
+        <text x="65" y="80" textAnchor="middle" fontSize="10" fill="#64748b">{centerLabel || "total"}</text>
+      </svg>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {segments.map((s) => <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: s.color }} /> {s.label} <strong>{s.value}</strong></span>)}
       </div>
     </div>
+  );
+}
+
+const DASH_SECTIONS: [string, string][] = [["live", "Live operations"], ["data", "School data"], ["charts", "Charts"], ["upcoming", "Upcoming activities"]];
+function Dashboard({ schoolId, subscription }: { schoolId: string; subscription?: any }) {
+  const [d, setD] = useState<any>(null);
+  const [show, setShow] = useState<Record<string, boolean>>({ live: true, data: true, charts: true, upcoming: true });
+  const [customize, setCustomize] = useState(false);
+  useEffect(() => { fetch(`/api/schools/${schoolId}/ops/dashboard`).then((r) => r.json()).then(setD); }, [schoolId]);
+  useEffect(() => {
+    try { const raw = window.localStorage.getItem(`siplat-dash-${schoolId}`); if (raw) setShow((p) => ({ ...p, ...JSON.parse(raw) })); } catch { /* ignore */ }
+  }, [schoolId]);
+  function toggle(k: string) { setShow((p) => { const next = { ...p, [k]: !p[k] }; try { window.localStorage.setItem(`siplat-dash-${schoolId}`, JSON.stringify(next)); } catch { /* ignore */ } return next; }); }
+  if (!d) return <><SubscriptionBanner subscription={subscription} /><div className="panel">Loading…</div></>;
+
+  const ins = d.insights || {};
+  const c = ins.counts || {};
+  const dataCards: [string, number][] = [
+    ["Pupils", c.students ?? 0], ["Enrolled", c.enrolled ?? 0], ["Staff", c.staff ?? 0], ["Parents", c.guardians ?? 0],
+    ["Classes", c.classes ?? 0], ["Vehicles", c.vehicles ?? 0], ["Routes", c.routes ?? 0], ["Menu items", c.menuItems ?? 0],
+    ["Trips", c.trips ?? 0], ["Reports", c.reports ?? 0],
+  ];
+  const src = ins.studentsBySource || {};
+  const statusColors: Record<string, string> = { enrolled: "#22c55e", applicant: "#f59e0b", leaver: "#64748b", archived: "#94a3b8" };
+  const statusSegs = Object.entries(ins.studentsByStatus || {}).map(([k, v]: any) => ({ label: k, value: v, color: statusColors[k] || "#4f46e5" }));
+  const attSegs = [
+    { label: "Present", value: ins.attendance?.present ?? 0, color: "#22c55e" },
+    { label: "Absent", value: ins.attendance?.absent ?? 0, color: "#ef4444" },
+  ];
+
+  return (
+    <>
+      <SubscriptionBanner subscription={subscription} />
+      <div className="panel" style={{ paddingTop: 12, paddingBottom: 12 }}>
+        <div className="flex-between">
+          <div><h2 style={{ marginBottom: 2 }}>Dashboard</h2><p className="sub" style={{ marginBottom: 0 }}>Live operations and your school data · {d.date}</p></div>
+          <button className="secondary small" onClick={() => setCustomize((v) => !v)}>{customize ? "Done" : "Customise ⚙"}</button>
+        </div>
+        {customize && (
+          <div className="chips" style={{ marginTop: 10 }}>
+            {DASH_SECTIONS.map(([k, l]) => <label key={k} className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={!!show[k]} onChange={() => toggle(k)} /> {l}</label>)}
+          </div>
+        )}
+      </div>
+
+      {show.live && (
+        <div className="panel">
+          <h2 style={{ fontSize: 15 }}>Live operations</h2>
+          <div className="stat-grid">
+            {TILE_LABELS.map(([k, l]) => (
+              <div className="stat" key={k}><div className="n" style={{ color: (k === "delayedRoutes" || k === "integrationFailures" || k === "transportIncidents" || k === "studentsAbsent") && d.tiles[k] > 0 ? "var(--danger)" : undefined }}>{d.tiles[k]}</div><div className="l">{l}</div></div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {show.data && (
+        <div className="panel">
+          <div className="flex-between"><h2 style={{ fontSize: 15 }}>School data</h2><span className="muted" style={{ fontSize: 12 }}>manual {src.manual ?? 0} · imported {src.import ?? 0} · API {src.api ?? 0}</span></div>
+          <p className="sub">Everything in your school — however it got here: added manually, bulk-imported, or fed from an integration.</p>
+          <div className="stat-grid">
+            {dataCards.map(([l, v]) => <div className="stat" key={l}><div className="n">{v}</div><div className="l">{l}</div></div>)}
+          </div>
+        </div>
+      )}
+
+      {show.charts && (
+        <div className="panel">
+          <h2 style={{ fontSize: 15 }}>Insights</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 24, marginTop: 8 }}>
+            <div><h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)" }}>Pupils by year group</h3><BarChart data={ins.studentsByYear || []} /></div>
+            <div><h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)" }}>Attendance today</h3><Donut segments={attSegs} centerLabel="pupils" /></div>
+            <div><h3 style={{ fontSize: 13, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted)" }}>Pupils by status</h3><Donut segments={statusSegs.length ? statusSegs : [{ label: "none", value: 0, color: "#e2e8f0" }]} centerLabel="pupils" /></div>
+          </div>
+        </div>
+      )}
+
+      {show.upcoming && (
+        <div className="panel">
+          <h2 style={{ fontSize: 15 }}>Upcoming activities</h2>
+          <table>
+            <thead><tr><th>When</th><th>Activity</th><th>Type</th></tr></thead>
+            <tbody>
+              {(ins.upcoming || []).map((u: any) => (
+                <tr key={u.kind + u.id}><td className="mono muted">{new Date(u.when).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}</td><td><strong>{u.title}</strong></td><td>{u.kind === "trip" ? <span className="badge trial">trip</span> : <span className="badge role">{u.meta}</span>}</td></tr>
+              ))}
+              {(!ins.upcoming || ins.upcoming.length === 0) && <tr><td colSpan={3} className="muted">Nothing scheduled — add events in the Calendar or plan a trip.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
