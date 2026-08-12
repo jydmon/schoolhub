@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog, useBeforeUnload } from "@/components/ConfirmDialog";
+import HistoryExplorer from "@/components/HistoryExplorer";
 import { PLATFORM_AREAS, AREA_LABELS } from "@/lib/platform-staff-logic";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
@@ -1361,18 +1362,14 @@ function EmailCfg() {
 }
 
 /* ============================ AUDIT ============================ */
-type Audit = { id: string; action: string; actorEmail: string | null; school?: { name: string } | null; createdAt: string; metadata: string };
 function AuditTab() {
-  const [entries, setEntries] = useState<Audit[]>([]);
-  useEffect(() => { fetch("/api/audit").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])); }, []);
   return (
-    <div className="panel">
-      <h2>Platform audit trail</h2>
-      <p className="sub">The 300 most recent events across all tenants.</p>
-      <table><thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Tenant</th></tr></thead>
-        <tbody>{entries.map((e) => <tr key={e.id}><td className="mono muted">{dt(e.createdAt)}</td><td><span className="badge role">{e.action}</span></td><td>{e.actorEmail ?? <span className="muted">system</span>}</td><td>{e.school?.name ?? <span className="muted">platform</span>}</td></tr>)}{entries.length === 0 && <Empty cols={4} text="No audit entries." />}</tbody>
-      </table>
-    </div>
+    <HistoryExplorer
+      baseUrl="/api/audit"
+      platform
+      title="Platform audit trail"
+      subtitle="Search every recorded action across all tenants and platform-level events — filter by action, person or date, and open Details for the full record."
+    />
   );
 }
 
