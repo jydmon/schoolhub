@@ -25,6 +25,7 @@ export function ParentNotifications() {
 export function ParentTransport({ children }: { children: { id: string; name: string }[] }) {
   const [items, setItems] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const [mapKey, setMapKey] = useState<number | null>(null);
   const [req, setReq] = useState({ studentId: "", type: "cancel", session: "day", note: "" });
   const load = useCallback(async () => setItems((await fetch(`/api/parent/transport`).then((r) => r.json())).items ?? []), []);
   useEffect(() => { load(); }, [load]);
@@ -50,8 +51,14 @@ export function ParentTransport({ children }: { children: { id: string; name: st
           <div className="flex-between">
             <div><strong>{it.childName}</strong> <span className="muted">· {it.session === "am" ? "Morning" : "Afternoon"} · {it.routeName}</span>
               <div className="muted" style={{ fontSize: 13 }}>{it.approxLocation}{it.eta ? ` · ETA ${new Date(it.eta).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}{it.delayMinutes ? ` · +${it.delayMinutes} min` : ""}</div></div>
-            <span className={`badge ${it.status === "completed" ? "active" : it.status === "cancelled" ? "suspended" : "trial"}`}>{it.childStatus || it.status}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {it.status !== "completed" && it.status !== "cancelled" && it.journeyId && (
+                <button className="linklike" style={{ fontSize: 12 }} onClick={() => setMapKey(mapKey === i ? null : i)}>{mapKey === i ? "Hide map" : "Live map"}</button>
+              )}
+              <span className={`badge ${it.status === "completed" ? "active" : it.status === "cancelled" ? "suspended" : "trial"}`}>{it.childStatus || it.status}</span>
+            </div>
           </div>
+          {mapKey === i && <ParentBusMap journeyId={it.journeyId} studentId={it.studentId} />}
         </div>
       ))}
       <h2 style={{ fontSize: 15, marginTop: 16 }}>Request a change (today)</h2>
@@ -63,6 +70,69 @@ export function ParentTransport({ children }: { children: { id: string; name: st
       </div>
       {req.type === "note" && <><label>Note</label><input value={req.note} onChange={(e) => setReq({ ...req, note: e.target.value })} /></>}
       <button style={{ marginTop: 12 }} onClick={submit}>Submit request</button>
+    </div>
+  );
+}
+
+// Parent live bus map — shows the bus and the child's OWN stop only (never other
+// families' stops). Self-contained SVG, no map tiles or provider. Refreshes
+// every 12s while open; stops when the journey ends.
+function ParentBusMap({ journeyId, studentId }: { journeyId: string; studentId: string }) {
+  const [t, setT] = useState<any>(null);
+  useEffect(() => {
+    if (!journeyId || !studentId) return;
+    let alive = true;
+    const go = async () => { const d = await fetch(`/api/parent/transport/track?journeyId=${encodeURIComponent(journeyId)}&studentId=${encodeURIComponent(studentId)}`).then((r) => r.json()); if (alive) setT(d); };
+    go();
+    const iv = setInterval(go, 12000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [journeyId, studentId]);
+
+  if (!t) return <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Loading live position…</p>;
+  if (t.ended) return <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>The journey has ended — live tracking is off.</p>;
+
+  const trail: any[] = t.trail || [];
+  const stop = t.myStop;
+  const last = t.last;
+  const pts = [...trail.map((p) => ({ lat: p.lat, lng: p.lng })), ...(stop ? [{ lat: stop.lat, lng: stop.lng }] : [])].filter((p) => p.lat != null && p.lng != null);
+  const ageMin = last ? Math.round((Date.now() - new Date(last.at).getTime()) / 60000) : null;
+
+  if (pts.length === 0) {
+    return <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>{t.sharing ? "Waiting for the bus's first GPS position…" : "The driver hasn't started sharing the bus location yet."}</p>;
+  }
+  const W = 560, H = 260, PAD = 24;
+  const lats = pts.map((p) => p.lat), lngs = pts.map((p) => p.lng);
+  let minLat = Math.min(...lats), maxLat = Math.max(...lats), minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  if (maxLat - minLat < 0.002) { minLat -= 0.001; maxLat += 0.001; }
+  if (maxLng - minLng < 0.002) { minLng -= 0.001; maxLng += 0.001; }
+  const x = (lng: number) => PAD + ((lng - minLng) / (maxLng - minLng)) * (W - 2 * PAD);
+  const y = (lat: number) => PAD + ((maxLat - lat) / (maxLat - minLat)) * (H - 2 * PAD);
+  const trailPath = trail.filter((p) => p.lat != null).map((p, i) => `${i === 0 ? "M" : "L"}${x(p.lng).toFixed(1)},${y(p.lat).toFixed(1)}`).join(" ");
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+        <span className={`badge ${t.sharing ? "active" : "archived"}`}>{t.sharing ? "live" : "not sharing"}</span>
+        {last ? ` · last update ${ageMin === 0 ? "just now" : `${ageMin} min ago`}` : " · awaiting first fix"}
+        {t.journey?.delayMinutes ? ` · running +${t.journey.delayMinutes} min` : ""}
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", background: "#eef4ff", border: "1px solid var(--line)", borderRadius: 10 }}>
+        {trailPath && <path d={trailPath} fill="none" stroke="#94a3b8" strokeWidth={2} strokeDasharray="4 4" />}
+        {stop && (
+          <g>
+            <rect x={x(stop.lng) - 5} y={y(stop.lat) - 5} width={10} height={10} rx={2} fill="#12a150" />
+            <text x={x(stop.lng) + 9} y={y(stop.lat) + 4} fontSize={11} fill="#334155">Your stop{stop.plannedArrival ? ` (${stop.plannedArrival})` : ""}</text>
+          </g>
+        )}
+        {last && (
+          <g>
+            <circle cx={x(last.lng)} cy={y(last.lat)} r={11} fill="#e11d48" opacity={0.18} />
+            <circle cx={x(last.lng)} cy={y(last.lat)} r={6} fill="#e11d48" stroke="#fff" strokeWidth={2} />
+            <text x={x(last.lng) + 9} y={y(last.lat) - 8} fontSize={12} fontWeight={700} fill="#e11d48">🚌</text>
+          </g>
+        )}
+      </svg>
+      {last && <div style={{ marginTop: 4 }}><a className="linklike" style={{ fontSize: 12 }} href={`https://www.openstreetmap.org/?mlat=${last.lat}&mlon=${last.lng}#map=16/${last.lat}/${last.lng}`} target="_blank" rel="noreferrer">Open in OpenStreetMap ↗</a></div>}
     </div>
   );
 }

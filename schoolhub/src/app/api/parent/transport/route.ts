@@ -31,6 +31,9 @@ export async function GET(req: Request) {
         const eta = etaFor(stop?.plannedArrival, j.delayMinutes, new Date(`${date}T00:00:00`));
         items.push({
           childName: `${l.student.firstName} ${l.student.lastName}`,
+          journeyId: j.id,
+          studentId: l.student.id,
+          hasGps: !!j.positions[0],
           session: j.session,
           routeName: j.route.name,
           status: j.status,
