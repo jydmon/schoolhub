@@ -2209,3 +2209,74 @@ model AttendanceRecord {
   @@index([schoolId, date])
   @@index([schoolId, status])
 }
+
+// ----------------------------------------------------------------------------
+// Guardian relationship workflow + audit (parent access security)
+// ----------------------------------------------------------------------------
+// A parent NEVER gains access to a child from name + DOB + school alone. Access
+// is granted only through this school-controlled lifecycle: the school creates a
+// relationship, issues an invitation, the guardian verifies their identity /
+// contact, the platform validates it, and only then is a GuardianLink created.
+// Every state change is written to GuardianAudit with before/after values.
+model GuardianRelationship {
+  id             String  @id @default(cuid())
+  schoolId       String
+  studentId      String
+  guardianUserId String?  // set once an account is linked
+  guardianName   String
+  guardianEmail  String
+  guardianPhone  String?
+  relationship   String  @default("Parent") // Mother | Father | Guardian | Carer | ...
+  hasParentalResponsibility Boolean @default(true)
+  isPrimaryContact     Boolean @default(false)
+  isEmergencyContact   Boolean @default(false)
+  collectionAuthorised Boolean @default(false)
+  custodyArrangement   String?
+  // draft -> invited -> verifying -> active ; and suspended / revoked
+  status         String  @default("draft")
+  inviteToken    String?  @unique
+  inviteTokenExpires DateTime?
+  invitedAt      DateTime?
+  invitationId   String?
+  verifiedAt     DateTime?
+  verificationMethod String? // self | school
+  verificationRef String?
+  linkedAt       DateTime?
+  suspendedAt    DateTime?
+  revokedAt      DateTime?
+  linkId         String?  // the GuardianLink id while active
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([guardianUserId])
+  @@index([status])
+}
+
+// Append-only audit trail for every guardian-relationship change. Captures who,
+// when, which school/child/guardian, the action, and the previous + new values.
+model GuardianAudit {
+  id             String  @id @default(cuid())
+  schoolId       String
+  studentId      String?
+  relationshipId String?
+  guardianUserId String?
+  guardianLabel  String?  // snapshot of guardian name/email at the time
+  childLabel     String?  // snapshot of child name at the time
+  action         String   // created|amended|invited|invite_reissued|invite_accepted|identity_verified|validated|linked|suspended|resumed|revoked|removed
+  actorUserId    String?
+  actorEmail     String?
+  actorRole      String?  // school | guardian | platform
+  previousValues String  @default("{}")
+  newValues      String  @default("{}")
+  note           String?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([relationshipId])
+  @@index([studentId])
+  @@index([createdAt])
+}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { StudentsTab, GuardiansTab, StaffTab, ImportTab } from "./PeopleTabs";
+import GuardianRelationshipsTab from "./GuardianRelationshipsTab";
 import IntegrationsTab from "./IntegrationsTab";
 import IntegrationHubTab from "./IntegrationHubTab";
 import CalendarTab from "./CalendarTab";
@@ -27,6 +28,7 @@ const SCHOOL_NAV: NavGroup[] = [
   { label: "People", items: [
     { key: "students", label: "Students", icon: "🎓" },
     { key: "guardians", label: "Guardians", icon: "👪" },
+    { key: "relationships", label: "Guardian access", icon: "🛡️" },
     { key: "staff", label: "Staff", icon: "🧑‍🏫" },
     { key: "users", label: "Users & roles", icon: "🔑" },
   ] },
@@ -132,6 +134,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
       {tab === "ops" && canManage && <OpsTab schoolId={schoolId} subscription={initial.school?.subscription} />}
       {tab === "students" && canManage && <StudentsTab schoolId={schoolId} focusId={focusStudentId} onFocusHandled={() => setFocusStudentId(null)} />}
       {tab === "guardians" && canManage && <GuardiansTab schoolId={schoolId} />}
+      {tab === "relationships" && canManage && <GuardianRelationshipsTab schoolId={schoolId} />}
       {tab === "staff" && canManage && <StaffTab schoolId={schoolId} />}
       {tab === "calendar" && canManage && <CalendarTab schoolId={schoolId} onOpenStudent={(id) => { setFocusStudentId(id); setTab("students"); }} />}
       {tab === "timetable" && canManage && <TimetableTab schoolId={schoolId} />}
