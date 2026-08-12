@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import ModuleImportCard from "./ModuleImportCard";
-import { useSel, Kebab, SourceBadge, DetailModal } from "./EntityKit";
+import { useSel, useSort, SortTh, Kebab, SourceBadge, DetailModal } from "./EntityKit";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MEALS = ["breakfast", "lunch", "snack", "tea"];
@@ -18,6 +18,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
   const [selected, setSelected] = useState<any | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const sel = useSel();
+  const srt = useSort("week");
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/menus`).then((r) => r.json());
@@ -30,7 +31,8 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
     if (!s) return true;
     return [i.name, i.day, i.meal, i.course, i.allergens, i.weekOf, i.yearGroup].some((v) => String(v ?? "").toLowerCase().includes(s));
   });
-  const allOn = rows.length > 0 && rows.every((i) => sel.on(i.id));
+  const view = srt.sort(rows, (i, k) => k === "name" ? String(i.name ?? "").toLowerCase() : k === "week" ? (i.weekOf || "") : k === "meal" ? `${i.meal} ${i.course}` : k === "price" ? (i.price ?? 0) : "");
+  const allOn = view.length > 0 && view.every((i) => sel.on(i.id));
 
   async function add(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
@@ -70,11 +72,11 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
         {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={bulkArchive}>Hide</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
         <table>
           <thead><tr>
-            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((i) => i.id), e.target.checked)} /></th>
-            <th>Week / Day</th><th>For</th><th>Meal</th><th>Item</th><th>Diet</th><th>Price</th><th>Status</th><th>Source</th><th className="right">Actions</th>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(view.map((i) => i.id), e.target.checked)} /></th>
+            <SortTh k="week" label="Week / Day" sort={srt} /><th>For</th><SortTh k="meal" label="Meal" sort={srt} /><SortTh k="name" label="Item" sort={srt} /><th>Diet</th><SortTh k="price" label="Price" sort={srt} /><th>Status</th><th>Source</th><th className="right">Actions</th>
           </tr></thead>
           <tbody>
-            {rows.map((i) => (
+            {view.map((i) => (
               <tr key={i.id}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(i.id)} onChange={() => sel.toggle(i.id)} /></td>
                 <td>{i.weekOf || "—"}<div className="muted" style={{ fontSize: 11 }}>{i.day}</div></td>
@@ -92,7 +94,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
                 ]} /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} className="muted">{items.length ? "No items match your filter." : "No menu items yet — add one below or import a CSV."}</td></tr>}
+            {view.length === 0 && <tr><td colSpan={10} className="muted">{items.length ? "No items match your filter." : "No menu items yet — add one or import a CSV."}</td></tr>}
           </tbody>
         </table>
       </div>

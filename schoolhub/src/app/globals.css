@@ -274,3 +274,10 @@ td.nowrap .small { margin-bottom: 2px; }
   .cal-mini { grid-template-columns: repeat(2, 1fr); }
   .cal-mini.year { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Chip-style buttons (e.g. Integration Hub section nav): keep readable text —
+   the base button rule sets white text, which is invisible on the chip's white
+   background. Give them chip colours and a proper active state. */
+button.chip { color: var(--ink-soft); background: #fff; box-shadow: none; font-weight: 600; }
+button.chip:hover { background: #f1f5ff; filter: none; transform: none; box-shadow: none; }
+button.chip.active { background: var(--brand); color: #fff; border-color: var(--brand); }

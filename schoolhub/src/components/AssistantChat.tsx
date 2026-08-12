@@ -36,8 +36,8 @@ export default function AssistantChat({ schoolId, examples }: { schoolId?: strin
 
   return (
     <div className="panel">
-      <h2>Ask the assistant</h2>
-      <p className="sub">Answers come only from information you're authorised to see. Sources are cited; it won't guess.</p>
+      <h2>Ask AI Assistant</h2>
+      <p className="sub">Ask about anything across your school — pupils, staff, calendar, trips, meals, reports and more. Answers come only from information you&apos;re authorised to see, with sources cited; it won&apos;t guess.</p>
       <div className="row">
         <div style={{ flex: 4 }}><input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && ask()} placeholder="Ask a question…" /></div>
         <div><select value={lang} onChange={(e) => setLang(e.target.value)}>{LANGS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useSel, Kebab, SourceBadge, DetailModal } from "./EntityKit";
+import { useSel, useSort, SortTh, Kebab, SourceBadge, DetailModal } from "./EntityKit";
 
 const TYPES: [string, string][] = [
   ["merit", "Merit point"], ["house_point", "House point"], ["badge", "Achievement badge"], ["praise", "Teacher praise"],
@@ -21,6 +21,7 @@ export default function BehaviourTab({ schoolId }: { schoolId: string }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [showForm, setShowForm] = useState(false);
   const sel = useSel();
+  const srt = useSort("date", -1);
 
   // filters
   const [q, setQ] = useState("");
@@ -73,6 +74,7 @@ export default function BehaviourTab({ schoolId }: { schoolId: string }) {
       return true;
     });
   }, [rewards, q, fType, fPol, fSource, from, to]);
+  const view = srt.sort(filtered, (r, k) => k === "date" ? +new Date(r.at) : k === "name" ? `${r.student?.firstName} ${r.student?.lastName}`.toLowerCase() : k === "type" ? r.type : k === "points" ? (r.points ?? 0) : "");
 
   const stats = useMemo(() => {
     let posPoints = 0, posCount = 0, negCount = 0, detentions = 0;
@@ -146,11 +148,11 @@ export default function BehaviourTab({ schoolId }: { schoolId: string }) {
 
         <table style={{ marginTop: 12 }}>
           <thead><tr>
-            <th className="checkbox-cell"><input type="checkbox" checked={filtered.length > 0 && filtered.every((r) => sel.on(r.id))} onChange={(e) => sel.setMany(filtered.map((r) => r.id), e.target.checked)} /></th>
-            <th>When</th><th>Student</th><th>Type</th><th>Points</th><th>Teacher</th><th>Notified</th><th>Source</th><th className="right"></th>
+            <th className="checkbox-cell"><input type="checkbox" checked={view.length > 0 && view.every((r) => sel.on(r.id))} onChange={(e) => sel.setMany(view.map((r) => r.id), e.target.checked)} /></th>
+            <SortTh k="date" label="When" sort={srt} /><SortTh k="name" label="Student" sort={srt} /><SortTh k="type" label="Type" sort={srt} /><SortTh k="points" label="Points" sort={srt} /><th>Teacher</th><th>Notified</th><th>Source</th><th className="right"></th>
           </tr></thead>
           <tbody>
-            {filtered.map((r) => (
+            {view.map((r) => (
               <tr key={r.id}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(r.id)} onChange={() => sel.toggle(r.id)} /></td>
                 <td className="mono muted" style={{ whiteSpace: "nowrap", fontSize: 12 }}>{new Date(r.at).toLocaleDateString()}</td>

@@ -2,6 +2,7 @@
 
 import { SiplatMark } from "./TopBar";
 import LogoutButton from "./LogoutButton";
+import Onboarding from "./Onboarding";
 
 export type NavItem = { key: string; label: string; icon: string };
 export type NavGroup = { label: string; items: NavItem[] };
@@ -45,6 +46,7 @@ export default function AppShell({
         </div>
         <div className="main-body">{children}</div>
       </div>
+      <Onboarding />
     </div>
   );
 }

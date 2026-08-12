@@ -404,18 +404,37 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const sel = useSel();
   const srt = useSort("name");
+  const [inv, setInv] = useState<{ target: any; bulk: boolean } | null>(null);
+  const [invCh, setInvCh] = useState<any>({ email: true, push: false, sms: false, whatsapp: false });
+  const [invPw, setInvPw] = useState("");
+  const [invBusy, setInvBusy] = useState(false);
+  const [invRes, setInvRes] = useState<any[] | null>(null);
   const load = useCallback(() => { fetch(`/api/schools/${schoolId}/guardians`).then((r) => r.json()).then((d) => { setGuardians(d.guardians ?? []); sel.clear(); }); }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   const rows = guardians.filter((g) => { const s = q.trim().toLowerCase(); if (!s) return true; return [g.fullName, g.email, g.phone, g.city].some((v) => String(v ?? "").toLowerCase().includes(s)); });
   const view = srt.sort(rows, (g, k) => k === "name" ? String(g.fullName ?? "").toLowerCase() : k === "children" ? g.children.length : "");
   const allOn = view.length > 0 && view.every((g) => sel.on(g.id));
-  async function invite(g: any) {
-    setMsg(null);
-    const res = await fetch(`/api/schools/${schoolId}/guardians/${g.id}/invite`, { method: "POST" });
-    const d = await res.json().catch(() => ({}));
-    setMsg(res.ok && !d.error ? { kind: "ok", text: d.message || "Invited." } : { kind: "err", text: d.error || "Invite failed" });
+
+  function openInvite(target: any, bulk = false) { setInv({ target, bulk }); setInvCh({ email: true, push: false, sms: false, whatsapp: false }); setInvPw(""); setInvRes(null); }
+  function genPw() { const s = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghijkmnpqrstuvwxyz"; setInvPw("Tmp-" + Array.from({ length: 6 }, (_, i) => s[(i * 7 + 13) % s.length]).join("")); }
+  async function sendInvite() {
+    const channels = Object.entries(invCh).filter(([, v]) => v).map(([k]) => k);
+    if (channels.length === 0) { setMsg({ kind: "err", text: "Choose at least one channel." }); return; }
+    setInvBusy(true); setInvRes(null); setMsg(null);
+    try {
+      if (inv!.bulk) {
+        const ids = [...sel.ids]; let sent = 0, fail = 0;
+        for (const id of ids) { const res = await fetch(`/api/schools/${schoolId}/guardians/${id}/invite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channels }) }); const d = await res.json().catch(() => ({})); if (res.ok && (d.status === "invited" || d.status === "already_on_platform")) sent++; else fail++; }
+        sel.clear(); setInv(null); load();
+        setMsg({ kind: fail ? "err" : "ok", text: `Processed ${ids.length} parent(s) — ${sent} delivered/on-platform${fail ? `, ${fail} not delivered` : ""}.` });
+      } else {
+        const res = await fetch(`/api/schools/${schoolId}/guardians/${inv!.target.id}/invite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channels, tempPassword: invPw || undefined }) });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Invite failed" }); }
+        else { setInvRes(d.results ?? []); if (d.status === "already_on_platform") setMsg({ kind: "ok", text: d.message }); load(); }
+      }
+    } finally { setInvBusy(false); }
   }
-  async function bulkInvite() { setMsg(null); let n = 0; for (const id of sel.ids) { const g = guardians.find((x) => x.id === id); if (g) { const res = await fetch(`/api/schools/${schoolId}/guardians/${id}/invite`, { method: "POST" }); if (res.ok) n++; } } sel.clear(); setMsg({ kind: "ok", text: `Invited/notified ${n} parent(s).` }); }
   return (
     <>
       <div className="panel">
@@ -426,7 +445,7 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
           <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${guardians.length}` : `${guardians.length}`}</span>
         </div>
         {sel.ids.length > 0 && (
-          <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="small" onClick={bulkInvite}>Invite to platform</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>
+          <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="small" onClick={() => openInvite(null, true)}>Invite to platform</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>
         )}
         <table>
           <thead><tr>
@@ -447,7 +466,7 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
                 <td className="muted">{g.preferredLanguageLabel}</td>
                 <td>{g.children.length === 0 ? <span className="muted">—</span> : g.children.map((c: any) => <div key={c.linkId} style={{ fontSize: 13 }}>{c.student.firstName} {c.student.lastName} <span className="muted">({c.relationship})</span></div>)}</td>
                 <td>{SOURCE_BADGE(g.source)}</td>
-                <td className="right"><Kebab items={[{ label: "Open / expand", onClick: () => setSelected(g.id) }, { label: "Invite to platform", onClick: () => invite(g) }]} /></td>
+                <td className="right"><Kebab items={[{ label: "Open / expand", onClick: () => setSelected(g.id) }, { label: "Invite to platform", onClick: () => openInvite(g, false) }]} /></td>
               </tr>
             ))}
             {view.length === 0 && <tr><td colSpan={7} className="muted">{guardians.length ? "No parents/guardians match your search." : "No parents/guardians yet. Add them from a pupil, or import."}</td></tr>}
@@ -455,6 +474,54 @@ export function GuardiansTab({ schoolId }: { schoolId: string }) {
         </table>
       </div>
       {selected && <GuardianModal schoolId={schoolId} guardianId={selected} onClose={() => setSelected(null)} onChange={load} />}
+      {inv && (
+        <div className="modal-overlay" onClick={() => setInv(null)}>
+          <div className="modal" style={{ maxWidth: 560, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}>
+              <div><h2 style={{ margin: 0 }}>Send invitation</h2><div className="muted" style={{ fontSize: 13 }}>{inv.bulk ? `${sel.ids.length} selected parent(s)` : `${inv.target?.fullName} · ${inv.target?.email}`}</div></div>
+              <button className="secondary small" onClick={() => setInv(null)}>Close</button>
+            </div>
+
+            {!invRes ? (
+              <>
+                <p className="sub" style={{ marginTop: 10 }}>Are you sure you want to send this invitation? Choose how it should be delivered.</p>
+                <label>Delivery channels</label>
+                <div className="chips" style={{ marginTop: 4 }}>
+                  {([["email", "Email"], ["push", "App notification"], ["sms", "SMS / text"], ["whatsapp", "WhatsApp"]] as [string, string][]).map(([k, l]) => (
+                    <label key={k} className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={!!invCh[k]} onChange={(e) => setInvCh({ ...invCh, [k]: e.target.checked })} /> {l}</label>
+                  ))}
+                </div>
+                {!inv.bulk && (
+                  <div style={{ marginTop: 14 }}>
+                    <label>Temporary password (optional)</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input value={invPw} onChange={(e) => setInvPw(e.target.value)} placeholder="Leave blank for activation-link only" style={{ flex: 1 }} />
+                      <button type="button" className="secondary small" onClick={genPw}>Generate</button>
+                    </div>
+                    <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>If set, a not-yet-registered parent can sign in immediately with this password and will be prompted to change it. Ignored if they already have access. Share it securely — it isn&apos;t shown again.</p>
+                  </div>
+                )}
+                <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+                  <button disabled={invBusy} onClick={sendInvite}>{invBusy ? "Sending…" : "Send invitation"}</button>
+                  <button className="secondary" onClick={() => setInv(null)}>Cancel</button>
+                </div>
+              </>
+            ) : (
+              <div style={{ marginTop: 12 }}>
+                <p className="sub">Delivery result:</p>
+                {invRes.length === 0 ? <p className="muted">Nothing to report.</p> : invRes.map((r, i) => (
+                  <div key={i} style={{ padding: "6px 0", borderTop: "1px solid var(--line)" }}>
+                    <span className={`badge ${r.status === "sent" ? "active" : r.status === "skipped" ? "archived" : "suspended"}`} style={{ textTransform: "capitalize" }}>{r.channel}: {r.status}</span>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>{r.detail}</div>
+                  </div>
+                ))}
+                {invPw && <div className="notice info" style={{ marginTop: 10 }}>Temporary password set. Share it securely with the parent: <span className="mono"><strong>{invPw}</strong></span></div>}
+                <button style={{ marginTop: 12 }} onClick={() => setInv(null)}>Done</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }

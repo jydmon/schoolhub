@@ -167,10 +167,14 @@ model User {
   photoUrl      String? // profile image (parents/guardians and staff)
   source        String  @default("manual") // manual | import | api — api rows are read-only
   passwordHash  String? // null for pure-SSO accounts
+  mustChangePassword Boolean @default(false) // true when signed in with a temporary password
   authProvider  String  @default("local") // local | google | microsoft | saml
   isPlatformAdmin Boolean @default(false)
   status        String  @default("active") // active | invited | suspended
   emailVerified Boolean @default(false)
+  termsAcceptedAt DateTime? // when the user accepted the current Terms of Business / T&Cs
+  termsVersion    String?   // version of the terms they accepted
+  tourDismissed   Boolean @default(false) // guided tour: "don't show again"
 
   // MFA (TOTP)
   mfaEnabled Boolean @default(false)
