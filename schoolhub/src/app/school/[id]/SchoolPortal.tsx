@@ -48,8 +48,9 @@ const SCHOOL_NAV: NavGroup[] = [
     { key: "hub", label: "Integration Hub", icon: "🧩" },
   ] },
   { label: "Settings", items: [
-    { key: "config", label: "Configuration", icon: "⚙️" },
+    { key: "config", label: "School configuration", icon: "⚙️" },
     { key: "audit", label: "Audit", icon: "🗂️" },
+    { key: "profile", label: "My profile", icon: "🙂" },
     { key: "security", label: "My security", icon: "🔐" },
   ] },
 ];
@@ -58,7 +59,7 @@ const SCHOOL_TITLES: Record<string, string> = {
   calendar: "Calendar", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
-  config: "Configuration", audit: "Audit", security: "My security",
+  config: "School configuration", audit: "Audit", profile: "My profile", security: "My security",
 };
 
 const ALL_MODULES = ["dashboard", "calendar", "transport", "trips", "comms", "ai"];
@@ -81,7 +82,7 @@ type Props = {
 
 export default function SchoolPortal({ schoolId, roles, initial, email = "" }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "security";
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "profile" | "security";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
   const manageTabs: [Tab, string][] = [
@@ -105,9 +106,10 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
     ["config", "Configuration"],
     ["users", "Users & roles"],
     ["audit", "Audit"],
+    ["profile", "My profile"],
   ];
 
-  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "security", label: "My security", icon: "🔐" }] }];
+  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }] }];
   return (
     <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
@@ -132,6 +134,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
       {tab === "config" && canManage && <ConfigTab schoolId={schoolId} initial={initial.school} />}
       {tab === "users" && canManage && <UsersTab schoolId={schoolId} />}
       {tab === "audit" && canManage && <AuditTab schoolId={schoolId} />}
+      {tab === "profile" && <ProfileTab email={email} />}
       {tab === "security" && <SecurityTab />}
     </AppShell>
   );
@@ -150,6 +153,7 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
     contactName: initial.contactName ?? "",
     contactEmail: initial.contactEmail ?? "",
     contactPhone: initial.contactPhone ?? "",
+    headTeacher: initial.headTeacher ?? "",
     timezone: cfg.timezone ?? "Europe/London",
     academicYear: cfg.academicYear ?? "",
     dataRetentionDays: cfg.dataRetentionDays ?? 365,
@@ -204,6 +208,7 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
           <div><label>Postcode</label><input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} /></div>
         </div>
         <div className="row">
+          <div><label>Head teacher / principal</label><input value={form.headTeacher} onChange={(e) => setForm({ ...form, headTeacher: e.target.value })} /></div>
           <div><label>Contact name</label><input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></div>
           <div><label>Contact email</label><input value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} /></div>
           <div><label>Contact phone</label><input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} /></div>
@@ -420,6 +425,59 @@ function AuditTab({ schoolId }: { schoolId: string }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ProfileTab({ email }: { email?: string }) {
+  const [p, setP] = useState<any>(null);
+  const [f, setF] = useState<any>({ fullName: "", phone: "", photoUrl: "" });
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const load = useCallback(async () => {
+    const d = await fetch("/api/me/profile").then((r) => r.json());
+    setP(d.profile); if (d.profile) setF({ fullName: d.profile.fullName || "", phone: d.profile.phone || "", photoUrl: d.profile.photoUrl || "" });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  async function save(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    const res = await fetch("/api/me/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; }
+    setMsg({ kind: "ok", text: "Profile saved." }); load();
+  }
+  if (!p) return <div className="panel">Loading…</div>;
+  const name = f.fullName || p.fullName || email || "";
+  const inits = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w: string) => w[0]?.toUpperCase()).join("") || "?";
+  return (
+    <>
+      <div className="panel">
+        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+          {f.photoUrl ? <img src={f.photoUrl} alt={name} width={64} height={64} style={{ width: 64, height: 64, borderRadius: "50%", objectFit: "cover" }} />
+            : <span style={{ width: 64, height: 64, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#0ea5e9)", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 700 }}>{inits}</span>}
+          <div>
+            <h2 style={{ marginBottom: 2 }}>{name}</h2>
+            <div className="muted">{p.email}{p.roles?.length ? ` · ${p.roles.join(", ")}` : ""}</div>
+            {p.schools?.length ? <div className="muted" style={{ fontSize: 12 }}>{p.schools.join(", ")}</div> : null}
+          </div>
+        </div>
+      </div>
+      <div className="panel">
+        <h2>My profile</h2>
+        <p className="sub">Your personal details. This is separate from the school&apos;s information (see School configuration). Email and role are managed by your school and can&apos;t be changed here.</p>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <form onSubmit={save}>
+          <div className="row">
+            <div><label>Full name</label><input value={f.fullName} onChange={(e) => setF({ ...f, fullName: e.target.value })} required /></div>
+            <div><label>Phone</label><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} /></div>
+          </div>
+          <label>Email (read-only)</label>
+          <input value={p.email} disabled />
+          <label>Profile image URL</label>
+          <input value={f.photoUrl} onChange={(e) => setF({ ...f, photoUrl: e.target.value })} placeholder="https://…" />
+          <div style={{ marginTop: 8 }}><span className="muted" style={{ fontSize: 12 }}>Two-factor authentication: {p.mfaEnabled ? "on" : "off"} — manage under My security.</span></div>
+          <button type="submit" style={{ marginTop: 12 }}>Save profile</button>
+        </form>
+      </div>
+    </>
   );
 }
 

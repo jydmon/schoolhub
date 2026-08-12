@@ -63,6 +63,7 @@ model School {
   contactName  String?
   contactEmail String?
   contactPhone String?
+  headTeacher  String? // current head teacher / principal
 
   groupId String?
   group   SchoolGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)

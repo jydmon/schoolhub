@@ -40,6 +40,7 @@ export const updateConfigSchema = z.object({
   contactName: z.string().optional(),
   contactEmail: z.string().email().optional().or(z.literal("")),
   contactPhone: z.string().optional(),
+  headTeacher: z.string().optional(),
   timezone: z.string().optional(),
   academicYear: z.string().optional(),
   dataRetentionDays: z.number().int().min(1).max(3650).optional(),

@@ -46,6 +46,7 @@ export async function PATCH(req: Request, { params }: Params) {
       "contactName",
       "contactEmail",
       "contactPhone",
+      "headTeacher",
     ] as const) {
       if (input[k] !== undefined) schoolData[k] = input[k];
     }
