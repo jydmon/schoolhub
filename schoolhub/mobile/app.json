@@ -1,28 +1,66 @@
 {
   "expo": {
-    "name": "SchoolHub",
-    "slug": "schoolhub",
-    "scheme": "schoolhub",
-    "version": "0.1.0",
+    "name": "SIPlat",
+    "slug": "siplat",
+    "scheme": "siplat",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#FFFFFF",
+    "primaryColor": "#4F46E5",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4F46E5"
+    },
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.schoolhub.app",
+      "bundleIdentifier": "com.siplat.app",
+      "buildNumber": "1",
+      "config": { "usesNonExemptEncryption": false },
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Use Face ID to sign in securely.",
-        "NSLocationWhenInUseUsageDescription": "Share your location while driving a route (Driver app only).",
-        "NSCameraUsageDescription": "Scan QR codes and attach photos on trips."
+        "NSFaceIDUsageDescription": "Use Face ID to sign in to SIPlat securely.",
+        "NSLocationWhenInUseUsageDescription": "Drivers share their location while a route is in progress so schools and parents can track the bus. Location is never shared outside a live journey.",
+        "NSCameraUsageDescription": "Attach photos on trips and scan QR codes.",
+        "NSPhotoLibraryUsageDescription": "Attach photos from your library to trips and reports."
       }
     },
     "android": {
-      "package": "com.schoolhub.app",
-      "permissions": ["NOTIFICATIONS", "ACCESS_FINE_LOCATION", "CAMERA", "USE_BIOMETRIC", "USE_FINGERPRINT"]
+      "package": "com.siplat.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4F46E5"
+      },
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ]
     },
-    "plugins": ["expo-secure-store", "expo-local-authentication", "expo-notifications"],
+    "plugins": [
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#4F46E5"
+        }
+      ]
+    ],
+    "runtimeVersion": { "policy": "appVersion" },
     "extra": {
-      "apiUrl": "http://localhost:3000"
+      "apiUrl": "https://dev.siplat.com",
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
     }
   }
 }
