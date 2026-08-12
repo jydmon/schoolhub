@@ -64,7 +64,37 @@ function Dashboard({ schoolId, subscription }: { schoolId: string; subscription?
   );
 }
 
+function ChildrenReport({ schoolId }: { schoolId: string }) {
+  const [releases, setReleases] = useState<any[] | null>(null);
+  useEffect(() => { fetch(`/api/schools/${schoolId}/pupil-reports`).then((r) => r.json()).then((d) => setReleases(d.releases ?? [])); }, [schoolId]);
+  return (
+    <div className="panel">
+      <h2>Children&apos;s report</h2>
+      <p className="sub">Pupil report releases — attainment, attendance &amp; behaviour reports prepared for pupils and released to parents. Manage authoring, sign-off and release in the <strong>Reports</strong> (Pupil reports) area; this is the read-only overview.</p>
+      {releases === null ? <p className="muted">Loading…</p> : (
+        <table>
+          <thead><tr><th>Release</th><th>Type</th><th>Term</th><th>Status</th><th>Reports</th><th>Viewed</th></tr></thead>
+          <tbody>
+            {releases.map((r) => (
+              <tr key={r.id}>
+                <td><strong>{r.name}</strong></td>
+                <td className="muted">{r.type}</td>
+                <td className="muted">{r.term || "—"}</td>
+                <td><span className={`badge ${r.status === "released" ? "active" : r.status === "scheduled" ? "trial" : "archived"}`}>{r.status}</span></td>
+                <td>{r.total ?? 0}</td>
+                <td className="muted">{r.viewed ?? 0}{r.total ? ` / ${r.total}` : ""}</td>
+              </tr>
+            ))}
+            {releases.length === 0 && <tr><td colSpan={6} className="muted">No pupil report releases yet.</td></tr>}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function Reports({ schoolId }: { schoolId: string }) {
+  const [family, setFamily] = useState<"system" | "children">("system");
   const [type, setType] = useState("overview");
   const [report, setReport] = useState<any>(null);
   const [scheduled, setScheduled] = useState<any[]>([]);
@@ -81,9 +111,18 @@ function Reports({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <div className="panel" style={{ paddingTop: 14, paddingBottom: 14 }}>
+        <label style={{ marginBottom: 6 }}>Report type</label>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button className={family === "system" ? "active" : ""} onClick={() => setFamily("system")}>System report</button>
+          <button className={family === "children" ? "active" : ""} onClick={() => setFamily("children")}>Children&apos;s report</button>
+        </div>
+      </div>
+      {family === "children" ? <ChildrenReport schoolId={schoolId} /> : (
+      <>
       <div className="panel">
         <div className="flex-between">
-          <div><h2>Reports</h2><p className="sub" style={{ marginBottom: 0 }}>Choose a report, then export.</p></div>
+          <div><h2>System report</h2><p className="sub" style={{ marginBottom: 0 }}>Operational reports (transport, trips, engagement, AI, integrations). Choose a report, then export.</p></div>
           <select value={type} onChange={(e) => setType(e.target.value)}>{REPORTS.map((t) => <option key={t}>{t}</option>)}</select>
         </div>
         {report && (
@@ -120,6 +159,8 @@ function Reports({ schoolId }: { schoolId: string }) {
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Delivery runs from a background job (see DEPLOYMENT.md). School-leader and trust-level scopes roll up accordingly.</p>
       </div>
+      </>
+      )}
     </>
   );
 }

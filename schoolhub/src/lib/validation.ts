@@ -757,6 +757,8 @@ export const templateSchema = z.object({
   body: z.string().max(50000).optional(),
   channels: z.array(z.enum(["inapp", "email", "push", "sms", "whatsapp"])).optional(),
   sharedWithTenants: z.boolean().optional(),
+  status: z.enum(["draft", "approved", "published"]).optional(),
+  note: z.string().max(500).optional(),
 });
 export const templatePatchSchema = templateSchema.partial();
 

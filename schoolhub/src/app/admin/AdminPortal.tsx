@@ -589,7 +589,7 @@ function Reports() {
 }
 
 /* ============================ TEMPLATES ============================ */
-const BLANK_TPL = { kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true };
+const BLANK_TPL = { kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true, status: "draft" };
 function Templates() {
   const { data, err, reload } = useJson<any>("/api/platform/templates");
   const [f, setF] = useState<any>({ ...BLANK_TPL });
@@ -598,8 +598,10 @@ function Templates() {
   const [view, setView] = useState<any | null>(null);
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState<{ mode: "one" | "bulk"; row?: any } | null>(null);
+  const [history, setHistory] = useState<any | null>(null);
   const sel = useSel();
-  const sort = useSort<any>({ name: (t) => (t.name || "").toLowerCase(), kind: (t) => t.kind, category: (t) => (t.category || "").toLowerCase(), shared: (t) => (t.sharedWithTenants ? 1 : 0) }, "name");
+  const statusRank: Record<string, number> = { draft: 0, approved: 1, published: 2 };
+  const sort = useSort<any>({ name: (t) => (t.name || "").toLowerCase(), kind: (t) => t.kind, category: (t) => (t.category || "").toLowerCase(), status: (t) => statusRank[t.status || "draft"] ?? 0, shared: (t) => (t.sharedWithTenants ? 1 : 0) }, "name");
   const all: any[] = data?.templates ?? [];
   const rows = sort.apply(all.filter((t) => matchQ(q, t.name, t.kind, t.category, t.subject)));
   const dirty = !!editId || f.name.trim().length > 0 || f.body.trim().length > 0;
@@ -608,17 +610,22 @@ function Templates() {
   function reset() { setF({ ...BLANK_TPL }); setEditId(null); }
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    const body = { kind: f.kind, name: f.name, category: f.category || undefined, subject: f.subject || undefined, body: f.body || undefined, sharedWithTenants: !!f.sharedWithTenants };
+    const body = { kind: f.kind, name: f.name, category: f.category || undefined, subject: f.subject || undefined, body: f.body || undefined, sharedWithTenants: !!f.sharedWithTenants, status: f.status };
     try {
       if (editId) { await send(`/api/platform/templates/${editId}`, body, "PATCH"); setMsg({ k: "ok", t: "Template updated." }); }
       else { await send("/api/platform/templates", body); setMsg({ k: "ok", t: "Template created." }); }
       reset(); reload();
     } catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
-  function edit(t: any) { setEditId(t.id); setF({ kind: t.kind || "email_campaign", name: t.name || "", category: t.category || "", subject: t.subject || "", body: t.body || "", sharedWithTenants: !!t.sharedWithTenants }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  function edit(t: any) { setEditId(t.id); setF({ kind: t.kind || "email_campaign", name: t.name || "", category: t.category || "", subject: t.subject || "", body: t.body || "", sharedWithTenants: !!t.sharedWithTenants, status: t.status || "draft" }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
   async function duplicate(t: any) {
     setMsg(null);
-    try { await send("/api/platform/templates", { kind: t.kind, name: `${t.name} (copy)`, category: t.category || undefined, subject: t.subject || undefined, body: t.body || undefined, sharedWithTenants: !!t.sharedWithTenants }); setMsg({ k: "ok", t: "Template duplicated." }); reload(); }
+    try { await send("/api/platform/templates", { kind: t.kind, name: `${t.name} (copy)`, category: t.category || undefined, subject: t.subject || undefined, body: t.body || undefined, sharedWithTenants: !!t.sharedWithTenants, status: "draft" }); setMsg({ k: "ok", t: "Template duplicated (as draft)." }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function changeStatus(t: any, status: string) {
+    setMsg(null);
+    try { await send(`/api/platform/templates/${t.id}`, { status }, "PATCH"); setMsg({ k: "ok", t: `“${t.name}” → ${status}.` }); reload(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
   async function doDelete() {
@@ -633,10 +640,11 @@ function Templates() {
   return (
     <>
       {view && <DocModal title={view.name} meta={`${view.kind}${view.subject ? " · " + view.subject : ""}`} onClose={() => setView(null)}>{view.body || "(no content)"}</DocModal>}
+      {history && <VersionHistory title={history.name} baseUrl="/api/platform/templates" id={history.id} onClose={() => setHistory(null)} onRestored={() => { setMsg({ k: "ok", t: "Version restored." }); reload(); }} />}
       <ConfirmDialog open={confirm !== null} title={confirm?.mode === "bulk" ? "Delete selected templates?" : "Delete this template?"} message={confirm?.mode === "bulk" ? `${sel.ids.length} template(s) will be permanently deleted.` : `“${confirm?.row?.name}” will be permanently deleted.`} confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>Platform template library</h2>
-        <p className="sub">Reusable email / message templates. Mark as shared to make them available to every tenant admin.</p>
+        <p className="sub">Reusable email / message templates with a <strong>draft → approved → published</strong> lifecycle (Status column) and full version history (open History). Mark as shared to make them available to every tenant admin.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
         <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
           {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
@@ -647,6 +655,7 @@ function Templates() {
             <SortTh label="Name" k="name" sort={sort} />
             <SortTh label="Kind" k="kind" sort={sort} />
             <SortTh label="Category" k="category" sort={sort} />
+            <SortTh label="Status" k="status" sort={sort} />
             <SortTh label="Shared" k="shared" sort={sort} />
             <th className="right">Actions</th>
           </tr></thead>
@@ -657,16 +666,18 @@ function Templates() {
                 <td><strong>{t.name}</strong></td>
                 <td className="muted">{t.kind}</td>
                 <td className="muted">{t.category || "—"}</td>
+                <td><select className="small" value={t.status || "draft"} onChange={(e) => changeStatus(t, e.target.value)} title="Lifecycle status">{POLICY_STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}</select></td>
                 <td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td>
                 <td className="right nowrap">
                   <button className="secondary small" onClick={() => setView(t)}>View</button>{" "}
                   <button className="secondary small" onClick={() => edit(t)}>Edit</button>{" "}
+                  <button className="secondary small" onClick={() => setHistory(t)}>History</button>{" "}
                   <button className="secondary small" onClick={() => duplicate(t)}>Duplicate</button>{" "}
                   <button className="danger small" onClick={() => setConfirm({ mode: "one", row: t })}>Delete</button>
                 </td>
               </tr>
             ))}
-            {rows.length === 0 && <Empty cols={6} text={all.length ? "No templates match your filter." : "No templates yet — use “Load default content”."} />}
+            {rows.length === 0 && <Empty cols={7} text={all.length ? "No templates match your filter." : "No templates yet — use “Load default content”."} />}
           </tbody>
         </table>
       </div>
@@ -684,6 +695,10 @@ function Templates() {
           </div>
           <label>Body</label>
           <textarea rows={4} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
+          <div className="row" style={{ marginTop: 8 }}>
+            <div><label>Lifecycle status</label><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{POLICY_STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+            <div />
+          </div>
           <label className="consent" style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={f.sharedWithTenants} onChange={(e) => setF({ ...f, sharedWithTenants: e.target.checked })} /> Share with all tenants</label>
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
             <button type="submit">{editId ? "Update template" : "Create template"}</button>
@@ -703,20 +718,21 @@ function StatusBadge({ s }: { s: string }) {
   const cls = s === "published" ? "published" : s === "approved" ? "scheduled" : "draft";
   return <span className={`badge ${cls}`}>{s}</span>;
 }
-function PolicyHistory({ policy, onClose, onRestored }: { policy: any; onClose: () => void; onRestored: () => void }) {
-  const { data, err, reload } = useJson<any>(`/api/platform/policies/${policy.id}/versions`);
+// Generic version-history modal for any versioned document (policies, templates).
+function VersionHistory({ title, baseUrl, id, onClose, onRestored }: { title: string; baseUrl: string; id: string; onClose: () => void; onRestored: () => void }) {
+  const { data, err, reload } = useJson<any>(`${baseUrl}/${id}/versions`);
   const [busy, setBusy] = useState<string | null>(null);
   const [preview, setPreview] = useState<any | null>(null);
   const versions: any[] = data?.versions ?? [];
   async function restore(v: any) {
     setBusy(v.id);
-    try { await send(`/api/platform/policies/${policy.id}/versions`, { versionId: v.id }); onRestored(); reload(); }
+    try { await send(`${baseUrl}/${id}/versions`, { versionId: v.id }); onRestored(); reload(); }
     catch { /* surfaced by reload */ } finally { setBusy(null); }
   }
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex-between"><h2 style={{ margin: 0 }}>History — {policy.title}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
+        <div className="flex-between"><h2 style={{ margin: 0 }}>History — {title}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
         <p className="sub">Every save and status change is captured. Restore rolls a prior version back onto the live document (and is itself recorded).</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
         <div style={{ maxHeight: 360, overflow: "auto" }}>
@@ -725,7 +741,7 @@ function PolicyHistory({ policy, onClose, onRestored }: { policy: any; onClose: 
               {versions.map((v) => (
                 <tr key={v.id}>
                   <td className="mono muted">{dt(v.changedAt)}</td>
-                  <td className="muted">{v.version || "—"}</td>
+                  <td className="muted">{v.version || v.name || "—"}</td>
                   <td><StatusBadge s={v.status} /></td>
                   <td className="muted">{v.note || "—"}</td>
                   <td className="right nowrap">
@@ -738,7 +754,7 @@ function PolicyHistory({ policy, onClose, onRestored }: { policy: any; onClose: 
             </tbody>
           </table>
         </div>
-        {preview && <DocModal title={`${preview.title} · v${preview.version}`} meta={`${preview.status} · saved ${dt(preview.changedAt)}`} onClose={() => setPreview(null)}>{preview.summary ? preview.summary + "\n\n" : ""}{preview.body || "(no content)"}</DocModal>}
+        {preview && <DocModal title={`${preview.title || preview.name}${preview.version ? " · v" + preview.version : ""}`} meta={`${preview.status} · saved ${dt(preview.changedAt)}`} onClose={() => setPreview(null)}>{preview.summary ? preview.summary + "\n\n" : ""}{preview.body || "(no content)"}</DocModal>}
       </div>
     </div>
   );
@@ -798,7 +814,7 @@ function Policies() {
         {view.fileUrl ? <p style={{ marginTop: 12 }}><a href={view.fileUrl} target="_blank" rel="noreferrer">Open attached document</a></p> : null}
       </DocModal>}
       <ConfirmDialog open={confirm !== null} title={confirm?.mode === "bulk" ? "Delete selected policies?" : "Delete this policy?"} message={confirm?.mode === "bulk" ? `${sel.ids.length} policy(ies) will be permanently deleted.` : `“${confirm?.row?.title}” will be permanently deleted.`} confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirm(null)} />
-      {history && <PolicyHistory policy={history} onClose={() => setHistory(null)} onRestored={() => { setMsg({ k: "ok", t: "Version restored." }); reload(); }} />}
+      {history && <VersionHistory title={history.title} baseUrl="/api/platform/policies" id={history.id} onClose={() => setHistory(null)} onRestored={() => { setMsg({ k: "ok", t: "Version restored." }); reload(); }} />}
       <div className="panel">
         <h2>Platform policies</h2>
         <p className="sub">Data-protection, safeguarding and general policies. Each document has a lifecycle — <strong>draft → approved → published</strong>, set freely from the Status column — and every save/status change is versioned (open History to view or restore).</p>
@@ -1477,6 +1493,55 @@ function DocModal({ title, meta, children, onClose }: { title: string; meta?: st
 }
 
 /* ============================ INTEGRATIONS (catalogue) ============================ */
+function IntegrationAssist() {
+  const schools = useJson<any>("/api/schools");
+  const [schoolId, setSchoolId] = useState("");
+  const assist = useJson<any>(schoolId ? `/api/platform/integration-assist?schoolId=${encodeURIComponent(schoolId)}` : "/api/platform/integration-assist");
+  const [f, setF] = useState({ connectorKey: "", name: "", baseUrl: "", method: "rest", notes: "" });
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const catalog: any[] = assist.data?.catalog ?? [];
+  const integrations: any[] = assist.data?.integrations ?? [];
+  const schoolList: any[] = schools.data?.schools ?? [];
+  async function create(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    if (!schoolId) { setMsg({ k: "err", t: "Choose a school first." }); return; }
+    if (!f.connectorKey) { setMsg({ k: "err", t: "Choose a connector." }); return; }
+    try { await send("/api/platform/integration-assist", { schoolId, ...f }); setMsg({ k: "ok", t: "Connector scaffolded as “pending” — the school can now add their credentials and authorise it." }); setF({ ...f, name: "", baseUrl: "", notes: "" }); assist.reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  return (
+    <div className="panel">
+      <h2>Integration assist</h2>
+      <p className="sub">Help a school get connected: pick their school and a connector, pre-fill the non-secret settings, and we scaffold the integration as <strong>pending</strong>. The school then adds their own credentials and authorises it in their Integration Hub — you never handle their secrets.</p>
+      <Notice msg={msg} />
+      <div className="row">
+        <div style={{ flex: 2 }}><label>School</label><select value={schoolId} onChange={(e) => setSchoolId(e.target.value)}><option value="">— select a school —</option>{schoolList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+        <div />
+      </div>
+      {schoolId && (
+        <>
+          <table style={{ marginTop: 12 }}><thead><tr><th>Connector</th><th>Category</th><th>Status</th><th>Base URL</th></tr></thead>
+            <tbody>{integrations.map((i) => <tr key={i.id}><td><strong>{i.name}</strong><div className="mono muted">{i.connectorKey}</div></td><td className="muted">{i.category}</td><td><span className={`badge ${i.status === "connected" ? "active" : i.status === "error" ? "suspended" : "draft"}`}>{i.status}</span></td><td className="mono muted">{i.baseUrl || "—"}</td></tr>)}{integrations.length === 0 && <Empty cols={4} text="No integrations scaffolded for this school yet." />}</tbody>
+          </table>
+          <form onSubmit={create} style={{ marginTop: 12 }}>
+            <div className="row">
+              <div><label>Connector</label><select value={f.connectorKey} onChange={(e) => setF({ ...f, connectorKey: e.target.value })}><option value="">— select —</option>{catalog.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}</select></div>
+              <div><label>Display name (optional)</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+            </div>
+            <div className="row">
+              <div><label>Base URL / endpoint (optional)</label><input value={f.baseUrl} onChange={(e) => setF({ ...f, baseUrl: e.target.value })} placeholder="https://…" /></div>
+              <div><label>Method</label><select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{["rest", "webhook", "scheduled", "sftp", "csv", "manual"].map((m) => <option key={m}>{m}</option>)}</select></div>
+            </div>
+            <label>Setup notes for the school (optional)</label>
+            <textarea rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="e.g. which account to use, where to find the API key…" />
+            <button type="submit" style={{ marginTop: 10 }}>Scaffold connector</button>
+          </form>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Integrations() {
   const { data, err } = useJson<any>("/api/platform/integrations");
   const [q, setQ] = useState("");
@@ -1488,6 +1553,8 @@ function Integrations() {
   filtered.forEach((c) => { (byCat[c.category] = byCat[c.category] || []).push(c); });
   const statusClass = (s: string) => s === "available" ? "active" : s === "beta" ? "trial" : s === "unavailable" ? "suspended" : "archived";
   return (
+    <>
+    <IntegrationAssist />
     <div className="panel">
       <div className="flex-between"><h2>Integration catalogue</h2><span className="muted">{connectors.length} connectors</span></div>
       <p className="sub">Everything your schools can connect — MIS, LMS, payments, safeguarding, GPS/telematics, maps and more. Schools configure their own connections in each school&apos;s Integration Hub.</p>
@@ -1512,6 +1579,7 @@ function Integrations() {
       ))}
       {connectors.length === 0 && !err && <p className="muted">Loading…</p>}
     </div>
+    </>
   );
 }
 

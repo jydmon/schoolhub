@@ -1792,13 +1792,37 @@ model MessageTemplate {
   channelsJson  String   @default("[]") // for message_board / notification: ["inapp","email","push","sms"]
   sharedWithTenants Boolean @default(false) // platform templates visible to tenant admins
   isSystem      Boolean  @default(false)
+  status        String   @default("draft") // draft | approved | published (lifecycle)
+  approvedById  String?
+  approvedAt    DateTime?
   createdById   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  versions      MessageTemplateVersion[]
+
   @@index([scope])
   @@index([schoolId])
   @@index([kind])
+  @@index([status])
+}
+
+/// Immutable snapshot of a message template — version history + change audit.
+model MessageTemplateVersion {
+  id          String   @id @default(cuid())
+  templateId  String
+  template    MessageTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  kind        String
+  name        String
+  category    String
+  subject     String?
+  body        String
+  status      String
+  note        String?
+  changedById String?
+  changedAt   DateTime @default(now())
+
+  @@index([templateId])
 }
 
 /// Lightweight product-usage event for analytics (logins + feature usage).
