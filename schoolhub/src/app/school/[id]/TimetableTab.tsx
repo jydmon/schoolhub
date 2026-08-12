@@ -68,7 +68,7 @@ export default function TimetableTab({ schoolId }: { schoolId: string }) {
       </div>
 
       <div className="panel">
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${activeDays.length}, 1fr)`, gap: 10 }}>
+        <div style={{ overflowX: "auto" }}><div style={{ display: "grid", gridTemplateColumns: `repeat(${activeDays.length}, minmax(130px, 1fr))`, gap: 10, minWidth: activeDays.length * 140 }}>
           {activeDays.map(([d, label]) => {
             const dayEntries = entries.filter((e) => e.dayOfWeek === d).sort((a, b) => a.startTime.localeCompare(b.startTime));
             return (
@@ -84,7 +84,7 @@ export default function TimetableTab({ schoolId }: { schoolId: string }) {
               </div>
             );
           })}
-        </div>
+        </div></div>
         {entries.length === 0 && <p className="muted" style={{ marginTop: 10 }}>No lessons yet. Add one with “New lesson”, or import from your MIS.</p>}
       </div>
 

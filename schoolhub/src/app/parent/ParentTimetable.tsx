@@ -34,7 +34,7 @@ export default function ParentTimetable({ children }: { children: { id: string; 
 
       <div className="panel">
         {!data ? <p className="muted">Loading…</p> : entries.length === 0 ? <p className="muted">No timetable has been published for your child yet.</p> : (
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${activeDays.length}, 1fr)`, gap: 10 }}>
+          <div style={{ overflowX: "auto" }}><div style={{ display: "grid", gridTemplateColumns: `repeat(${activeDays.length}, minmax(130px, 1fr))`, gap: 10, minWidth: activeDays.length * 140 }}>
             {activeDays.map(([d, label]) => {
               const dayEntries = entries.filter((e) => e.dayOfWeek === d).sort((a, b) => a.startTime.localeCompare(b.startTime));
               return (
@@ -50,7 +50,7 @@ export default function ParentTimetable({ children }: { children: { id: string; 
                 </div>
               );
             })}
-          </div>
+          </div></div>
         )}
       </div>
     </div>
