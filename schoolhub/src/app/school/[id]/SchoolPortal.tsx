@@ -13,6 +13,7 @@ import BehaviourTab from "./BehaviourTab";
 import CommsTab from "./CommsTab";
 import MealsTab from "./MealsTab";
 import AttendanceTab from "./AttendanceTab";
+import NotificationsTab from "./NotificationsTab";
 import ReportsTab from "./ReportsTab";
 import OpsTab from "./OpsTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
@@ -50,6 +51,7 @@ const SCHOOL_NAV: NavGroup[] = [
   { label: "Settings", items: [
     { key: "config", label: "School configuration", icon: "⚙️" },
     { key: "audit", label: "Audit", icon: "🗂️" },
+    { key: "notifications", label: "Notifications", icon: "🔔" },
     { key: "profile", label: "My profile", icon: "🙂" },
     { key: "security", label: "My security", icon: "🔐" },
   ] },
@@ -59,7 +61,7 @@ const SCHOOL_TITLES: Record<string, string> = {
   calendar: "Calendar", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
-  config: "School configuration", audit: "Audit", profile: "My profile", security: "My security",
+  config: "School configuration", audit: "Audit", notifications: "Notifications", profile: "My profile", security: "My security",
 };
 
 const ALL_MODULES = ["dashboard", "calendar", "transport", "trips", "comms", "ai"];
@@ -82,7 +84,7 @@ type Props = {
 
 export default function SchoolPortal({ schoolId, roles, initial, email = "" }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "profile" | "security";
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
   const manageTabs: [Tab, string][] = [
@@ -106,10 +108,11 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
     ["config", "Configuration"],
     ["users", "Users & roles"],
     ["audit", "Audit"],
+    ["notifications", "Notifications"],
     ["profile", "My profile"],
   ];
 
-  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }] }];
+  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }] }];
   return (
     <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
@@ -134,6 +137,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "" }: P
       {tab === "config" && canManage && <ConfigTab schoolId={schoolId} initial={initial.school} />}
       {tab === "users" && canManage && <UsersTab schoolId={schoolId} />}
       {tab === "audit" && canManage && <AuditTab schoolId={schoolId} />}
+      {tab === "notifications" && <NotificationsTab />}
       {tab === "profile" && <ProfileTab email={email} />}
       {tab === "security" && <SecurityTab />}
     </AppShell>
