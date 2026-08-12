@@ -1,13 +1,16 @@
 import { prisma } from "../db";
 import { studentMatchesEvent } from "../calendar";
 import { docVisibleToParent, docSearchableByStaff, docText } from "../documents";
+import { parentReports } from "../reports-release";
 import { EVENT_CATEGORY_LABELS, DOCUMENT_CATEGORY_LABELS, ROLES } from "../constants";
 
 const STAFF_ROLES: string[] = [ROLES.SCHOOL_ADMIN, ROLES.SCHOOL_LEADER, ROLES.TEACHER, ROLES.TRANSPORT_MANAGER, ROLES.SUPPORT_STAFF];
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const ymdStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 export type SourceRecord = {
   id: string;
-  type: "document" | "event" | "homework" | "announcement" | "student" | "staff" | "behaviour" | "trip" | "meal" | "page" | "route";
+  type: "document" | "event" | "homework" | "announcement" | "student" | "staff" | "behaviour" | "trip" | "meal" | "page" | "route" | "attendance" | "report" | "timetable";
   title: string;
   text: string;
   date: Date | null;
@@ -131,6 +134,47 @@ export async function gatherContext(userId: string, opts: { schoolId?: string } 
       records.push({ id: m.id, type: "meal", title: `${m.name} (${m.meal})`, text: `Menu: ${m.name}. ${m.day}${m.weekOf ? ` w/c ${m.weekOf}` : ""}. ${m.meal}/${m.course}. ${m.description || ""}${m.allergens ? ` Allergens: ${m.allergens}.` : ""}${diet ? ` ${diet}.` : ""}${m.yearGroup ? ` For ${m.yearGroup}.` : ""}`, date: null, sourceLabel: "Meals & menus", url: null, schoolId: sid });
     }
 
+    // ---- Parent child-specific records (attendance, timetable, trips, reports) ----
+    // Only the caller's own children, and only when they are not staff at this
+    // school (staff already get the full roster below).
+    if (!staff && children.length > 0) {
+      const since60 = ymdStr(new Date(now.getTime() - 60 * 24 * 3600 * 1000));
+      for (const c of children) {
+        const nm = `${c.firstName} ${c.lastName}`.trim();
+
+        // Attendance summary (last 60 days).
+        const att = await prisma.attendanceRecord.findMany({ where: { studentId: c.id, date: { gte: since60 } }, select: { status: true } });
+        if (att.length) {
+          const cnt = (st: string) => att.filter((a) => a.status === st).length;
+          const present = cnt("present"), late = cnt("late"), total = att.length;
+          const absent = cnt("unauthorised") + cnt("absent");
+          const rate = total ? Math.round(((present + late) / total) * 100) : null;
+          records.push({ id: `att-${c.id}`, type: "attendance", title: `${nm} — attendance`, text: `Attendance for ${nm} over the last 60 days: ${rate == null ? "no data" : rate + "%"}. Present ${present}, late ${late}, absent ${absent}, authorised ${cnt("authorised")}, out of ${total} sessions.`, date: now, sourceLabel: "Attendance", url: null, schoolId: sid });
+        }
+
+        // Trips this child is on.
+        const ts = await prisma.tripStudent.findMany({ where: { studentId: c.id }, include: { trip: { select: { title: true, date: true, destination: true, venue: true, consentRequired: true, paymentStatus: true } } } });
+        for (const t of ts) {
+          records.push({ id: `trip-${t.id}`, type: "trip", title: `${t.trip.title} (${nm})`, text: `Trip: ${t.trip.title} for ${nm}. Date ${t.trip.date}. Destination ${t.trip.destination || t.trip.venue || "?"}.${t.trip.consentRequired ? ` Consent: ${t.consent}.` : ""}${t.trip.paymentStatus ? ` Payment: ${t.trip.paymentStatus}.` : ""}`, date: t.trip.date ? new Date(`${t.trip.date}T00:00:00`) : null, sourceLabel: "Trips", url: null, schoolId: sid });
+        }
+      }
+
+      // Timetable lessons applicable to the parent's children (by year group or whole-school).
+      const yearGroups = new Set(children.map((c) => c.yearGroup).filter(Boolean));
+      const tt = await prisma.timetableEntry.findMany({ where: { schoolId: sid } });
+      if (tt.length) {
+        const teacherIds = Array.from(new Set(tt.map((x) => x.teacherUserId).filter(Boolean))) as string[];
+        const teachers = teacherIds.length ? await prisma.user.findMany({ where: { id: { in: teacherIds } }, select: { id: true, fullName: true } }) : [];
+        const tname = new Map(teachers.map((x) => [x.id, x.fullName]));
+        const DAYW = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+        for (const l of tt) {
+          const applies = (!l.className && !l.yearGroup) || (l.yearGroup && yearGroups.has(l.yearGroup));
+          if (!applies) continue;
+          records.push({ id: `tt-${l.id}`, type: "timetable", title: `${l.subject} — ${DAYW[l.dayOfWeek] || ""}`, text: `Timetable lesson: ${l.subject} on ${DAYW[l.dayOfWeek] || ""} ${l.startTime}–${l.endTime}${l.period ? ` (${l.period})` : ""}.${l.className || l.yearGroup ? ` For ${l.className || l.yearGroup}.` : ""}${l.room ? ` Room ${l.room}.` : ""}${l.teacherUserId && tname.get(l.teacherUserId) ? ` Teacher ${tname.get(l.teacherUserId)}.` : ""}`, date: null, sourceLabel: "Timetable", url: null, schoolId: sid });
+        }
+      }
+    }
+
     // ---- Staff-only records (pupil roster, staff, behaviour, trips, transport) ----
     if (!staff) continue;
 
@@ -157,6 +201,19 @@ export async function gatherContext(userId: string, opts: { schoolId?: string } 
     const routes = await prisma.route.findMany({ where: { schoolId: sid }, include: { stops: { orderBy: { sequence: "asc" }, select: { name: true } }, vehicle: { select: { label: true, reference: true } } }, take: 100 });
     for (const rt of routes) {
       records.push({ id: rt.id, type: "route", title: `Route: ${rt.name}`, text: `Transport route ${rt.name} (${rt.type}). Vehicle ${rt.vehicle?.label || rt.vehicle?.reference || "unassigned"}. Stops: ${rt.stops.map((s) => s.name).join(", ") || "none"}. Cut-off ${rt.cutoffTime}.${rt.termlyFee != null ? ` Termly fee £${rt.termlyFee}.` : ""}`, date: null, sourceLabel: "Transport", url: null, schoolId: sid });
+    }
+  }
+
+  // Released academic reports for the caller's children (across their schools).
+  if (guardianLinks.length > 0) {
+    const schoolOfStudent = new Map(guardianLinks.map((g) => [g.studentId, g.schoolId]));
+    const reps = await parentReports(userId, now).catch(() => [] as any[]);
+    for (const r of reps as any[]) {
+      const sid = r.student?.id ? schoolOfStudent.get(r.student.id) : null;
+      if (opts.schoolId && sid !== opts.schoolId) continue;
+      const nm = r.student ? `${r.student.firstName || ""} ${r.student.lastName || ""}`.trim() : "";
+      const bodyText = r.summary || (r.body && typeof r.body === "object" ? Object.entries(r.body).map(([k, v]: any) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(". ").slice(0, 1500) : "");
+      records.push({ id: `report-${r.id}`, type: "report", title: `${r.title}${nm ? ` — ${nm}` : ""}`, text: `School report: ${r.title} for ${nm}.${r.term ? ` Term ${r.term}.` : ""} ${bodyText}`, date: r.releasedAt || r.at || null, sourceLabel: "School report", url: null, schoolId: sid || schoolIds[0] || "" });
     }
   }
 
