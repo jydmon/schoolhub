@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { Control, Routes, Profiles, Fees, Requests, Enquiries } from "../school/[id]/TransportTab";
-import ModuleImportCard from "../school/[id]/ModuleImportCard";
-import { TMDashboard, TMFleet, TMDrivers, TMIncidents, TMMessages, TMTravelLogs } from "./TransportPages";
+import { TMDashboard, TMFleet, TMDrivers, TMIncidents, TMMessages, TMTravelLogs, TMDriverLogs } from "./TransportPages";
 
 const TITLES: Record<string, string> = {
   dashboard: "Transport dashboard", control: "Control centre", incidents: "Incidents", messages: "Driver messages",
   routes: "Routes & stops", fleet: "Fleet", drivers: "Drivers", profiles: "Student transport",
-  requests: "Parent requests", enquiries: "Enquiries", fees: "Fees & cost", travellogs: "Travel logs",
+  requests: "Parent requests", enquiries: "Enquiries", fees: "Fees & cost", travellogs: "Travel logs", driverlogs: "Driver logs",
 };
 
 export default function TransportShell({ email = "" }: { email?: string }) {
@@ -47,6 +46,7 @@ export default function TransportShell({ email = "" }: { email?: string }) {
       { key: "routes", label: "Routes & stops", icon: "🗺️" },
       { key: "fleet", label: "Fleet", icon: "🚌" },
       { key: "drivers", label: "Drivers", icon: "🧑‍✈️" },
+      { key: "driverlogs", label: "Driver logs", icon: "📋" },
       { key: "profiles", label: "Student transport", icon: "🎒" },
     ] },
     { label: "Service", items: [
@@ -64,9 +64,10 @@ export default function TransportShell({ email = "" }: { email?: string }) {
       case "travellogs": return <TMTravelLogs schoolId={schoolId} />;
       case "incidents": return <TMIncidents schoolId={schoolId} />;
       case "messages": return <TMMessages schoolId={schoolId} />;
-      case "routes": return <><Routes schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="routes" title="Import routes" hint="Bulk-add routes from a CSV (optionally link a vehicle by its reference — import vehicles first). Or use the Integration Hub for AI-assisted mapping." /></>;
+      case "routes": return <Routes schoolId={schoolId} />;
       case "fleet": return <TMFleet schoolId={schoolId} />;
       case "drivers": return <TMDrivers schoolId={schoolId} />;
+      case "driverlogs": return <TMDriverLogs schoolId={schoolId} />;
       case "profiles": return <Profiles schoolId={schoolId} />;
       case "requests": return <Requests schoolId={schoolId} />;
       case "enquiries": return <Enquiries schoolId={schoolId} />;

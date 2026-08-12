@@ -3,20 +3,22 @@
 import { Fragment, useEffect, useState, useCallback } from "react";
 import { useSel, Kebab } from "./EntityKit";
 import ModuleImportCard from "./ModuleImportCard";
+import { TMDriverLogs } from "../../transport/TransportPages";
 
 export default function TransportTab({ schoolId }: { schoolId: string }) {
-  const [sub, setSub] = useState<"control" | "routes" | "vehicles" | "profiles" | "fees" | "requests" | "enquiries">("control");
+  const [sub, setSub] = useState<"control" | "routes" | "vehicles" | "profiles" | "fees" | "requests" | "enquiries" | "driverlogs">("control");
   return (
     <>
       <div className="tabs">
-        {([["control", "Control centre"], ["routes", "Routes"], ["vehicles", "Vehicles"], ["profiles", "Student profiles"], ["fees", "Fees & cost"], ["requests", "Requests"], ["enquiries", "Enquiries"]] as [any, string][]).map(([k, l]) => (
+        {([["control", "Control centre"], ["routes", "Routes"], ["vehicles", "Vehicles"], ["profiles", "Student profiles"], ["driverlogs", "Driver logs"], ["fees", "Fees & cost"], ["requests", "Requests"], ["enquiries", "Enquiries"]] as [any, string][]).map(([k, l]) => (
           <button key={k} className={sub === k ? "active" : ""} onClick={() => setSub(k)}>{l}</button>
         ))}
       </div>
       {sub === "control" && <Control schoolId={schoolId} />}
-      {sub === "routes" && <><Routes schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="routes" title="Import routes" hint="No routing system? Bulk-add routes from a CSV. Import vehicles first so routes can link to them by reference." /></>}
+      {sub === "routes" && <Routes schoolId={schoolId} />}
       {sub === "vehicles" && <><Vehicles schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="vehicles" title="Import vehicles" hint="Bulk-add your fleet from a CSV — matched and updated by registration / fleet number." /></>}
       {sub === "profiles" && <Profiles schoolId={schoolId} />}
+      {sub === "driverlogs" && <TMDriverLogs schoolId={schoolId} />}
       {sub === "fees" && <Fees schoolId={schoolId} />}
       {sub === "requests" && <Requests schoolId={schoolId} />}
       {sub === "enquiries" && <Enquiries schoolId={schoolId} />}
@@ -141,6 +143,8 @@ export function Routes({ schoolId }: { schoolId: string }) {
   const [geo, setGeo] = useState<{ id: string; text: string } | null>(null);
   const [edit, setEdit] = useState<any | null>(null);
   const [msg, setMsg] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const sel = useSel();
   const load = useCallback(async () => {
     setRows((await fetch(`/api/schools/${schoolId}/routes`).then((r) => r.json())).routes ?? []);
@@ -164,7 +168,7 @@ export function Routes({ schoolId }: { schoolId: string }) {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     await fetch(`/api/schools/${schoolId}/routes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: f.name, type: f.type, cutoffTime: f.cutoffTime, termlyFee: f.termlyFee ? Number(f.termlyFee) : null, vehicleId: f.vehicleId || null, driverUserId: f.driverUserId || null, stops: parseStops(f.stops) }) });
-    setF({ ...f, name: "", termlyFee: "" }); load();
+    setF({ ...f, name: "", termlyFee: "" }); setShowAdd(false); load();
   }
   async function geocodeRoute(id: string) {
     setGeo({ id, text: "Geocoding stops…" });
@@ -185,9 +189,16 @@ export function Routes({ schoolId }: { schoolId: string }) {
   async function bulkDelete() { for (const id of sel.ids) await fetch(`/api/schools/${schoolId}/routes/${id}`, { method: "DELETE" }); sel.clear(); load(); }
   const allOn = rows.length > 0 && rows.every((r) => sel.on(r.id));
   return (
-    <div className="panel"><h2>Routes</h2>
-      <p className="sub">Assign a <strong>vehicle</strong> and a <strong>driver</strong> to each route via the ⋯ menu. Add stop addresses (or exact <span className="mono">lat,lng</span>) so stops and buses show on the live maps; use <strong>Map stops</strong> to look up coordinates automatically.</p>
-      {msg && <div className="notice err">{msg}</div>}
+    <div className="panel">
+      <div className="flex-between" style={{ alignItems: "flex-start" }}>
+        <div><h2 style={{ margin: 0 }}>Routes</h2>
+          <p className="sub" style={{ marginBottom: 0 }}>Assign a <strong>vehicle</strong> and a <strong>driver</strong> to each route via the ⋯ menu. Add stop addresses (or exact <span className="mono">lat,lng</span>) so stops and buses show on the live maps; use <strong>Map stops</strong> to look up coordinates automatically.</p></div>
+        <div style={{ display: "flex", gap: 8, whiteSpace: "nowrap" }}>
+          <button className="secondary" onClick={() => setShowImport(true)}>Import routes</button>
+          <button onClick={() => setShowAdd(true)}>Add route</button>
+        </div>
+      </div>
+      {msg && <div className="notice err" style={{ marginTop: 10 }}>{msg}</div>}
       {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={() => { if (confirm(`Delete ${sel.ids.length} route(s)? This can't be undone.`)) bulkDelete(); }}>Delete</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
       <table><thead><tr>
         <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((r) => r.id), e.target.checked)} aria-label="Select all" /></th>
@@ -204,19 +215,38 @@ export function Routes({ schoolId }: { schoolId: string }) {
         ); })}
         {rows.length === 0 && <tr><td colSpan={11} className="muted">No routes.</td></tr>}
       </tbody></table>
-      <form onSubmit={add} style={{ marginTop: 12 }}>
-        <div className="row">
-          <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
-          <div><label>Type</label><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option>fixed</option><option>flexible</option></select></div>
-          <div><label>Vehicle</label><select value={f.vehicleId} onChange={(e) => setF({ ...f, vehicleId: e.target.value })}><option value="">—</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label || v.reference}</option>)}</select></div>
-          <div><label>Driver</label><select value={f.driverUserId} onChange={(e) => setF({ ...f, driverUserId: e.target.value })}><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.fullName}</option>)}</select></div>
-          <div><label>Termly fee (£)</label><input type="number" step="0.01" value={f.termlyFee} onChange={(e) => setF({ ...f, termlyFee: e.target.value })} /></div>
-          <div><label>Cut-off</label><input value={f.cutoffTime} onChange={(e) => setF({ ...f, cutoffTime: e.target.value })} /></div>
+
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal" style={{ maxWidth: 640, width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Add route</h2><button className="secondary small" onClick={() => setShowAdd(false)}>Close</button></div>
+            <form onSubmit={add} style={{ marginTop: 12 }}>
+              <div className="row">
+                <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required /></div>
+                <div><label>Type</label><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option>fixed</option><option>flexible</option></select></div>
+              </div>
+              <div className="row">
+                <div><label>Vehicle</label><select value={f.vehicleId} onChange={(e) => setF({ ...f, vehicleId: e.target.value })}><option value="">—</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label || v.reference}</option>)}</select></div>
+                <div><label>Driver</label><select value={f.driverUserId} onChange={(e) => setF({ ...f, driverUserId: e.target.value })}><option value="">—</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.fullName}</option>)}</select></div>
+                <div><label>Termly fee (£)</label><input type="number" step="0.01" value={f.termlyFee} onChange={(e) => setF({ ...f, termlyFee: e.target.value })} /></div>
+                <div><label>Cut-off</label><input value={f.cutoffTime} onChange={(e) => setF({ ...f, cutoffTime: e.target.value })} /></div>
+              </div>
+              <label>Stops (one per line: Name|kind|HH:MM|address or lat,lng)</label>
+              <textarea rows={4} value={f.stops} onChange={(e) => setF({ ...f, stops: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12 }} />
+              <button type="submit" style={{ marginTop: 10 }}>Add route</button>
+            </form>
+          </div>
         </div>
-        <label>Stops (one per line: Name|kind|HH:MM|address or lat,lng)</label>
-        <textarea rows={4} value={f.stops} onChange={(e) => setF({ ...f, stops: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12 }} />
-        <button style={{ marginTop: 10 }}>Add route</button>
-      </form>
+      )}
+
+      {showImport && (
+        <div className="modal-overlay" onClick={() => setShowImport(false)}>
+          <div className="modal" style={{ maxWidth: 720, width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Import routes</h2><button className="secondary small" onClick={() => setShowImport(false)}>Close</button></div>
+            <div style={{ marginTop: 10 }}><ModuleImportCard schoolId={schoolId} type="routes" defaultOpen title="Import routes" hint="Bulk-add routes from a CSV. Link a vehicle by its reference — import vehicles first. Or use the Integration Hub for an AI-assisted mapping." /></div>
+          </div>
+        </div>
+      )}
 
       {edit && (
         <div className="modal-overlay" onClick={() => setEdit(null)}>
@@ -247,25 +277,92 @@ export function Profiles({ schoolId }: { schoolId: string }) {
   const [students, setStudents] = useState<any[]>([]);
   const [routes, setRoutes] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
+  const [q, setQ] = useState("");
+  const [fRoute, setFRoute] = useState("");
+  const [bulk, setBulk] = useState<null | { routeId: string }>(null);
+  const sel = useSel();
   const load = useCallback(async () => {
     setStudents((await fetch(`/api/schools/${schoolId}/transport/students`).then((r) => r.json())).students ?? []);
     setRoutes((await fetch(`/api/schools/${schoolId}/routes`).then((r) => r.json())).routes ?? []);
-  }, [schoolId]);
+    sel.clear();
+  }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
-  async function assign(studentId: string, routeId: string) {
+
+  const routeName = (id?: string | null) => routes.find((r) => r.id === id)?.name || null;
+  async function assignOne(studentId: string, routeId: string | null) {
     await fetch(`/api/schools/${schoolId}/transport/profiles/${studentId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ routeId: routeId || null }) });
-    setMsg("Saved."); setTimeout(() => setMsg(""), 1500);
   }
+  async function assignMany(routeId: string | null) {
+    for (const id of sel.ids) await assignOne(id, routeId);
+    setBulk(null); setMsg(`${sel.ids.length} pupil(s) ${routeId ? "assigned to " + (routeName(routeId) || "route") : "cleared"}.`); setTimeout(() => setMsg(""), 2500); load();
+  }
+  async function quickAssign(studentId: string, routeId: string | null) { await assignOne(studentId, routeId); setMsg("Saved."); setTimeout(() => setMsg(""), 1500); load(); }
+
+  const rows = students.filter((s) => {
+    const t = q.trim().toLowerCase();
+    if (t && ![s.firstName, s.lastName, s.reference, s.className, s.yearGroup].some((f) => String(f ?? "").toLowerCase().includes(t))) return false;
+    if (fRoute === "none" && s.routeId) return false;
+    if (fRoute && fRoute !== "none" && s.routeId !== fRoute) return false;
+    return true;
+  });
+  const allOn = rows.length > 0 && rows.every((s) => sel.on(s.id));
+
   return (
-    <div className="panel"><h2>Student transport profiles</h2><p className="sub">Assign each student to a route. (Stops, days and accessibility are set via the API/profile.)</p>
-      {msg && <div className="notice ok">{msg}</div>}
-      <table><thead><tr><th>Student</th><th>Year</th><th>Assigned route</th></tr></thead><tbody>
-        {students.map((s) => (
-          <tr key={s.id}><td>{s.firstName} {s.lastName}</td><td>{s.yearGroup || "—"}</td>
-            <td><select defaultValue="" onChange={(e) => assign(s.id, e.target.value)} style={{ width: "auto", display: "inline-block" }}><option value="">— none —</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></td></tr>
+    <div className="panel">
+      <div className="flex-between" style={{ alignItems: "flex-start" }}>
+        <div><h2 style={{ margin: 0 }}>Student transport profiles</h2>
+          <p className="sub" style={{ marginBottom: 0 }}>Assign pupils to a route — one at a time via the ⋯ menu, or select several and assign them together.</p></div>
+        <button disabled={sel.ids.length === 0} onClick={() => setBulk({ routeId: routes[0]?.id || "" })}>Assign route to selected</button>
+      </div>
+      {msg && <div className="notice ok" style={{ marginTop: 10 }}>{msg}</div>}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
+        <input placeholder="Search pupils…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 220 }} />
+        <select value={fRoute} onChange={(e) => setFRoute(e.target.value)} style={{ width: "auto" }}><option value="">All routes</option><option value="none">Unassigned</option>{routes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+        {(q || fRoute) && <button className="secondary small" onClick={() => { setQ(""); setFRoute(""); }}>Clear</button>}
+        <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{rows.length === students.length ? `${students.length} pupils` : `${rows.length} of ${students.length}`}</span>
+      </div>
+
+      {sel.ids.length > 0 && (
+        <div className="bulkbar">
+          <span>{sel.ids.length} selected</span>
+          <button className="small" onClick={() => setBulk({ routeId: routes[0]?.id || "" })}>Assign route</button>
+          <button className="danger small" onClick={() => { if (confirm(`Clear the route for ${sel.ids.length} pupil(s)?`)) assignMany(null); }}>Clear route</button>
+          <button className="secondary small" onClick={() => sel.clear()}>Clear selection</button>
+        </div>
+      )}
+
+      <table><thead><tr>
+        <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((s) => s.id), e.target.checked)} aria-label="Select all" /></th>
+        <th>Student</th><th>Year</th><th>Class</th><th>Assigned route</th><th className="right">Actions</th></tr></thead><tbody>
+        {rows.map((s) => (
+          <tr key={s.id}>
+            <td className="checkbox-cell"><input type="checkbox" checked={sel.on(s.id)} onChange={() => sel.toggle(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} /></td>
+            <td><strong>{s.firstName} {s.lastName}</strong> {s.medicalAlert && <span className="badge suspended">Med</span>}<div className="mono muted" style={{ fontSize: 11 }}>{s.reference}</div></td>
+            <td className="muted">{s.yearGroup || "—"}</td><td className="muted">{s.className || "—"}</td>
+            <td>{routeName(s.routeId) ? <span className="badge active">{routeName(s.routeId)}</span> : <span className="muted">— none —</span>}</td>
+            <td className="right"><Kebab items={[
+              ...routes.map((r) => ({ label: `Assign: ${r.name}`, onClick: () => quickAssign(s.id, r.id) })),
+              s.routeId ? { label: "Clear route", danger: true, onClick: () => quickAssign(s.id, null) } : null,
+            ]} /></td>
+          </tr>
         ))}
-        {students.length === 0 && <tr><td colSpan={3} className="muted">No students.</td></tr>}
+        {rows.length === 0 && <tr><td colSpan={6} className="muted">{students.length ? "No pupils match your filter." : "No students."}</td></tr>}
       </tbody></table>
+
+      {bulk && (
+        <div className="modal-overlay" onClick={() => setBulk(null)}>
+          <div className="modal" style={{ maxWidth: 460, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Assign route</h2><button className="secondary small" onClick={() => setBulk(null)}>Close</button></div>
+            <p className="sub">Assign <strong>{sel.ids.length}</strong> selected pupil(s) to a route.</p>
+            <label>Route</label>
+            <select value={bulk.routeId} onChange={(e) => setBulk({ routeId: e.target.value })}>{routes.length === 0 ? <option value="">No routes yet</option> : routes.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
+            <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+              <button disabled={!bulk.routeId} onClick={() => assignMany(bulk.routeId)}>Assign to {sel.ids.length} pupil(s)</button>
+              <button className="secondary" onClick={() => setBulk(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

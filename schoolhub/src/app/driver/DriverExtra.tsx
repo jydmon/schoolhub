@@ -8,24 +8,37 @@ const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
 export function DriverHistory() {
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => { fetch(`/api/driver/history`).then((r) => r.json()).then((d) => setRows(d.journeys ?? [])).catch(() => {}); }, []);
+  const hm = (v: any) => (v ? new Date(v).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
+  const completed = rows.filter((r) => r.status === "completed").length;
+  const totalBoardings = rows.reduce((s, r) => s + (r.boarded || 0), 0);
   return (
-    <div className="panel">
-      <h2 style={{ margin: 0 }}>Journey history</h2>
-      <p className="sub">Your completed journeys.</p>
-      <table>
-        <thead><tr><th>Date</th><th>Route</th><th>Session</th><th>Vehicle</th><th>Boarded</th><th>Absent</th><th>Delay</th><th>Status</th></tr></thead>
-        <tbody>
-          {rows.map((j) => (
-            <tr key={j.id}>
-              <td className="mono muted">{j.date}</td><td>{j.routeName}</td><td>{j.session.toUpperCase()}</td>
-              <td>{j.vehicle || "—"}</td><td>{j.boarded}</td><td>{j.absent}</td><td>{j.delayMinutes ? `+${j.delayMinutes}m` : "—"}</td>
-              <td><span className={`badge ${j.status === "completed" ? "active" : "archived"}`}>{j.status}</span></td>
-            </tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={8} className="muted">No past journeys yet.</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="panel">
+        <h2 style={{ margin: 0 }}>My journey log</h2>
+        <p className="sub">A history of your completed trips and route activity. Only your own journeys are shown.</p>
+        <div className="stat-grid">
+          <div className="stat"><div className="n">{rows.length}</div><div className="l">Journeys</div></div>
+          <div className="stat"><div className="n" style={{ color: "#16a34a" }}>{completed}</div><div className="l">Completed</div></div>
+          <div className="stat"><div className="n">{totalBoardings}</div><div className="l">Pupils carried</div></div>
+        </div>
+      </div>
+      <div className="panel">
+        <table>
+          <thead><tr><th>Date</th><th>Route</th><th>Session</th><th>Vehicle</th><th>Started</th><th>Finished</th><th>Boarded</th><th>Delay</th><th>Status</th></tr></thead>
+          <tbody>
+            {rows.map((j) => (
+              <tr key={j.id}>
+                <td className="mono muted">{j.date}</td><td>{j.routeName}</td><td>{j.session.toUpperCase()}</td>
+                <td>{j.vehicle || "—"}</td><td className="mono muted">{hm(j.startedAt)}</td><td className="mono muted">{hm(j.completedAt)}</td>
+                <td>{j.boarded}{j.total ? `/${j.total}` : ""}</td><td>{j.delayMinutes ? `+${j.delayMinutes}m` : "—"}</td>
+                <td><span className={`badge ${j.status === "completed" ? "active" : "archived"}`}>{j.status}</span></td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan={9} className="muted">No past journeys yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

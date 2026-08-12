@@ -7,7 +7,7 @@ import DriverHome from "./DriverHome";
 import { DriverHistory, DriverChecks, DriverMessages } from "./DriverExtra";
 
 const TITLES: Record<string, string> = {
-  home: "Driver home", journeys: "Today's journeys", checks: "Vehicle checks", history: "Journey history", messages: "Transport office",
+  home: "Driver home", journeys: "Today's journeys", checks: "Vehicle checks", history: "My journey log", messages: "Transport office",
 };
 
 export default function DriverShell({ email = "" }: { email?: string }) {
@@ -27,7 +27,7 @@ export default function DriverShell({ email = "" }: { email?: string }) {
       { key: "home", label: "Home", icon: "🏠" },
       { key: "journeys", label: "Today's journeys", icon: "🚌" },
       { key: "checks", label: "Vehicle checks", icon: "🛠️" },
-      { key: "history", label: "History", icon: "🗂️" },
+      { key: "history", label: "Journey log", icon: "🗂️" },
       { key: "messages", label: "Office", icon: "✉️", badge: unread },
     ] },
   ];

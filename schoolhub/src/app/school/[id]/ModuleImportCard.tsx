@@ -9,9 +9,9 @@ import { useState } from "react";
  * error report. Reuses the shared /api/schools/[id]/import engine.
  */
 export default function ModuleImportCard({
-  schoolId, type, title, hint,
-}: { schoolId: string; type: string; title?: string; hint?: string }) {
-  const [open, setOpen] = useState(false);
+  schoolId, type, title, hint, defaultOpen = false,
+}: { schoolId: string; type: string; title?: string; hint?: string; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
   const [csvText, setCsvText] = useState("");
   const [filename, setFilename] = useState("");
   const [result, setResult] = useState<any>(null);

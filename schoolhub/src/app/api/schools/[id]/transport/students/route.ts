@@ -17,9 +17,19 @@ export async function GET(_req: Request, { params }: Params) {
     assertCan(ctx, PERMISSIONS.MANAGE_TRANSPORT, params.id);
     const students = await prisma.student.findMany({
       where: { schoolId: params.id },
-      select: { id: true, firstName: true, lastName: true, reference: true, yearGroup: true, medicalAlert: true },
+      select: {
+        id: true, firstName: true, lastName: true, reference: true, yearGroup: true, medicalAlert: true,
+        class: { select: { name: true } },
+        transportProfile: { select: { routeId: true, feeStatus: true, transportDays: true } },
+      },
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     });
-    return ok({ students });
+    return ok({
+      students: students.map((s) => ({
+        id: s.id, firstName: s.firstName, lastName: s.lastName, reference: s.reference,
+        yearGroup: s.yearGroup, medicalAlert: s.medicalAlert, className: s.class?.name || null,
+        routeId: s.transportProfile?.routeId || null, feeStatus: s.transportProfile?.feeStatus || null,
+      })),
+    });
   } catch (err) { return handleError(err); }
 }

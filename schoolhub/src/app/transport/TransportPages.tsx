@@ -467,3 +467,68 @@ export function TMTravelLogs({ schoolId }: { schoolId: string }) {
     </>
   );
 }
+
+/* ------------------------------ Driver Logs ------------------------------ */
+export function TMDriverLogs({ schoolId }: { schoolId: string }) {
+  const [drivers, setDrivers] = useState<any[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [detail, setDetail] = useState<any>(null);
+  useEffect(() => { fetch(`/api/schools/${schoolId}/transport/driver-logs`).then((r) => r.json()).then((d) => setDrivers(d.drivers ?? [])).catch(() => {}); }, [schoolId]);
+  useEffect(() => { if (open) { setDetail(null); fetch(`/api/schools/${schoolId}/transport/driver-logs?driver=${open}`).then((r) => r.json()).then(setDetail).catch(() => {}); } }, [open, schoolId]);
+
+  if (open) {
+    const d = detail;
+    return (
+      <>
+        <button className="secondary small" onClick={() => setOpen(null)}>← All drivers</button>
+        {!d ? <div className="panel" style={{ marginTop: 10 }}>Loading…</div> : (
+          <>
+            <div className="panel" style={{ marginTop: 10 }}>
+              <h2 style={{ margin: 0 }}>{d.driver?.fullName}</h2>
+              <p className="sub" style={{ marginBottom: 8 }}>{d.driver?.email}{d.driver?.phone ? ` · ${d.driver.phone}` : ""}</p>
+              <div className="stat-grid">
+                <div className="stat"><div className="n">{d.summary.journeys}</div><div className="l">Journeys</div></div>
+                <div className="stat"><div className="n" style={{ color: "#16a34a" }}>{d.summary.completed}</div><div className="l">Completed</div></div>
+                <div className="stat"><div className="n">{d.summary.boardings}</div><div className="l">Boardings</div></div>
+                <div className="stat"><div className="n" style={{ color: d.summary.absences ? "#dc2626" : undefined }}>{d.summary.absences}</div><div className="l">Absences</div></div>
+                <div className="stat"><div className="n" style={{ color: d.summary.incidents ? "#dc2626" : undefined }}>{d.summary.incidents}</div><div className="l">Incidents</div></div>
+              </div>
+            </div>
+            <div className="panel">
+              <h2 style={{ fontSize: 16, margin: 0 }}>Journey log</h2>
+              <table><thead><tr><th>Date</th><th>Session</th><th>Route</th><th>Vehicle</th><th>Started</th><th>Finished</th><th>Boarded</th><th>Delay</th><th>Status</th></tr></thead><tbody>
+                {d.rows.map((r: any) => (
+                  <tr key={r.id}><td className="mono muted">{r.date}</td><td>{r.session.toUpperCase()}</td><td>{r.route}</td><td>{r.vehicle || "—"}</td>
+                    <td className="mono muted">{r.startedAt ? new Date(r.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                    <td className="mono muted">{r.completedAt ? new Date(r.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                    <td>{r.boarded}/{r.total}</td><td>{r.delayMinutes ? `+${r.delayMinutes}m` : "—"}</td>
+                    <td><span className={`badge ${r.status === "completed" ? "active" : r.status === "cancelled" ? "suspended" : "trial"}`}>{r.status}</span></td></tr>
+                ))}
+                {d.rows.length === 0 && <tr><td colSpan={9} className="muted">No journeys recorded for this driver.</td></tr>}
+              </tbody></table>
+            </div>
+            {d.incidents.length > 0 && (
+              <div className="panel"><h2 style={{ fontSize: 16, margin: 0 }}>Incidents reported</h2>
+                {d.incidents.map((i: any) => <div key={i.id} style={{ borderTop: "1px solid var(--line)", padding: "7px 0", fontSize: 13 }}><strong style={{ textTransform: "capitalize" }}>{String(i.type).replace(/_/g, " ")}</strong> <span className={`badge ${i.severity === "high" ? "suspended" : "archived"}`}>{i.severity}</span> <span className="muted">{dt(i.at)}</span>{i.notes ? <div className="muted">{i.notes}</div> : null}</div>)}
+              </div>
+            )}
+          </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className="panel">
+      <h2 style={{ margin: 0 }}>Driver logs</h2>
+      <p className="sub">Activity for every driver in the school. Open a driver to see their full journey log, boardings and reported incidents.</p>
+      <table><thead><tr><th>Driver</th><th>Journeys</th><th>Completed</th><th>Last active</th><th className="right"></th></tr></thead><tbody>
+        {drivers.map((d) => (
+          <tr key={d.id}><td><strong>{d.name}</strong><div className="mono muted" style={{ fontSize: 11 }}>{d.email}</div></td><td>{d.journeys}</td><td>{d.completed}</td><td className="mono muted">{d.lastActive || "—"}</td>
+            <td className="right"><button className="small" onClick={() => setOpen(d.id)}>View log</button></td></tr>
+        ))}
+        {drivers.length === 0 && <tr><td colSpan={5} className="muted">No drivers yet.</td></tr>}
+      </tbody></table>
+    </div>
+  );
+}

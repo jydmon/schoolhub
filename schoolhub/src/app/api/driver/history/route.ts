@@ -18,7 +18,9 @@ export async function GET() {
         vehicle: j.vehicle ? (j.vehicle.label || j.vehicle.reference) : null,
         boarded: j.boardings.filter((b) => b.status === "boarded" || b.status === "dropped_off").length,
         absent: j.boardings.filter((b) => b.status === "absent").length,
-        delayMinutes: j.delayMinutes, completedAt: j.completedAt,
+        total: j.boardings.length,
+        delayMinutes: j.delayMinutes, startedAt: j.startedAt, completedAt: j.completedAt,
+        durationMin: j.startedAt && j.completedAt ? Math.round((new Date(j.completedAt).getTime() - new Date(j.startedAt).getTime()) / 60000) : null,
       })),
     });
   } catch (err) { return handleError(err); }
