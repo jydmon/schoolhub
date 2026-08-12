@@ -383,6 +383,20 @@ export async function runImport(opts: {
         const existing = await prisma.route.findFirst({ where: { schoolId, name } });
         if (existing) { await prisma.route.update({ where: { id: existing.id }, data }); updated++; }
         else { await prisma.route.create({ data: { schoolId, name, ...data } }); created++; }
+      } else if (type === "drivers") {
+        const email = row.email?.trim().toLowerCase();
+        const fullName = row.fullName?.trim();
+        if (!email || !EMAIL_RE.test(email)) throw new Error("a valid email is required");
+        if (!fullName) throw new Error("fullName is required");
+        if (seen.has("drv:" + email)) { skipped++; errors.push({ row: line, field: "email", message: `duplicate email "${email}" in file`, fatal: false }); continue; }
+        seen.add("drv:" + email);
+        const phone = row.phone?.trim() || null;
+        let user = await prisma.user.findUnique({ where: { email } });
+        if (!user) { user = await prisma.user.create({ data: { email, fullName, ...(phone ? { phone } : {}), status: "invited", source: "import" } }); created++; }
+        else { await prisma.user.update({ where: { id: user.id }, data: { fullName, ...(phone ? { phone } : {}) } }); updated++; }
+        await prisma.membership.upsert({ where: { userId_schoolId_role: { userId: user.id, schoolId, role: ROLES.DRIVER } }, update: {}, create: { userId: user.id, schoolId, role: ROLES.DRIVER } });
+        const dp = { phone, licenceNumber: row.licenceNumber?.trim() || null, licenceClasses: row.licenceClasses?.trim() || null, licenceExpiry: row.licenceExpiry?.trim() || null, dbsExpiry: row.dbsExpiry?.trim() || null, medicalDue: row.medicalDue?.trim() || null, status: "active" };
+        await prisma.driverProfile.upsert({ where: { userId: user.id }, update: dp, create: { schoolId, userId: user.id, ...dp } });
       } else if (type === "calendar_events") {
         const title = row.title?.trim();
         if (!title) throw new Error("title is required");

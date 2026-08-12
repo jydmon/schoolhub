@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useState, useCallback } from "react";
+import { useSel, Kebab } from "./EntityKit";
 import ModuleImportCard from "./ModuleImportCard";
 
 export default function TransportTab({ schoolId }: { schoolId: string }) {
@@ -138,6 +139,9 @@ export function Routes({ schoolId }: { schoolId: string }) {
   const [drivers, setDrivers] = useState<any[]>([]);
   const [f, setF] = useState({ name: "", type: "fixed", cutoffTime: "07:00", termlyFee: "", vehicleId: "", driverUserId: "", stops: "Green Lane|pickup|07:30|Green Lane, town\nMill Road|shared|07:40|Mill Road, town\nSchool|school|08:30|" });
   const [geo, setGeo] = useState<{ id: string; text: string } | null>(null);
+  const [edit, setEdit] = useState<any | null>(null);
+  const [msg, setMsg] = useState("");
+  const sel = useSel();
   const load = useCallback(async () => {
     setRows((await fetch(`/api/schools/${schoolId}/routes`).then((r) => r.json())).routes ?? []);
     setVehicles((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []);
@@ -170,17 +174,35 @@ export function Routes({ schoolId }: { schoolId: string }) {
     load();
   }
   const mapped = (r: any) => r.stops.filter((s: any) => s.lat != null && s.lng != null).length;
+  const driverName = (id?: string | null) => drivers.find((d) => d.id === id)?.fullName || null;
+  function openEdit(r: any) { setEdit({ id: r.id, name: r.name, type: r.type, vehicleId: r.vehicle?.id || r.vehicleId || "", driverUserId: r.driverUserId || "", cutoffTime: r.cutoffTime || "07:00", termlyFee: r.termlyFee != null ? String(r.termlyFee) : "", active: r.active !== false }); setMsg(""); }
+  async function saveEdit() {
+    const body = { name: edit.name, type: edit.type, vehicleId: edit.vehicleId || null, driverUserId: edit.driverUserId || null, cutoffTime: edit.cutoffTime, termlyFee: edit.termlyFee ? Number(edit.termlyFee) : null, active: edit.active };
+    const res = await fetch(`/api/schools/${schoolId}/routes/${edit.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await res.json().catch(() => ({})); if (d.error) { setMsg(d.error); return; } setEdit(null); load();
+  }
+  async function del(id: string) { await fetch(`/api/schools/${schoolId}/routes/${id}`, { method: "DELETE" }); load(); }
+  async function bulkDelete() { for (const id of sel.ids) await fetch(`/api/schools/${schoolId}/routes/${id}`, { method: "DELETE" }); sel.clear(); load(); }
+  const allOn = rows.length > 0 && rows.every((r) => sel.on(r.id));
   return (
     <div className="panel"><h2>Routes</h2>
-      <p className="sub">Add stop addresses (or exact <span className="mono">lat,lng</span>) so stops and buses show on the live maps. Use <strong>Map stops</strong> to look up coordinates from addresses automatically — no map account needed.</p>
-      <table><thead><tr><th>Name</th><th>Type</th><th>Vehicle</th><th>Stops</th><th>Mapped</th><th>Students</th><th>Termly fee</th><th>Cut-off</th><th className="right"></th></tr></thead><tbody>
+      <p className="sub">Assign a <strong>vehicle</strong> and a <strong>driver</strong> to each route via the ⋯ menu. Add stop addresses (or exact <span className="mono">lat,lng</span>) so stops and buses show on the live maps; use <strong>Map stops</strong> to look up coordinates automatically.</p>
+      {msg && <div className="notice err">{msg}</div>}
+      {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={() => { if (confirm(`Delete ${sel.ids.length} route(s)? This can't be undone.`)) bulkDelete(); }}>Delete</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
+      <table><thead><tr>
+        <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((r) => r.id), e.target.checked)} aria-label="Select all" /></th>
+        <th>Name</th><th>Type</th><th>Vehicle</th><th>Driver</th><th>Stops</th><th>Mapped</th><th>Students</th><th>Termly fee</th><th>Cut-off</th><th className="right">Actions</th></tr></thead><tbody>
         {rows.map((r) => { const m = mapped(r); return (
-          <tr key={r.id}><td>{r.name}</td><td>{r.type}</td><td>{r.vehicle ? (r.vehicle.label || r.vehicle.reference) : "—"}</td><td>{r.stops.length}</td>
+          <tr key={r.id}>
+            <td className="checkbox-cell"><input type="checkbox" checked={sel.on(r.id)} onChange={() => sel.toggle(r.id)} aria-label={`Select ${r.name}`} /></td>
+            <td>{r.name}{r.active === false && <span className="badge archived" style={{ marginLeft: 6 }}>inactive</span>}</td><td>{r.type}</td>
+            <td>{r.vehicle ? (r.vehicle.label || r.vehicle.reference) : <span className="muted">—</span>}</td>
+            <td>{driverName(r.driverUserId) || <span className="muted">—</span>}</td><td>{r.stops.length}</td>
             <td>{r.stops.length ? <span className={`badge ${m === r.stops.length ? "active" : m ? "trial" : "archived"}`}>{m}/{r.stops.length}</span> : "—"}{geo && geo.id === r.id ? <div className="muted" style={{ fontSize: 11 }}>{geo.text}</div> : null}</td>
             <td>{r._count.profiles}</td><td>{r.termlyFee != null ? `£${Number(r.termlyFee).toFixed(2)}` : "—"}</td><td>{r.cutoffTime}</td>
-            <td className="right">{m < r.stops.length && <button className="secondary small" onClick={() => geocodeRoute(r.id)}>Map stops</button>}</td></tr>
+            <td className="right"><Kebab items={[{ label: "Edit route", onClick: () => openEdit(r) }, m < r.stops.length && { label: "Map stops", onClick: () => geocodeRoute(r.id) }, { label: "Delete", danger: true, onClick: () => { if (confirm(`Delete route "${r.name}"?`)) del(r.id); } }]} /></td></tr>
         ); })}
-        {rows.length === 0 && <tr><td colSpan={9} className="muted">No routes.</td></tr>}
+        {rows.length === 0 && <tr><td colSpan={11} className="muted">No routes.</td></tr>}
       </tbody></table>
       <form onSubmit={add} style={{ marginTop: 12 }}>
         <div className="row">
@@ -195,6 +217,28 @@ export function Routes({ schoolId }: { schoolId: string }) {
         <textarea rows={4} value={f.stops} onChange={(e) => setF({ ...f, stops: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12 }} />
         <button style={{ marginTop: 10 }}>Add route</button>
       </form>
+
+      {edit && (
+        <div className="modal-overlay" onClick={() => setEdit(null)}>
+          <div className="modal" style={{ maxWidth: 560, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Edit route</h2><button className="secondary small" onClick={() => setEdit(null)}>Close</button></div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div style={{ flex: 2 }}><label>Name</label><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></div>
+              <div><label>Type</label><select value={edit.type} onChange={(e) => setEdit({ ...edit, type: e.target.value })}><option>fixed</option><option>flexible</option></select></div>
+            </div>
+            <div className="row">
+              <div><label>Vehicle</label><select value={edit.vehicleId} onChange={(e) => setEdit({ ...edit, vehicleId: e.target.value })}><option value="">— none —</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.label || v.reference}</option>)}</select></div>
+              <div><label>Driver</label><select value={edit.driverUserId} onChange={(e) => setEdit({ ...edit, driverUserId: e.target.value })}><option value="">— none —</option>{drivers.map((d) => <option key={d.id} value={d.id}>{d.fullName}</option>)}</select></div>
+            </div>
+            <div className="row">
+              <div><label>Termly fee (£)</label><input type="number" step="0.01" value={edit.termlyFee} onChange={(e) => setEdit({ ...edit, termlyFee: e.target.value })} /></div>
+              <div><label>Cut-off</label><input value={edit.cutoffTime} onChange={(e) => setEdit({ ...edit, cutoffTime: e.target.value })} /></div>
+            </div>
+            <label className="chip" style={{ marginTop: 10, display: "inline-flex" }}><input type="checkbox" style={{ width: "auto" }} checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> Active</label>
+            <div style={{ marginTop: 12 }}><button onClick={saveEdit}>Save route</button></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -155,7 +155,7 @@ export const staffCreateSchema = z.object({
 export const importSchema = z.object({
   type: z.enum([
     "students", "parents", "staff", "messaging_consent",
-    "vehicles", "routes", "calendar_events", "announcements", "pupil_reports", "menus", "trips", "attendance",
+    "vehicles", "routes", "drivers", "calendar_events", "announcements", "pupil_reports", "menus", "trips", "attendance",
   ]),
   csvText: z.string().min(1),
   filename: z.string().optional(),
@@ -361,6 +361,7 @@ export const routeSchema = z.object({
 
 export const routeUpdateSchema = z.object({
   name: z.string().optional(),
+  type: z.string().optional(),
   vehicleId: z.string().optional().nullable(),
   driverUserId: z.string().optional().nullable(),
   cutoffTime: z.string().optional(),

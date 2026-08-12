@@ -137,6 +137,12 @@ export const IMPORT_TEMPLATES: Record<
     headers: ["name", "type", "vehicleReference", "cutoffTime", "active"],
     example: ["Route A — North", "fixed", "MB-01", "07:00", "true"],
   },
+  drivers: {
+    // Drivers. Creates/updates a Driver-role account + personnel record. Matched
+    // by email. Dates are YYYY-MM-DD.
+    headers: ["email", "fullName", "phone", "licenceNumber", "licenceClasses", "licenceExpiry", "dbsExpiry", "medicalDue"],
+    example: ["driver@bus.test", "Sam Rivera", "+447700900010", "RIVER901234AB9CD", "D1, D", "2028-06-30", "2027-03-01", "2027-09-01"],
+  },
   calendar_events: {
     // Calendar & timetable entries. Dates are "YYYY-MM-DD HH:MM" (24h). Leave
     // className/yearGroup blank for whole-school. Matched by title + start time.

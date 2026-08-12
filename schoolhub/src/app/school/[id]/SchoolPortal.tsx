@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSort, SortTh } from "./EntityKit";
 import { StudentsTab, GuardiansTab, StaffTab, ImportTab } from "./PeopleTabs";
 import GuardianRelationshipsTab from "./GuardianRelationshipsTab";
 import IntegrationsTab from "./IntegrationsTab";
@@ -262,12 +263,16 @@ function UsersTab({ schoolId }: { schoolId: string }) {
   const [users, setUsers] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [form, setForm] = useState({ fullName: "", email: "", role: "Teacher", password: "" });
+  const [showAdd, setShowAdd] = useState(false);
   const [q, setQ] = useState("");
+  const [fRole, setFRole] = useState("");
+  const [fStatus, setFStatus] = useState("");
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editRole, setEditRole] = useState("");
   const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; danger?: boolean; run: () => void }>(null);
+  const sort = useSort("name");
 
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/users`).then((r) => r.json());
@@ -275,11 +280,15 @@ function UsersTab({ schoolId }: { schoolId: string }) {
   }, [schoolId]);
   useEffect(() => { load(); }, [load]);
 
-  const rows = users.filter((u) => {
+  const filtered = users.filter((u) => {
     const s = q.trim().toLowerCase();
-    if (!s) return true;
-    return [u.user.fullName, u.user.email, u.roleLabel, u.user.status].some((f) => String(f ?? "").toLowerCase().includes(s));
+    if (s && ![u.user.fullName, u.user.email, u.roleLabel, u.user.status].some((f) => String(f ?? "").toLowerCase().includes(s))) return false;
+    if (fRole && u.role !== fRole) return false;
+    if (fStatus && u.user.status !== fStatus) return false;
+    return true;
   });
+  const rows = sort.sort(filtered, (u, k) => k === "name" ? u.user.fullName : k === "email" ? u.user.email : k === "role" ? u.roleLabel : k === "status" ? u.user.status : k === "mfa" ? (u.user.mfaEnabled ? 1 : 0) : "");
+  const statuses = Array.from(new Set(users.map((u) => u.user.status).filter(Boolean)));
   const selIds = Object.keys(sel).filter((k) => sel[k]);
   const selRows = users.filter((u) => sel[u.membershipId]);
   const allOn = rows.length > 0 && rows.every((u) => sel[u.membershipId]);
@@ -296,6 +305,7 @@ function UsersTab({ schoolId }: { schoolId: string }) {
     if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Failed to add user" }); return; }
     setMsg({ kind: "ok", text: form.password ? "User created." : "User invited (verification link sent)." });
     setForm({ fullName: "", email: "", role: "Teacher", password: "" });
+    setShowAdd(false);
     load();
   }
   async function act(userId: string, action: string): Promise<boolean> {
@@ -334,7 +344,8 @@ function UsersTab({ schoolId }: { schoolId: string }) {
     setOpenMenu(null);
     setConfirm({ title: `Remove the ${u.roleLabel} role from ${u.user.fullName}?`, message: "This removes only this role at this school. If it's their only role they'll lose access here until re-invited, and they'll be signed out.", label: "Remove role", danger: true, run: () => { removeRole(u.membershipId); setConfirm(null); } });
   }
-  function duplicate(u: any) { setOpenMenu(null); setForm({ fullName: "", email: "", role: u.role, password: "" }); setMsg({ kind: "ok", text: `New user form pre-filled with the ${u.roleLabel} role — add their name and email.` }); if (typeof window !== "undefined") window.scrollTo({ top: 9e5, behavior: "smooth" }); }
+  function duplicate(u: any) { setOpenMenu(null); setForm({ fullName: "", email: "", role: u.role, password: "" }); setShowAdd(true); setMsg({ kind: "ok", text: `New user form pre-filled with the ${u.roleLabel} role — add their name and email.` }); }
+  function openAdd() { setForm({ fullName: "", email: "", role: "Teacher", password: "" }); setShowAdd(true); setMsg(null); }
   function askDeactivate(u: any) { setOpenMenu(null); setConfirm({ title: `Deactivate ${u.user.fullName}?`, message: "They will be signed out and blocked from signing in until reactivated.", label: "Deactivate", danger: true, run: () => { runAction(u.user.id, "disable", "User deactivated."); setConfirm(null); } }); }
   function askSuspend(u: any) { setOpenMenu(null); setConfirm({ title: `Suspend ${u.user.fullName}?`, message: "Access is blocked and live sessions end immediately. You can reactivate later.", label: "Suspend", danger: true, run: () => { runAction(u.user.id, "suspend", "User suspended."); setConfirm(null); } }); }
   function askRevoke(u: any) { setOpenMenu(null); setConfirm({ title: `Revoke access for ${u.user.fullName}?`, message: "This ends all their live sessions at this school immediately. They keep their account but lose access until re-invited.", label: "Revoke access", danger: true, run: () => { runAction(u.user.id, "revoke", "Access revoked."); setConfirm(null); } }); }
@@ -344,12 +355,18 @@ function UsersTab({ schoolId }: { schoolId: string }) {
     <>
       <ConfirmDialog open={!!confirm} title={confirm?.title || ""} message={confirm?.message || ""} confirmLabel={confirm?.label || "Confirm"} danger={confirm?.danger} onConfirm={() => confirm?.run()} onCancel={() => setConfirm(null)} />
       <div className="panel">
-        <h2>Users &amp; roles</h2>
-        <p className="sub">People with access to this school. Roles determine what they can see and do. Select rows for bulk actions, or use the ⋯ menu on a row.</p>
-        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
-          <input placeholder="Filter users…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
-          <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${users.length}` : `${users.length} user${users.length === 1 ? "" : "s"}`}</span>
+        <div className="flex-between" style={{ alignItems: "flex-start" }}>
+          <div><h2 style={{ margin: 0 }}>Users &amp; roles</h2>
+            <p className="sub" style={{ marginBottom: 0 }}>People with access to this school. Roles determine what they can see and do. Sort by any column, filter, select rows for bulk actions, or use the ⋯ menu on a row.</p></div>
+          <button onClick={openAdd}>Add user</button>
+        </div>
+        {msg && <div className={`notice ${msg.kind}`} style={{ marginTop: 10 }}>{msg.text}</div>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
+          <input placeholder="Search name, email…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+          <select value={fRole} onChange={(e) => setFRole(e.target.value)} style={{ width: "auto" }}><option value="">All roles</option>{ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}</select>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={{ width: "auto" }}><option value="">All statuses</option>{statuses.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+          {(q || fRole || fStatus) && <button className="secondary small" onClick={() => { setQ(""); setFRole(""); setFStatus(""); }}>Clear</button>}
+          <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{rows.length === users.length ? `${users.length} user${users.length === 1 ? "" : "s"}` : `${rows.length} of ${users.length}`}</span>
         </div>
         {selIds.length > 0 && (
           <div className="bulkbar">
@@ -364,7 +381,7 @@ function UsersTab({ schoolId }: { schoolId: string }) {
         <table>
           <thead><tr>
             <th className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={allOn} onChange={(e) => setSel(e.target.checked ? Object.fromEntries(rows.map((u) => [u.membershipId, true])) : {})} aria-label="Select all" /></th>
-            <th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>MFA</th><th className="right">Actions</th>
+            <SortTh k="name" label="Name" sort={sort} /><SortTh k="email" label="Email" sort={sort} /><SortTh k="role" label="Role" sort={sort} /><SortTh k="status" label="Status" sort={sort} /><SortTh k="mfa" label="MFA" sort={sort} /><th className="right">Actions</th>
           </tr></thead>
           <tbody>
             {rows.map((u) => (
@@ -411,26 +428,30 @@ function UsersTab({ schoolId }: { schoolId: string }) {
           </tbody>
         </table>
       </div>
-      <div className="panel">
-        <h2>Add a user</h2>
-        <p className="sub">Leave the password blank to send an email invite instead.</p>
-        <form onSubmit={add}>
-          <div className="row">
-            <div><label>Full name</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></div>
-            <div><label>Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal" style={{ maxWidth: 560, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Add a user</h2><button className="secondary small" onClick={() => setShowAdd(false)}>Close</button></div>
+            <p className="sub">Leave the password blank to send an email invite instead.</p>
+            <form onSubmit={add}>
+              <div className="row">
+                <div><label>Full name</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></div>
+                <div><label>Email</label><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></div>
+              </div>
+              <div className="row">
+                <div>
+                  <label>Role</label>
+                  <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                    {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}
+                  </select>
+                </div>
+                <div><label>Temporary password (optional)</label><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+              </div>
+              <button type="submit" style={{ marginTop: 16 }}>Add user</button>
+            </form>
           </div>
-          <div className="row">
-            <div>
-              <label>Role</label>
-              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}
-              </select>
-            </div>
-            <div><label>Temporary password (optional)</label><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
-          </div>
-          <button type="submit" style={{ marginTop: 16 }}>Add user</button>
-        </form>
-      </div>
+        </div>
+      )}
     </>
   );
 }

@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { Control, Routes, Profiles, Fees, Requests, Enquiries } from "../school/[id]/TransportTab";
-import { TMDashboard, TMFleet, TMDrivers, TMIncidents, TMMessages } from "./TransportPages";
+import ModuleImportCard from "../school/[id]/ModuleImportCard";
+import { TMDashboard, TMFleet, TMDrivers, TMIncidents, TMMessages, TMTravelLogs } from "./TransportPages";
 
 const TITLES: Record<string, string> = {
   dashboard: "Transport dashboard", control: "Control centre", incidents: "Incidents", messages: "Driver messages",
   routes: "Routes & stops", fleet: "Fleet", drivers: "Drivers", profiles: "Student transport",
-  requests: "Parent requests", enquiries: "Enquiries", fees: "Fees & cost",
+  requests: "Parent requests", enquiries: "Enquiries", fees: "Fees & cost", travellogs: "Travel logs",
 };
 
 export default function TransportShell({ email = "" }: { email?: string }) {
@@ -38,6 +39,7 @@ export default function TransportShell({ email = "" }: { email?: string }) {
     { label: "Operations", items: [
       { key: "dashboard", label: "Dashboard", icon: "📊" },
       { key: "control", label: "Control centre", icon: "🛰️" },
+      { key: "travellogs", label: "Travel logs", icon: "📈" },
       { key: "incidents", label: "Incidents", icon: "⚠️", badge: openIncidents },
       { key: "messages", label: "Driver messages", icon: "✉️", badge: unreadMsgs },
     ] },
@@ -59,9 +61,10 @@ export default function TransportShell({ email = "" }: { email?: string }) {
     switch (active) {
       case "dashboard": return <TMDashboard schoolId={schoolId} onNavigate={nav} />;
       case "control": return <Control schoolId={schoolId} />;
+      case "travellogs": return <TMTravelLogs schoolId={schoolId} />;
       case "incidents": return <TMIncidents schoolId={schoolId} />;
       case "messages": return <TMMessages schoolId={schoolId} />;
-      case "routes": return <Routes schoolId={schoolId} />;
+      case "routes": return <><Routes schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="routes" title="Import routes" hint="Bulk-add routes from a CSV (optionally link a vehicle by its reference — import vehicles first). Or use the Integration Hub for AI-assisted mapping." /></>;
       case "fleet": return <TMFleet schoolId={schoolId} />;
       case "drivers": return <TMDrivers schoolId={schoolId} />;
       case "profiles": return <Profiles schoolId={schoolId} />;

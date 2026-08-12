@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSel, Kebab } from "../school/[id]/EntityKit";
+import ModuleImportCard from "../school/[id]/ModuleImportCard";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
 function dueState(dateStr?: string | null) {
@@ -97,30 +99,37 @@ export function TMFleet({ schoolId }: { schoolId: string }) {
   const [f, setF] = useState({ reference: "", label: "", capacity: 16, type: "minibus" });
   const [edit, setEdit] = useState<any | null>(null);
   const [msg, setMsg] = useState("");
-  const load = useCallback(async () => setRows((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []), [schoolId]);
+  const sel = useSel();
+  const load = useCallback(async () => { setRows((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []); sel.clear(); }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   async function add(e: React.FormEvent) { e.preventDefault(); await fetch(`/api/schools/${schoolId}/vehicles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, capacity: Number(f.capacity) }) }); setF({ reference: "", label: "", capacity: 16, type: "minibus" }); load(); }
   async function saveEdit() {
     const res = await fetch(`/api/schools/${schoolId}/vehicles/${edit.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
     const d = await res.json(); if (d.error) { setMsg(d.error); return; } setEdit(null); load();
   }
+  async function setActive(id: string, active: boolean) { await fetch(`/api/schools/${schoolId}/vehicles/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active }) }); load(); }
+  async function bulkDeactivate() { for (const id of sel.ids) await fetch(`/api/schools/${schoolId}/vehicles/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: false }) }); load(); }
+  const openEdit = (v: any) => setEdit({ id: v.id, reference: v.reference, label: v.label || "", capacity: v.capacity, type: v.type, motDue: v.motDue || "", insuranceDue: v.insuranceDue || "", serviceDue: v.serviceDue || "", taxDue: v.taxDue || "", notes: v.notes || "", active: v.active });
+  const allOn = rows.length > 0 && rows.every((v) => sel.on(v.id));
   return (
     <>
       <div className="panel">
         <h2 style={{ margin: 0 }}>Fleet</h2>
-        <p className="sub">Your vehicles and their compliance reminders. MOT / insurance / service / tax dates are flagged as they approach or fall overdue.</p>
+        <p className="sub">Your vehicles and their compliance reminders. MOT / insurance / service / tax dates are flagged as they approach or fall overdue. Use the ⋯ menu to edit or retire a vehicle.</p>
         {msg && <div className="notice err">{msg}</div>}
+        {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={() => { if (confirm(`Retire ${sel.ids.length} vehicle(s)?`)) bulkDeactivate(); }}>Retire (set inactive)</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
         <table>
-          <thead><tr><th>Reg / ref</th><th>Label</th><th>Type</th><th>Cap.</th><th>MOT</th><th>Insurance</th><th>Service</th><th>Tax</th><th className="right"></th></tr></thead>
+          <thead><tr><th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((v) => v.id), e.target.checked)} aria-label="Select all" /></th><th>Reg / ref</th><th>Label</th><th>Type</th><th>Cap.</th><th>MOT</th><th>Insurance</th><th>Service</th><th>Tax</th><th className="right">Actions</th></tr></thead>
           <tbody>
             {rows.map((v) => (
               <tr key={v.id} style={{ opacity: v.active === false ? 0.5 : 1 }}>
-                <td className="mono">{v.reference}</td><td>{v.label || "—"}</td><td>{v.type}</td><td>{v.capacity}</td>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(v.id)} onChange={() => sel.toggle(v.id)} aria-label={`Select ${v.reference}`} /></td>
+                <td className="mono">{v.reference}{v.active === false && <span className="badge archived" style={{ marginLeft: 6 }}>retired</span>}</td><td>{v.label || "—"}</td><td>{v.type}</td><td>{v.capacity}</td>
                 <td><DueCell date={v.motDue} /></td><td><DueCell date={v.insuranceDue} /></td><td><DueCell date={v.serviceDue} /></td><td><DueCell date={v.taxDue} /></td>
-                <td className="right"><button className="secondary small" onClick={() => setEdit({ id: v.id, reference: v.reference, label: v.label || "", capacity: v.capacity, type: v.type, motDue: v.motDue || "", insuranceDue: v.insuranceDue || "", serviceDue: v.serviceDue || "", taxDue: v.taxDue || "", notes: v.notes || "", active: v.active })}>Edit</button></td>
+                <td className="right"><Kebab items={[{ label: "Edit vehicle", onClick: () => openEdit(v) }, v.active === false ? { label: "Return to service", onClick: () => setActive(v.id, true) } : { label: "Retire (set inactive)", danger: true, onClick: () => setActive(v.id, false) }]} /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={9} className="muted">No vehicles yet.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={10} className="muted">No vehicles yet.</td></tr>}
           </tbody>
         </table>
         <form onSubmit={add} style={{ marginTop: 12 }}><div className="row">
@@ -131,6 +140,8 @@ export function TMFleet({ schoolId }: { schoolId: string }) {
           <div style={{ display: "flex", alignItems: "flex-end" }}><button>Add vehicle</button></div>
         </div></form>
       </div>
+
+      <ModuleImportCard schoolId={schoolId} type="vehicles" title="Import vehicles" hint="Bulk-add your fleet from a CSV — matched and updated by registration / fleet number. Or use the Integration Hub for an AI-assisted mapping from your fleet system." />
 
       {edit && (
         <div className="modal-overlay" onClick={() => setEdit(null)}>
@@ -166,11 +177,16 @@ export function TMDrivers({ schoolId }: { schoolId: string }) {
   const [edit, setEdit] = useState<any | null>(null);
   const [assign, setAssign] = useState<any | null>(null);
   const [msg, setMsg] = useState("");
+  const sel = useSel();
   const load = useCallback(async () => {
     const d = await fetch(`/api/schools/${schoolId}/transport/drivers`).then((r) => r.json());
-    setDrivers(d.drivers ?? []); setRoutes(d.routes ?? []);
-  }, [schoolId]);
+    setDrivers(d.drivers ?? []); setRoutes(d.routes ?? []); sel.clear();
+  }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
+
+  const driverPayload = (d: any, status: string) => { const p = d.profile || {}; return { userId: d.id, phone: d.phone || "", licenceNumber: p.licenceNumber || "", licenceClasses: p.licenceClasses || "", licenceExpiry: p.licenceExpiry || "", dbsExpiry: p.dbsExpiry || "", medicalDue: p.medicalDue || "", notes: p.notes || "", status }; };
+  async function setDriverStatus(d: any, status: string) { await fetch(`/api/schools/${schoolId}/transport/drivers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(driverPayload(d, status)) }); load(); }
+  async function bulkStatus(status: string) { for (const id of sel.ids) { const d = drivers.find((x) => x.id === id); if (d) await fetch(`/api/schools/${schoolId}/transport/drivers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(driverPayload(d, status)) }); } load(); }
 
   async function saveProfile() {
     const res = await fetch(`/api/schools/${schoolId}/transport/drivers`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(edit) });
@@ -197,30 +213,35 @@ export function TMDrivers({ schoolId }: { schoolId: string }) {
     <>
       <div className="panel">
         <h2 style={{ margin: 0 }}>Drivers</h2>
-        <p className="sub">Your driving team, their licence / DBS / medical compliance, and route assignments.</p>
+        <p className="sub">Your driving team, their licence / DBS / medical compliance, and route assignments. Use the ⋯ menu to edit a profile, assign a route, or set a driver inactive.</p>
         {msg && <div className="notice err">{msg}</div>}
+        {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="secondary small" onClick={() => bulkStatus("active")}>Set active</button><button className="danger small" onClick={() => bulkStatus("inactive")}>Set inactive</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
         <table>
-          <thead><tr><th>Driver</th><th>Licence</th><th>DBS</th><th>Medical</th><th>Routes</th><th className="right"></th></tr></thead>
+          <thead><tr><th className="checkbox-cell"><input type="checkbox" checked={drivers.length > 0 && drivers.every((d) => sel.on(d.id))} onChange={(e) => sel.setMany(drivers.map((d) => d.id), e.target.checked)} aria-label="Select all" /></th><th>Driver</th><th>Licence</th><th>DBS</th><th>Medical</th><th>Routes</th><th className="right">Actions</th></tr></thead>
           <tbody>
             {drivers.map((d) => (
-              <tr key={d.id}>
-                <td><strong>{d.fullName}</strong><div className="mono muted" style={{ fontSize: 11 }}>{d.email}{d.phone ? ` · ${d.phone}` : ""}</div></td>
+              <tr key={d.id} style={{ opacity: d.profile?.status === "inactive" ? 0.55 : 1 }}>
+                <td className="checkbox-cell"><input type="checkbox" checked={sel.on(d.id)} onChange={() => sel.toggle(d.id)} aria-label={`Select ${d.fullName}`} /></td>
+                <td><strong>{d.fullName}</strong>{d.profile?.status === "inactive" && <span className="badge archived" style={{ marginLeft: 6 }}>inactive</span>}<div className="mono muted" style={{ fontSize: 11 }}>{d.email}{d.phone ? ` · ${d.phone}` : ""}</div></td>
                 <td>{d.profile?.licenceExpiry ? <DueCell date={d.profile.licenceExpiry} /> : <span className="muted">—</span>}{d.profile?.licenceClasses ? <div className="muted" style={{ fontSize: 11 }}>{d.profile.licenceClasses}</div> : null}</td>
                 <td><DueCell date={d.profile?.dbsExpiry} /></td>
                 <td><DueCell date={d.profile?.medicalDue} /></td>
                 <td>{d.assignments.length === 0 ? <span className="muted">—</span> : d.assignments.map((a: any) => (
                   <div key={a.id} style={{ fontSize: 12 }}>{a.routeName} <span className="muted">({a.role}/{a.session})</span> <button className="linklike" style={{ fontSize: 11, color: "var(--danger)" }} onClick={() => unassign(d.id, a.routeId)}>remove</button></div>
                 ))}</td>
-                <td className="right nowrap">
-                  <button className="secondary small" onClick={() => setEdit({ userId: d.id, name: d.fullName, phone: d.phone || "", licenceNumber: d.profile?.licenceNumber || "", licenceClasses: d.profile?.licenceClasses || "", licenceExpiry: d.profile?.licenceExpiry || "", dbsExpiry: d.profile?.dbsExpiry || "", medicalDue: d.profile?.medicalDue || "", status: d.profile?.status || "active", notes: d.profile?.notes || "" })}>Profile</button>{" "}
-                  <button className="small" disabled={routes.length === 0} onClick={() => setAssign({ driverUserId: d.id, name: d.fullName, routeId: routes[0]?.id || "", role: "primary", session: "all" })}>Assign</button>
-                </td>
+                <td className="right"><Kebab items={[
+                  { label: "Edit profile", onClick: () => setEdit({ userId: d.id, name: d.fullName, phone: d.phone || "", licenceNumber: d.profile?.licenceNumber || "", licenceClasses: d.profile?.licenceClasses || "", licenceExpiry: d.profile?.licenceExpiry || "", dbsExpiry: d.profile?.dbsExpiry || "", medicalDue: d.profile?.medicalDue || "", status: d.profile?.status || "active", notes: d.profile?.notes || "" }) },
+                  routes.length > 0 && { label: "Assign to route", onClick: () => setAssign({ driverUserId: d.id, name: d.fullName, routeId: routes[0]?.id || "", role: "primary", session: "all" }) },
+                  d.profile?.status === "inactive" ? { label: "Set active", onClick: () => setDriverStatus(d, "active") } : { label: "Set inactive", danger: true, onClick: () => setDriverStatus(d, "inactive") },
+                ]} /></td>
               </tr>
             ))}
-            {drivers.length === 0 && <tr><td colSpan={6} className="muted">No drivers yet. Add users with the Driver role in the School portal (People → Users).</td></tr>}
+            {drivers.length === 0 && <tr><td colSpan={7} className="muted">No drivers yet. Add drivers below (import), or add a user with the Driver role in the School portal.</td></tr>}
           </tbody>
         </table>
       </div>
+
+      <ModuleImportCard schoolId={schoolId} type="drivers" title="Import drivers" hint="Bulk-add drivers from a CSV (email, name, phone, licence, DBS, medical dates). Creates a Driver-role account + personnel record, matched by email." />
 
       {edit && (
         <div className="modal-overlay" onClick={() => setEdit(null)}>
@@ -378,5 +399,71 @@ export function TMMessages({ schoolId }: { schoolId: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------ Travel Logs ------------------------------ */
+export function TMTravelLogs({ schoolId }: { schoolId: string }) {
+  const [data, setData] = useState<any>(null);
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+  const [from, setFrom] = useState(() => { const d = new Date(Date.now() - 30 * 86400000); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; });
+  const [to, setTo] = useState(today);
+  const [route, setRoute] = useState("");
+  const [driver, setDriver] = useState("");
+  const load = useCallback(async () => {
+    const qs = new URLSearchParams({ from, to }); if (route) qs.set("route", route); if (driver) qs.set("driver", driver);
+    setData(await fetch(`/api/schools/${schoolId}/transport/travel-logs?${qs}`).then((r) => r.json()));
+  }, [schoolId, from, to, route, driver]);
+  useEffect(() => { load(); }, [load]);
+
+  function exportCsv() {
+    const rows: any[] = data?.rows ?? [];
+    const head = ["date", "session", "route", "vehicle", "driver", "status", "boarded", "absent", "total", "delayMinutes", "durationMin"];
+    const csv = [head.join(","), ...rows.map((r) => head.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    a.href = url; a.download = `travel-logs-${from}_to_${to}.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  const s = data?.stats || {};
+  const rows: any[] = data?.rows ?? [];
+  return (
+    <>
+      <div className="panel">
+        <div className="flex-between"><div><h2 style={{ margin: 0 }}>Travel logs</h2><p className="sub" style={{ marginBottom: 0 }}>Journey records for analysis. Filter by date range, route or driver.</p></div>
+          <button className="secondary" onClick={exportCsv} disabled={rows.length === 0}>Export CSV</button></div>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <div><label>From</label><input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: "auto" }} /></div>
+          <div><label>To</label><input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: "auto" }} /></div>
+          <div><label>Route</label><select value={route} onChange={(e) => setRoute(e.target.value)} style={{ width: "auto" }}><option value="">All routes</option>{(data?.routes ?? []).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+          <div><label>Driver</label><select value={driver} onChange={(e) => setDriver(e.target.value)} style={{ width: "auto" }}><option value="">All drivers</option>{(data?.drivers ?? []).map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
+        </div>
+        <div className="stat-grid" style={{ marginTop: 12 }}>
+          <div className="stat"><div className="n">{s.journeys ?? 0}</div><div className="l">Journeys</div></div>
+          <div className="stat"><div className="n" style={{ color: "#16a34a" }}>{s.completed ?? 0}</div><div className="l">Completed</div></div>
+          <div className="stat"><div className="n">{s.totalBoardings ?? 0}</div><div className="l">Pupil boardings</div></div>
+          <div className="stat"><div className="n" style={{ color: s.totalAbsences ? "#dc2626" : undefined }}>{s.totalAbsences ?? 0}</div><div className="l">Absences</div></div>
+          <div className="stat"><div className="n" style={{ color: s.delayedJourneys ? "#dc2626" : undefined }}>{s.delayedJourneys ?? 0}</div><div className="l">Delayed</div></div>
+          <div className="stat"><div className="n">{s.avgDurationMin != null ? `${s.avgDurationMin}m` : "—"}</div><div className="l">Avg duration</div></div>
+        </div>
+      </div>
+      <div className="panel">
+        {!data ? <p className="muted">Loading…</p> : (
+          <table>
+            <thead><tr><th>Date</th><th>Session</th><th>Route</th><th>Vehicle</th><th>Driver</th><th>Status</th><th>Boarded</th><th>Absent</th><th>Delay</th><th>Duration</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="mono muted">{r.date}</td><td>{r.session.toUpperCase()}</td><td>{r.route}</td><td>{r.vehicle || "—"}</td><td>{r.driver || "—"}</td>
+                  <td><span className={`badge ${r.status === "completed" ? "active" : r.status === "cancelled" ? "suspended" : "trial"}`}>{r.status}</span></td>
+                  <td>{r.boarded}/{r.total}</td><td>{r.absent}</td><td>{r.delayMinutes ? `+${r.delayMinutes}m` : "—"}</td><td>{r.durationMin != null ? `${r.durationMin}m` : "—"}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={10} className="muted">No journeys in this range.</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
   );
 }

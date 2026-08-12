@@ -18,6 +18,7 @@ export async function PATCH(req: Request, { params }: Params) {
     const input = routeUpdateSchema.parse(await req.json());
     const data: Record<string, unknown> = {};
     if (input.name !== undefined) data.name = input.name;
+    if ((input as any).type !== undefined) data.type = (input as any).type;
     if (input.vehicleId !== undefined) data.vehicleId = input.vehicleId || null;
     if (input.driverUserId !== undefined) data.driverUserId = input.driverUserId || null;
     if (input.cutoffTime !== undefined) data.cutoffTime = input.cutoffTime;
