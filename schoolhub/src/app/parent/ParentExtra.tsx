@@ -2,23 +2,99 @@
 
 import { useEffect, useState, useCallback } from "react";
 
-export function ParentNotifications() {
+// ---- Notifications Centre: badge, type filters, detail view, deep-links ----
+const NOTIF_CATS: { key: string; label: string; icon: string; page: string | null; test: (kind: string) => boolean }[] = [
+  { key: "transport", label: "Transport", icon: "🚌", page: "transport", test: (k) => /transport|bus|journey|pickup|collect|drop/.test(k) },
+  { key: "trips", label: "Trips", icon: "🧳", page: "trips", test: (k) => /trip|excursion|residential|visit/.test(k) },
+  { key: "reports", label: "Reports", icon: "📄", page: "reports", test: (k) => /report/.test(k) },
+  { key: "behaviour", label: "Behaviour", icon: "⭐", page: "rewards", test: (k) => /reward|behaviou?r|point|merit|conduct|detention|consequence|achievement/.test(k) },
+  { key: "homework", label: "Homework", icon: "📚", page: "children", test: (k) => /homework|assignment|task/.test(k) },
+  { key: "policies", label: "Policies", icon: "📋", page: "profile", test: (k) => /policy|consent|acknowledge/.test(k) },
+  { key: "events", label: "Events", icon: "📅", page: "calendar", test: (k) => /event|calendar|assembly|parents.?evening|photo|sports/.test(k) },
+  { key: "messages", label: "Messages", icon: "✉️", page: "messaging", test: (k) => /message|announce|newsletter|comm|broadcast/.test(k) },
+];
+function notifCat(n: any) {
+  const k = String(n.kind || "").toLowerCase();
+  if (n.journeyId) return NOTIF_CATS[0];
+  if (n.tripId) return NOTIF_CATS[1];
+  for (const c of NOTIF_CATS) if (c.test(k)) return c;
+  return { key: "other", label: "Other", icon: "🔔", page: null as string | null, test: () => false };
+}
+
+export function ParentNotifications({ onNavigate }: { onNavigate?: (k: string) => void }) {
   const [items, setItems] = useState<any[]>([]);
   const [unread, setUnread] = useState(0);
-  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [detail, setDetail] = useState<any | null>(null);
   const load = useCallback(async () => { const d = await fetch(`/api/parent/notifications`).then((r) => r.json()); setItems(d.notifications ?? []); setUnread(d.unread ?? 0); }, []);
   useEffect(() => { load(); }, [load]);
-  async function markRead() { await fetch(`/api/parent/notifications`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }); load(); }
+
+  async function mark(ids?: string[]) {
+    await fetch(`/api/parent/notifications`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { ids } : {}) });
+    load();
+  }
+  function openDetail(n: any) { setDetail(n); if (!n.read) mark([n.id]); }
+  function goTo(n: any) { const c = notifCat(n); if (!n.read) mark([n.id]); setDetail(null); if (c.page && onNavigate) onNavigate(c.page); }
+
+  // Which category chips to show — only those present, plus counts.
+  const counts: Record<string, number> = {};
+  for (const n of items) { const c = notifCat(n); counts[c.key] = (counts[c.key] || 0) + 1; }
+  const presentCats = NOTIF_CATS.filter((c) => counts[c.key]).concat(counts["other"] ? [{ key: "other", label: "Other", icon: "🔔", page: null, test: () => false }] : []);
+
+  const shown = items.filter((n) => filter === "all" || (filter === "unread" ? !n.read : notifCat(n).key === filter));
+
   return (
-    <div className="panel">
-      <div className="flex-between"><h2>Notifications {unread > 0 && <span className="badge suspended">{unread}</span>}</h2>
-        <div><button className="secondary small" onClick={() => setOpen((v) => !v)}>{open ? "Hide" : "Show"}</button> {unread > 0 && <button className="secondary small" onClick={markRead}>Mark all read</button>}</div></div>
-      {open && (items.length ? items.map((n) => (
-        <div key={n.id} style={{ borderTop: "1px solid var(--line)", padding: "8px 0", opacity: n.read ? 0.6 : 1 }}>
-          <strong>{n.title}</strong>{n.body ? ` — ${n.body}` : ""}<div className="mono muted" style={{ fontSize: 11 }}>{new Date(n.createdAt).toLocaleString()}</div>
+    <>
+      <div className="panel">
+        <div className="flex-between" style={{ alignItems: "center" }}>
+          <div><h2 style={{ margin: 0 }}>Notifications {unread > 0 && <span className="badge" style={{ background: "#dc2626", color: "#fff", marginLeft: 4 }}>{unread}</span>}</h2>
+            <p className="sub" style={{ marginBottom: 0, marginTop: 4 }}>Everything the school has sent you. Tap an item to read it and jump to the related page.</p></div>
+          {unread > 0 && <button className="secondary small" onClick={() => mark()}>Mark all read</button>}
         </div>
-      )) : <p className="muted">No notifications.</p>)}
-    </div>
+        <div className="chips" style={{ marginTop: 12 }}>
+          <button className={filter === "all" ? "" : "secondary"} onClick={() => setFilter("all")}>All ({items.length})</button>
+          <button className={filter === "unread" ? "" : "secondary"} onClick={() => setFilter("unread")}>Unread ({unread})</button>
+          {presentCats.map((c) => (
+            <button key={c.key} className={filter === c.key ? "" : "secondary"} onClick={() => setFilter(c.key)}>{c.icon} {c.label} ({counts[c.key]})</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        {shown.length === 0 ? <p className="muted">No notifications{filter !== "all" ? " in this view" : ""}.</p> : shown.map((n) => {
+          const c = notifCat(n);
+          return (
+            <div key={n.id} className="flex-between" style={{ borderTop: "1px solid var(--line)", padding: "10px 0", gap: 12, cursor: "pointer" }} onClick={() => openDetail(n)}>
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", minWidth: 0 }}>
+                <span style={{ fontSize: 18, lineHeight: "20px" }}>{c.icon}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: n.read ? 500 : 700 }}>{n.title}{!n.read && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: "#dc2626", marginLeft: 8, verticalAlign: "middle" }} />}</div>
+                  {n.body && <div className="muted" style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 520 }}>{n.body}</div>}
+                  <div className="mono muted" style={{ fontSize: 11 }}>{c.label} · {new Date(n.createdAt).toLocaleString()}</div>
+                </div>
+              </div>
+              <button className="secondary small" onClick={(e) => { e.stopPropagation(); openDetail(n); }}>View</button>
+            </div>
+          );
+        })}
+      </div>
+
+      {detail && (
+        <div className="modal-overlay" onClick={() => setDetail(null)}>
+          <div className="modal" style={{ maxWidth: 520, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}>
+              <h2 style={{ margin: 0 }}>{notifCat(detail).icon} {detail.title}</h2>
+              <button className="secondary small" onClick={() => setDetail(null)}>Close</button>
+            </div>
+            <div className="mono muted" style={{ fontSize: 12, marginTop: 6 }}>{notifCat(detail).label} · {new Date(detail.createdAt).toLocaleString()}</div>
+            {detail.body && <p style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{detail.body}</p>}
+            {notifCat(detail).page && (
+              <button style={{ marginTop: 8 }} onClick={() => goTo(detail)}>Go to {notifCat(detail).label} →</button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -6,7 +6,9 @@ import ParentOverview from "./ParentOverview";
 import ParentCalendar from "./ParentCalendar";
 import ParentTimetable from "./ParentTimetable";
 import ParentChildren from "./ParentChildren";
-import { ParentNotifications, ParentTransport, ParentTrips, ParentRewards, ParentPreferences, ParentReports, ParentMessaging, ParentProfile } from "./ParentExtra";
+import ParentMenu from "./ParentMenu";
+import ParentReportsCentre from "./ParentReportsCentre";
+import { ParentNotifications, ParentTransport, ParentTrips, ParentRewards, ParentPreferences, ParentMessaging, ParentProfile } from "./ParentExtra";
 
 const PARENT_EXAMPLES = [
   "What does my child need tomorrow?", "When is Sports Day?", "What is the uniform policy?",
@@ -29,7 +31,7 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
   const schools = Array.from(new Map(children.map((c: any) => [c.schoolId, c.schoolName])).entries()).map(([id, name]) => ({ id: id as string, name: name as string }));
 
   // Pages that need the child/school list wait for it to load; the rest render immediately.
-  const needsChildren = ["children", "calendar", "timetable", "transport"].includes(active);
+  const needsChildren = ["children", "calendar", "timetable", "transport", "reports"].includes(active);
   if (needsChildren && !ready) return <div className="panel">Loading…</div>;
 
   switch (active) {
@@ -47,11 +49,12 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
     case "children": return <ParentChildren children={kids} />;
     case "calendar": return <ParentCalendar children={kids} schools={schools} />;
     case "timetable": return <ParentTimetable children={kids} />;
-    case "notifications": return <ParentNotifications />;
+    case "notifications": return <ParentNotifications onNavigate={onNavigate} />;
+    case "menu": return <ParentMenu />;
     case "transport": return <ParentTransport children={kids} />;
     case "trips": return <ParentTrips />;
     case "rewards": return <ParentRewards />;
-    case "reports": return <ParentReports />;
+    case "reports": return <ParentReportsCentre children={kids} schools={schools} />;
     case "messaging": return <ParentMessaging />;
     case "profile": return <ParentProfile />;
     case "preferences": return <ParentPreferences />;

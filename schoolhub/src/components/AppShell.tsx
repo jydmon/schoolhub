@@ -4,7 +4,7 @@ import { SiplatMark } from "./TopBar";
 import LogoutButton from "./LogoutButton";
 import Onboarding from "./Onboarding";
 
-export type NavItem = { key: string; label: string; icon: string };
+export type NavItem = { key: string; label: string; icon: string; badge?: number };
 export type NavGroup = { label: string; items: NavItem[] };
 
 export default function AppShell({
@@ -30,6 +30,7 @@ export default function AppShell({
             {g.items.map((it) => (
               <button key={it.key} className={`nav-item ${active === it.key ? "active" : ""}`} onClick={() => onNavigate(it.key)}>
                 <span className="ic">{it.icon}</span> <span>{it.label}</span>
+                {it.badge && it.badge > 0 ? <span className="nav-badge">{it.badge > 99 ? "99+" : it.badge}</span> : null}
               </button>
             ))}
           </div>
