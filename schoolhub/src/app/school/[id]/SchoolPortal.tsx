@@ -16,6 +16,7 @@ import AttendanceTab from "./AttendanceTab";
 import NotificationsTab from "./NotificationsTab";
 import HistoryTab from "./HistoryTab";
 import ReportsTab from "./ReportsTab";
+import AdminReportsTab from "./AdminReportsTab";
 import OpsTab from "./OpsTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -51,6 +52,7 @@ const SCHOOL_NAV: NavGroup[] = [
   ] },
   { label: "Settings", items: [
     { key: "config", label: "School configuration", icon: "⚙️" },
+    { key: "insights", label: "Reports & search", icon: "📈" },
     { key: "audit", label: "History", icon: "🗂️" },
     { key: "notifications", label: "Notifications", icon: "🔔" },
     { key: "profile", label: "My profile", icon: "🙂" },
@@ -62,7 +64,7 @@ const SCHOOL_TITLES: Record<string, string> = {
   calendar: "Calendar", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
-  config: "School configuration", audit: "History", notifications: "Notifications", profile: "My profile", security: "My security",
+  config: "School configuration", insights: "Reports & search", audit: "History", notifications: "Notifications", profile: "My profile", security: "My security",
 };
 
 const ALL_MODULES = ["dashboard", "calendar", "transport", "trips", "comms", "ai"];
@@ -88,7 +90,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
   const canManage = roles.includes("SchoolAdministrator");
   // Remember this as the user's current school so future logins land here.
   useEffect(() => { try { document.cookie = `siplat_last_school=${schoolId}; path=/; max-age=${60 * 60 * 24 * 180}; SameSite=Lax`; } catch { /* ignore */ } }, [schoolId]);
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security";
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "assistant" | "import" | "integrations" | "hub" | "config" | "users" | "audit" | "notifications" | "profile" | "security" | "insights";
   const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
 
   const manageTabs: [Tab, string][] = [
@@ -111,6 +113,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
     ["hub", "Integration Hub"],
     ["config", "Configuration"],
     ["users", "Users & roles"],
+    ["insights", "Reports & search"],
     ["audit", "History"],
     ["notifications", "Notifications"],
     ["profile", "My profile"],
@@ -141,6 +144,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
       {tab === "hub" && canManage && <IntegrationHubTab schoolId={schoolId} />}
       {tab === "config" && canManage && <ConfigTab schoolId={schoolId} initial={initial.school} />}
       {tab === "users" && canManage && <UsersTab schoolId={schoolId} />}
+      {tab === "insights" && canManage && <AdminReportsTab schoolId={schoolId} onNavigate={(t) => setTab(t as Tab)} />}
       {tab === "audit" && canManage && <HistoryTab schoolId={schoolId} />}
       {tab === "notifications" && <NotificationsTab />}
       {tab === "profile" && <ProfileTab email={email} />}

@@ -200,6 +200,41 @@ export async function buildReport(schoolId: string, type: string): Promise<Repor
     };
   }
 
+  if (type === "students") {
+    const students = await prisma.student.findMany({ where: { schoolId }, select: { yearGroup: true, status: true } });
+    const byStatus = (st: string) => students.filter((s) => s.status === st).length;
+    const years = new Map<string, number>();
+    students.forEach((s) => { const y = s.yearGroup || "Unspecified"; years.set(y, (years.get(y) || 0) + 1); });
+    return {
+      type, title: "Pupil roll report", generatedAt,
+      metrics: [
+        { label: "Total pupils", value: students.length },
+        { label: "Enrolled", value: byStatus("enrolled") },
+        { label: "Applicants", value: byStatus("applicant") },
+        { label: "Leavers", value: byStatus("leaver") },
+        { label: "Archived", value: byStatus("archived") },
+      ],
+      table: { headers: ["Year group", "Pupils"], rows: Array.from(years.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0]))).map(([y, n]) => [y, n]) },
+    };
+  }
+
+  if (type === "attendance") {
+    const recs = await prisma.attendanceRecord.findMany({ where: { schoolId, date: { gte: since } }, select: { status: true } });
+    const c = (st: string) => recs.filter((r) => r.status === st).length;
+    const present = c("present"), late = c("late"), total = recs.length, attended = present + late;
+    return {
+      type, title: "Attendance report (last 30 days)", generatedAt,
+      metrics: [
+        { label: "Sessions recorded", value: total },
+        { label: "Attendance rate", value: total ? `${Math.round((attended / total) * 100)}%` : "—" },
+        { label: "Present", value: present },
+        { label: "Late", value: late },
+        { label: "Unauthorised absence", value: c("unauthorised") },
+      ],
+      table: { headers: ["Status", "Count"], rows: ["present", "late", "authorised", "unauthorised", "excused", "absent"].map((st) => [st, c(st)]) },
+    };
+  }
+
   // overview (default)
   const dash = await opsDashboard(schoolId);
   const rewards = await prisma.rewardRecord.count({ where: { schoolId, at: { gte: new Date(Date.now() - 30 * 864e5) } } });

@@ -9,7 +9,7 @@ const TILE_LABELS: [string, string][] = [
   ["residentialTrips", "Residential trips"], ["eventsToday", "Events today"], ["outstandingConsent", "Outstanding consent"],
   ["messagesAttention", "Messages needing attention"], ["integrationFailures", "Integration failures"], ["transportIncidents", "Transport incidents"],
 ];
-const REPORTS = ["overview", "transport", "trips", "engagement", "ai", "integrations"];
+const REPORTS = ["overview", "students", "attendance", "transport", "trips", "engagement", "ai", "integrations"];
 
 export default function OpsTab({ schoolId, subscription }: { schoolId: string; subscription?: any }) {
   const [sub, setSub] = useState<"dashboard" | "reports" | "compliance">("dashboard");
