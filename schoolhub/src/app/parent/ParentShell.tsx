@@ -6,7 +6,7 @@ import ParentPages from "./ParentPages";
 
 const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", overview: "Family dashboard", children: "My children",
-  calendar: "Calendar", timetable: "Timetable", notifications: "Notifications", menu: "Menu", clubs: "Clubs & activities",
+  calendar: "Calendar", timetable: "Timetable", notifications: "Notifications", menu: "Menu", clubs: "Clubs & activities", search: "Search",
   transport: "Transport", trips: "Trips", rewards: "Rewards", reports: "Report Centre",
   dm: "Messages", messaging: "Contact preferences", profile: "My profile", compliance: "Terms & compliance", trust: "Trust & policies", preferences: "My preferences", subscription: "My subscription", help: "Help & support",
 };
@@ -42,6 +42,7 @@ export default function ParentShell({ email = "" }: { email?: string }) {
     ] },
     { label: "Family", items: [
       { key: "overview", label: "Overview", icon: "🏠" },
+      { key: "search", label: "Search", icon: "🔍" },
       { key: "children", label: "My children", icon: "👧" },
       { key: "calendar", label: "Calendar", icon: "📅" },
     ] },

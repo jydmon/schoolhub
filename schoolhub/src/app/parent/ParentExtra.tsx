@@ -11,7 +11,13 @@ const NOTIF_CATS: { key: string; label: string; icon: string; page: string | nul
   { key: "homework", label: "Homework", icon: "📚", page: "children", test: (k) => /homework|assignment|task/.test(k) },
   { key: "policies", label: "Policies", icon: "📋", page: "profile", test: (k) => /policy|consent|acknowledge/.test(k) },
   { key: "events", label: "Events", icon: "📅", page: "calendar", test: (k) => /event|calendar|assembly|parents.?evening|photo|sports/.test(k) },
-  { key: "messages", label: "Messages", icon: "✉️", page: "messaging", test: (k) => /message|announce|newsletter|comm|broadcast/.test(k) },
+  // Announcements open their own detail (the modal already shows the full text) —
+  // they must NOT deep-link to another page. Tested before "messages" so an
+  // announcement/newsletter/broadcast never falls through to the Messages page.
+  { key: "announcements", label: "Announcements", icon: "📣", page: null, test: (k) => /announce|newsletter|broadcast|bulletin|notice/.test(k) },
+  // Real secure messages live on the "dm" page (nav key), NOT "messaging"
+  // (which is Contact preferences).
+  { key: "messages", label: "Messages", icon: "✉️", page: "dm", test: (k) => /message|chat|conversation|reply|dm\b/.test(k) },
 ];
 function notifCat(n: any) {
   const k = String(n.kind || "").toLowerCase();

@@ -9,6 +9,7 @@ import ParentChildren from "./ParentChildren";
 import ParentMenu from "./ParentMenu";
 import ParentClubs from "./ParentClubs";
 import ParentTrust from "./ParentTrust";
+import ParentSearch from "./ParentSearch";
 import ParentReportsCentre from "./ParentReportsCentre";
 import ParentSubscription from "./ParentSubscription";
 import AccountProfile from "@/components/AccountProfile";
@@ -58,6 +59,7 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
     case "menu": return <ParentMenu />;
     case "clubs": return <ParentClubs />;
     case "trust": return <ParentTrust />;
+    case "search": return <ParentSearch onNavigate={onNavigate} />;
     case "transport": return <ParentTransport children={kids} />;
     case "trips": return <ParentTrips />;
     case "rewards": return <ParentRewards />;

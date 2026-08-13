@@ -8,6 +8,7 @@ const REPORT_TYPES: [string, string][] = [
   ["attendance", "Attendance metrics (last 30 days)"],
   ["transport", "Transport punctuality"],
   ["trips", "Trips & consent"],
+  ["clubs", "Clubs & activities (participation & attendance)"],
   ["engagement", "Parent engagement"],
   ["ai", "AI assistant usage"],
   ["integrations", "Integrations health"],
@@ -49,6 +50,7 @@ function ReportGen({ schoolId }: { schoolId: string }) {
         <div style={{ flex: 2 }}><label>Report</label><select value={type} onChange={(e) => setType(e.target.value)}>{REPORT_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         <div style={{ display: "flex", gap: 8 }}>
           <a href={`/api/schools/${schoolId}/reports/${type}?format=pdf`}><button type="button">Download PDF</button></a>
+          <a href={`/api/schools/${schoolId}/reports/${type}?format=xlsx`}><button type="button" className="secondary">Download Excel</button></a>
           <a href={`/api/schools/${schoolId}/reports/${type}?format=csv`}><button type="button" className="secondary">Download CSV</button></a>
         </div>
       </div>
@@ -92,13 +94,16 @@ function GlobalSearch({ schoolId, onNavigate }: { schoolId: string; onNavigate?:
   return (
     <div className="panel">
       <h2>Global search</h2>
-      <p className="sub">Search across your whole portal — pupils, parents, staff, calendar, trips, meals, documents and reports.</p>
+      <p className="sub">Search across your whole portal — pupils, parents, staff, users, calendar, timetable, trips, meals, clubs, documents, policies, announcements, FAQs, messages, reports and trust documents.</p>
       <input autoFocus placeholder="Search everything…" value={q} onChange={(e) => setQ(e.target.value)} />
       {busy && <p className="muted" style={{ marginTop: 12 }}>Searching…</p>}
       {res && !busy && res.total === 0 && <p className="muted" style={{ marginTop: 12 }}>No matches for “{res.q}”.</p>}
       {res && !busy && res.total > 0 && (
         <div style={{ marginTop: 12 }}>
-          <p className="muted" style={{ fontSize: 12 }}>{res.total} match(es) across {res.groups.length} section(s).</p>
+          <div className="flex-between" style={{ alignItems: "center" }}>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>{res.total} match(es) across {res.groups.length} section(s).</p>
+            <a href={`/api/schools/${schoolId}/search?q=${encodeURIComponent(q.trim())}&format=csv`}><button type="button" className="secondary small">Download results (CSV)</button></a>
+          </div>
           {res.groups.map((g: any) => (
             <div key={g.type} style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
               <div className="flex-between"><strong>{g.label} <span className="muted" style={{ fontWeight: 400 }}>({g.items.length})</span></strong>

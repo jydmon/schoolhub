@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { todayStr } from "./transport";
+import { sheetsToXls } from "./xls";
 
 const dayStr = (offset: number) => {
   const d = new Date(); d.setDate(d.getDate() + offset);
@@ -235,6 +236,32 @@ export async function buildReport(schoolId: string, type: string): Promise<Repor
     };
   }
 
+  if (type === "clubs") {
+    let clubs: any[] = [];
+    try {
+      clubs = await prisma.club.findMany({ where: { schoolId }, include: { members: { select: { status: true } }, sessions: { select: { attendance: { select: { status: true } } } } } });
+    } catch { clubs = []; }
+    const attendedOf = (c: any) => { const mk = c.sessions.flatMap((s: any) => s.attendance); const p = mk.filter((a: any) => a.status === "present" || a.status === "late").length; return { total: mk.length, pct: mk.length ? Math.round((p / mk.length) * 100) : null }; };
+    const enrolments = clubs.reduce((n, c) => n + c.members.filter((m: any) => m.status === "enrolled").length, 0);
+    const sessions = clubs.reduce((n, c) => n + c.sessions.length, 0);
+    const allMarks = clubs.flatMap((c) => c.sessions.flatMap((s: any) => s.attendance));
+    const presentAll = allMarks.filter((a: any) => a.status === "present" || a.status === "late").length;
+    return {
+      type, title: "Clubs & activities report", generatedAt,
+      metrics: [
+        { label: "Clubs", value: clubs.length },
+        { label: "Active clubs", value: clubs.filter((c) => c.status === "active").length },
+        { label: "Total enrolments", value: enrolments },
+        { label: "Sessions logged", value: sessions },
+        { label: "Attendance rate", value: allMarks.length ? `${Math.round((presentAll / allMarks.length) * 100)}%` : "—" },
+      ],
+      table: {
+        headers: ["Club", "Category", "Members", "Sessions", "Attendance %", "Status"],
+        rows: clubs.map((c) => { const a = attendedOf(c); return [c.name, c.category, c.members.filter((m: any) => m.status === "enrolled").length, c.sessions.length, a.pct == null ? "—" : `${a.pct}%`, c.status]; }),
+      },
+    };
+  }
+
   // overview (default)
   const dash = await opsDashboard(schoolId);
   const rewards = await prisma.rewardRecord.count({ where: { schoolId, at: { gte: new Date(Date.now() - 30 * 864e5) } } });
@@ -262,6 +289,14 @@ export function reportToCsv(r: Report): string {
   const q = (v: any) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const lines = [`${r.title}`, `Generated,${r.generatedAt}`, "", "Metric,Value", ...r.metrics.map((m) => `${q(m.label)},${q(m.value)}`), "", r.table.headers.map(q).join(","), ...r.table.rows.map((row) => row.map(q).join(","))];
   return lines.join("\r\n");
+}
+
+/** Excel (SpreadsheetML .xls) export of a report — summary + detail sheets. */
+export function reportToXls(r: Report): Buffer {
+  return sheetsToXls([
+    { name: "Summary", title: r.title, headers: ["Metric", "Value"], rows: r.metrics.map((m) => [m.label, m.value]) },
+    { name: "Detail", headers: r.table.headers, rows: r.table.rows },
+  ]);
 }
 
 /** Minimal, dependency-free single-page PDF of a report (text lines). */

@@ -1,7 +1,47 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text } from "react-native";
-import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Empty, Note, RouteMap, T, toast } from "@/ui/kit";
+import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Empty, Note, Field, RouteMap, T, toast } from "@/ui/kit";
 import { useApi } from "@/data/useApi";
+import { api } from "@/api/client";
+
+/* ---------------- Search across the parent's own children (live) ---------------- */
+function HomeSearch() {
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      if (q.trim().length < 2) { setRes(null); return; }
+      setBusy(true);
+      try { const d = await api.get<any>(`/api/parent/search?q=${encodeURIComponent(q.trim())}`); setRes(d); }
+      catch { setRes(null); } finally { setBusy(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  return (
+    <Card>
+      <CardTitle>Search</CardTitle>
+      <Field placeholder="Search events, homework, clubs, reports…" value={q} onChangeText={setQ} autoCapitalize="none" />
+      {busy ? <Text style={{ color: T.muted, fontSize: 12, marginTop: 8 }}>Searching…</Text> : null}
+      {res && !busy && res.total === 0 ? <Text style={{ color: T.muted, fontSize: 12, marginTop: 8 }}>No matches for “{res.q}”.</Text> : null}
+      {res && !busy && res.total > 0 ? (
+        <View style={{ marginTop: 6 }}>
+          {res.groups.map((g: any, gi: number) => (
+            <View key={g.type} style={{ borderTopWidth: gi === 0 ? 0 : 1, borderTopColor: T.line, paddingVertical: 8 }}>
+              <Text style={{ fontSize: 11, color: T.muted, fontWeight: "700" }}>{g.label} ({g.items.length})</Text>
+              {g.items.slice(0, 5).map((it: any, i: number) => (
+                <View key={i} style={{ paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 13, color: T.ink, fontWeight: "600" }}>{it.title}</Text>
+                  {it.subtitle ? <Text style={{ fontSize: 11, color: T.muted }}>{it.subtitle}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
 
 function when(iso?: string) {
   if (!iso) return "";
@@ -22,6 +62,7 @@ function Home() {
 
   return (
     <Screen>
+      <HomeSearch />
       <Kpis>
         <Kpi k="Children" v={String(children.length)} h={children.map((c) => c.firstName || c.name).slice(0, 2).join(", ") || "—"} />
         <Kpi k="Homework due" v={String((d.homeworkDue || []).length)} h="next 7 days" warn={(d.homeworkDue || []).length > 0} />
