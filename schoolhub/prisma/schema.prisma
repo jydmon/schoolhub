@@ -2672,3 +2672,27 @@ model SupportAccessRequest {
   @@index([targetUserId])
   @@index([status])
 }
+
+// ---- Item 12: RBAC — per-tenant role customization (pragmatic override layer) ----
+// Built-in role defaults live in code (ROLE_PERMISSIONS). A TenantRole row either
+// OVERRIDES a built-in role for one school (isCustom=false, key = built-in key) or
+// defines a CUSTOM role (isCustom=true, key = "custom_<slug>"). Deleting an override
+// row restores the platform default. Membership.role stores the key (built-in or custom).
+model TenantRole {
+  id              String   @id @default(cuid())
+  schoolId        String
+  key             String   // Membership.role value
+  name            String
+  baseRole        String?  // built-in role this inherits from (null = from scratch)
+  permissionsJson String   @default("[]")  // effective feature-permission keys
+  pagesJson       String   @default("[]")  // page/nav keys the role may see
+  crudJson        String   @default("{}")  // { resource: { create, read, update, delete } }
+  isCustom        Boolean  @default(true)   // false = override of a built-in default role
+  enabled         Boolean  @default(true)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([schoolId, key])
+  @@index([schoolId])
+}

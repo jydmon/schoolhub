@@ -10,6 +10,26 @@ import {
   verifyImpersonation,
 } from "./auth";
 import type { AuthContext } from "./rbac";
+import { resolveEffectivePermissions } from "./roles";
+
+// Item 12: preload tenant role customizations into permsBySchool. Guarded so a
+// missing TenantRole table (pre-migration) simply yields built-in defaults.
+async function loadPermsBySchool(memberships: { schoolId: string; role: string }[]): Promise<Record<string, string[]> | undefined> {
+  try {
+    const schoolIds = Array.from(new Set(memberships.map((m) => m.schoolId)));
+    if (!schoolIds.length) return undefined;
+    const rows = await prisma.tenantRole.findMany({ where: { schoolId: { in: schoolIds } } });
+    if (!rows.length) return undefined;
+    const bySchool: Record<string, string[]> = {};
+    for (const sid of schoolIds) {
+      const srows = rows.filter((r) => r.schoolId === sid);
+      if (!srows.length) continue;
+      const roleKeys = memberships.filter((m) => m.schoolId === sid).map((m) => m.role);
+      bySchool[sid] = resolveEffectivePermissions(roleKeys, srows);
+    }
+    return Object.keys(bySchool).length ? bySchool : undefined;
+  } catch { return undefined; }
+}
 
 /** Read the current session and load the auth context.
  *  Web clients send the httpOnly session cookie; native (mobile) clients can't
@@ -58,12 +78,15 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   // Session revocation: a bumped sessionVersion invalidates old tokens.
   if ((claims.ver ?? 0) !== user.sessionVersion) return null;
 
+  const memberships = user.memberships.map((m) => ({ schoolId: m.schoolId, role: m.role }));
+  const permsBySchool = await loadPermsBySchool(memberships);
   return {
     userId: user.id,
     email: user.email,
     fullName: user.fullName,
     isPlatformAdmin: user.isPlatformAdmin,
-    memberships: user.memberships.map((m) => ({ schoolId: m.schoolId, role: m.role })),
+    memberships,
+    ...(permsBySchool ? { permsBySchool } : {}),
   };
 }
 

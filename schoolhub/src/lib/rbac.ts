@@ -17,6 +17,9 @@ export type AuthContext = {
   // admin viewing this user's portal, and the request authorising it.
   impersonatorId?: string;
   impersonationRequestId?: string;
+  // Item 12: effective permission keys per school, preloaded from tenant role
+  // customizations. When present for a school, it overrides the built-in map.
+  permsBySchool?: Record<string, string[]>;
 };
 
 /** Collect the permission set granted by a list of roles. */
@@ -55,6 +58,10 @@ export function can(ctx: AuthContext, permission: Permission, schoolId?: string)
   if (!schoolId) return false;
   const roles = rolesInSchool(ctx, schoolId);
   if (roles.length === 0) return false;
+  // Item 12: if the session preloaded tenant-customized permissions for this
+  // school, they are authoritative; otherwise fall back to the built-in map.
+  const eff = ctx.permsBySchool?.[schoolId];
+  if (eff) return eff.includes(permission);
   return permissionsForRoles(roles).has(permission);
 }
 
