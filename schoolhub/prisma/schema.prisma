@@ -2374,6 +2374,7 @@ model SupportTicket {
   // pending_user | pending_third_party | resolved | closed | reopened
   status       String @default("open")
   priority     String @default("medium") // low | medium | high | critical
+  severity     String @default("normal") // minor | normal | major | critical
   assignedToUserId String?
   // SLA + lifecycle timestamps (Aug 2026)
   slaDueAt        DateTime?
@@ -2597,9 +2598,13 @@ model TrustDocument {
   publicTrust   Boolean   @default(false)     // show on public /trust
   toMobile      Boolean   @default(false)
   toParents     Boolean   @default(false)
+  toAll         Boolean   @default(false)     // surface to EVERY signed-in user (all portals)
   requireAck    Boolean   @default(false)
   effectiveDate DateTime?
   reviewDate    DateTime?
+  reviewIntervalDays Int?                      // periodic review cadence (item A9)
+  reviewOnChange Boolean  @default(false)      // needs review whenever edited
+  lastReviewedAt DateTime?
   ownerName     String?
   linkUrl       String?
   fileName      String?

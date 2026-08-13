@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { canActOnTicket } from "@/lib/support";
-import { serializeTicket, statusTransition, slaTarget, normalizePriority, TICKET_STATUSES, TERMINAL } from "@/lib/support-tickets";
+import { serializeTicket, statusTransition, slaTarget, normalizePriority, normalizeSeverity, TICKET_STATUSES, TERMINAL } from "@/lib/support-tickets";
 import { notify } from "@/lib/transport";
 import { recordAudit } from "@/lib/audit";
 import { ROLES } from "@/lib/constants";
@@ -100,10 +100,19 @@ export async function PATCH(req: Request, { params }: Params) {
     if (typeof b.assignToUserId === "string") data.assignedToUserId = b.assignToUserId || null;
     if ("escalated" in b) { data.escalated = !!b.escalated; }
     if (b.subcategory !== undefined) data.subcategory = b.subcategory || null;
+    if (b.category) data.category = String(b.category);
+    if (b.severity) data.severity = normalizeSeverity(b.severity);
 
     const t = await prisma.supportTicket.update({ where: { id: ticket.id }, data });
     await recordAudit({ action: "SUPPORT_TICKET_UPDATED", schoolId: ticket.schoolId, actorUserId: ctx.userId, targetType: "SupportTicket", targetId: ticket.id, metadata: { changes: Object.keys(data), reference: ticket.reference } });
 
+    // B2: escalation routes the ticket to the Super-Admin platform queue —
+    // notify every platform admin (they already see all tickets in Manage).
+    if (data.escalated === true && !ticket.escalated) {
+      const admins = await prisma.user.findMany({ where: { isPlatformAdmin: true }, select: { id: true } });
+      const ids = admins.map((a) => a.id).filter((id) => id !== ctx.userId);
+      if (ids.length) await notify(ids, { kind: "support_ticket", title: `Escalated: ${ticket.reference || ticket.subject}`, body: `${ticket.subject} — escalated to platform support.`, schoolId: ticket.schoolId }).catch(() => {});
+    }
     // Notify the requester of meaningful changes.
     if ((data.status || data.escalated) && ticket.userId !== ctx.userId) {
       await notify([ticket.userId], { kind: "support_ticket", title: data.escalated ? `Ticket ${ticket.reference} escalated` : `Ticket ${ticket.reference} is now "${(data.status || ticket.status).replace(/_/g, " ")}"`, body: ticket.subject, schoolId: ticket.schoolId }).catch(() => {});

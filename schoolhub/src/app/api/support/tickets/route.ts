@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { manageableSchoolIds } from "@/lib/support";
-import { serializeTicket, makeReference, slaTarget, normalizePriority } from "@/lib/support-tickets";
+import { serializeTicket, makeReference, slaTarget, normalizePriority, normalizeSeverity } from "@/lib/support-tickets";
 import { notify } from "@/lib/transport";
 import { recordAudit } from "@/lib/audit";
 import { ROLES } from "@/lib/constants";
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     const created = await prisma.supportTicket.create({
       data: {
         schoolId, userId: ctx.userId, userEmail: me?.email || ctx.email, userName: me?.fullName || null,
-        category: b.category || "question", subcategory: b.subcategory || null, priority, subject, status: "open",
+        category: b.category || "question", subcategory: b.subcategory || null, priority, severity: normalizeSeverity(b.severity), subject, status: "open",
         slaDueAt: slaTarget(priority, now),
         messages: { create: { senderUserId: ctx.userId, senderName: me?.fullName || ctx.email, senderRole: "requester", body, attachmentsJson: JSON.stringify(attachments) } },
       },

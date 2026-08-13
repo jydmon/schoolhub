@@ -29,6 +29,10 @@ export const PRIORITY_LABEL: Record<string, string> = { low: "Low", medium: "Med
 const SLA_HOURS: Record<string, number> = { critical: 4, high: 24, medium: 72, low: 120 };
 export const normalizePriority = (p?: string) => (p === "normal" ? "medium" : p === "urgent" ? "critical" : (TICKET_PRIORITIES as readonly string[]).includes(p || "") ? p! : "medium");
 
+export const TICKET_SEVERITIES = ["minor", "normal", "major", "critical"] as const;
+export const SEVERITY_LABEL: Record<string, string> = { minor: "Minor", normal: "Normal", major: "Major", critical: "Critical" };
+export const normalizeSeverity = (s?: string) => ((TICKET_SEVERITIES as readonly string[]).includes(s || "") ? s! : "normal");
+
 export const TICKET_CATEGORIES: { key: string; label: string; subs: string[] }[] = [
   { key: "question", label: "Question", subs: ["How-to", "Account", "Billing", "Other"] },
   { key: "issue", label: "Issue / not working", subs: ["Login", "Data", "Performance", "Notifications", "Other"] },
@@ -66,7 +70,7 @@ export function serializeTicket(t: any, messageCount?: number) {
     id: t.id, reference: t.reference || makeReference(t.id), schoolId: t.schoolId,
     category: t.category, subcategory: t.subcategory || null, subject: t.subject,
     status: t.status, statusLabel: STATUS_LABEL[t.status] || t.status,
-    priority: normalizePriority(t.priority), userName: t.userName, userEmail: t.userEmail,
+    priority: normalizePriority(t.priority), severity: normalizeSeverity(t.severity), userName: t.userName, userEmail: t.userEmail,
     assignedToUserId: t.assignedToUserId || null,
     slaDueAt: t.slaDueAt || null, slaState: sla.state, slaMinutesLeft: sla.minutesLeft,
     acknowledgedAt: t.acknowledgedAt || null, firstResponseAt: t.firstResponseAt || null,

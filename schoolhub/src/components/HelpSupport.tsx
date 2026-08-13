@@ -18,6 +18,7 @@ const STATUS_LABEL: Record<string, string> = {
 // Full 9-state lifecycle offered to support staff.
 const LIFECYCLE = ["acknowledged", "assigned", "in_progress", "pending_user", "pending_third_party", "resolved", "closed"];
 const PRIORITIES: [string, string][] = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["critical", "Critical"]];
+const SEVERITIES: [string, string][] = [["minor", "Minor"], ["normal", "Normal"], ["major", "Major"], ["critical", "Critical"]];
 const PRIORITY_BADGE: Record<string, string> = { low: "role", medium: "trial", high: "suspended", critical: "suspended" };
 const CATEGORY_SUBS: Record<string, string[]> = {
   question: ["How-to", "Account", "Billing", "Other"], issue: ["Login", "Data", "Performance", "Notifications", "Other"],
@@ -54,7 +55,7 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
   const [reply, setReply] = useState("");
   const [replyInternal, setReplyInternal] = useState(false);
   const [replyFiles, setReplyFiles] = useState<any[]>([]);
-  const [form, setForm] = useState<any>({ category: "question", subcategory: "", priority: "medium", subject: "", body: "" });
+  const [form, setForm] = useState<any>({ category: "question", subcategory: "", priority: "medium", severity: "normal", subject: "", body: "" });
   const [formFiles, setFormFiles] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
@@ -144,6 +145,7 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
             </div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <span className={`badge ${PRIORITY_BADGE[t.priority] || "trial"}`}>{t.priority}</span>
+              <span className="badge role" title="Severity">sev: {t.severity || "normal"}</span>
               {t.escalated ? <span className="badge suspended">escalated</span> : null}
               {sla ? <span className={`badge ${sla.tone}`}>{sla.label}</span> : null}
               <span className={`badge ${STATUS_BADGE[t.status] || "trial"}`}>{STATUS_LABEL[t.status] || t.status}</span>
@@ -190,6 +192,9 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
                 </select>
                 <select value={t.priority} onChange={(e) => patch({ priority: e.target.value })}>
                   {PRIORITIES.map(([k, l]) => <option key={k} value={k}>{l} priority</option>)}
+                </select>
+                <select value={t.severity || "normal"} onChange={(e) => patch({ severity: e.target.value })}>
+                  {SEVERITIES.map(([k, l]) => <option key={k} value={k}>{l} severity</option>)}
                 </select>
                 <button className="secondary small" onClick={() => patch({ assignToMe: true })}>Assign to me</button>
                 <button className={`secondary small${t.escalated ? " danger" : ""}`} onClick={() => patch({ escalated: !t.escalated })}>{t.escalated ? "De-escalate" : "Escalate"}</button>
@@ -293,6 +298,7 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
                 <div><label>Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: "" })}><option value="question">Question</option><option value="issue">Issue</option><option value="bug">Report a bug</option><option value="account">Account</option><option value="billing">Billing</option><option value="other">Other</option></select></div>
                 {subs.length > 0 && <div><label>Subcategory</label><select value={form.subcategory} onChange={(e) => setForm({ ...form, subcategory: e.target.value })}><option value="">—</option>{subs.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>}
                 <div><label>Priority</label><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>{PRIORITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+                <div><label>Severity</label><select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>{SEVERITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
                 <div style={{ flex: 3 }}><label>Subject</label><input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="Brief summary" /></div>
               </div>
               <label>Description</label>

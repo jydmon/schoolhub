@@ -7,6 +7,7 @@ import HistoryExplorer from "@/components/HistoryExplorer";
 import TrustCentreTab from "./TrustCentreTab";
 import FaqManager from "./FaqManager";
 import SupportAccessTab from "./SupportAccessTab";
+import PoliciesTab from "./PoliciesTab";
 import { PLATFORM_AREAS, AREA_LABELS } from "@/lib/platform-staff-logic";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
@@ -183,7 +184,7 @@ export default function AdminPortal({ email = "" }: { email?: string }) {
         {tab === "usage" && <Usage />}
         {tab === "reports" && <Reports />}
         {tab === "templates" && <Templates />}
-        {tab === "policies" && <Policies />}
+        {tab === "policies" && <PoliciesTab onOpenDms={() => setTab("trust")} />}
         {tab === "trust" && <TrustCentreTab />}
         {tab === "faqs" && <FaqManager />}
         {tab === "crm" && <Crm />}

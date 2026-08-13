@@ -18,6 +18,30 @@ async function api(url: string, method = "GET", body?: any) {
 
 const BLANK = { id: "", question: "", answer: "", category: "", status: "published" };
 
+// 20 starter FAQs — loaded on demand and fully editable afterwards (item A7).
+const SEED_FAQS = [
+  { question: "How do I reset my password?", answer: "Go to My profile → My security and use the reset option, or click 'Forgot password?' on the sign-in page.", category: "Account", status: "published" },
+  { question: "How do I enable two-factor authentication (2FA)?", answer: "Open My security, choose 'Set up authenticator app', scan the code and enter the 6-digit code to confirm.", category: "Account", status: "published" },
+  { question: "How do I update my contact details?", answer: "Open My profile and edit your name, phone and photo. Your email is managed by your school.", category: "Account", status: "published" },
+  { question: "How do I change my notification preferences?", answer: "Go to My preferences (or Notifications & contact preferences on mobile) to choose channels and categories.", category: "Notifications", status: "published" },
+  { question: "Why am I not receiving notifications?", answer: "Check your delivery channels under preferences, and make sure the relevant category is switched on. Emergency alerts are always delivered.", category: "Notifications", status: "published" },
+  { question: "How do I see my child's timetable?", answer: "Parents: open Timetable in your portal to see the current week for each child.", category: "Parents", status: "published" },
+  { question: "How do I report my child's absence?", answer: "Use the Transport or Notifications area to submit an absence, or contact the school office.", category: "Parents", status: "published" },
+  { question: "Where can I see my child's clubs and attendance?", answer: "Open Clubs & activities in the parent portal to see enrolments and attendance for each child.", category: "Parents", status: "published" },
+  { question: "How do I view school meals and allergens?", answer: "Open Menu in the parent portal to see the weekly menu, dietary options and allergen information.", category: "Parents", status: "published" },
+  { question: "How do I message my school?", answer: "Use Messaging in your portal to start a secure conversation with the relevant staff.", category: "Communication", status: "published" },
+  { question: "How do I raise a support ticket?", answer: "Open Help & support → Submit a support request, choose a category, priority and severity, and describe the issue.", category: "Support", status: "published" },
+  { question: "How do I track a support ticket?", answer: "Open Help & support → My tickets to see the status, replies and reference (SH-XXXXXX) of each request.", category: "Support", status: "published" },
+  { question: "How do I accept a school policy?", answer: "When a policy needs your acknowledgement you'll see a prompt at the top of your portal — open it, read the policy and select 'I have read & understood'.", category: "Policies", status: "published" },
+  { question: "Where can I read published policies?", answer: "Open Trust & policies (parents) or the Policies prompt shown in your portal. Published policies are always available to read.", category: "Policies", status: "published" },
+  { question: "How do I add a new user (staff)?", answer: "School Administrators: open Users & roles → Add user, set a role, and either set a password or send an email invite.", category: "Administration", status: "published" },
+  { question: "How do I create a custom role?", answer: "School Administrators: open Access management → Roles & permissions → Create role, then set feature, page and CRUD permissions.", category: "Administration", status: "published" },
+  { question: "How do I import data from a spreadsheet?", answer: "Most modules (students, staff, vehicles, clubs, menus) have an Import CSV option; download the template, fill it in and upload.", category: "Administration", status: "published" },
+  { question: "How do I generate and export a report?", answer: "Open Reports & search, choose a report and download it as PDF, Excel or CSV.", category: "Reports", status: "published" },
+  { question: "How do I search across the portal?", answer: "Use Reports & search (staff) or Search (parents) to find pupils, staff, events, clubs, documents and more. Results can be downloaded as CSV.", category: "Reports", status: "published" },
+  { question: "Who do I contact for urgent help?", answer: "Raise a High or Critical priority support ticket, or contact your school office directly for time-sensitive matters.", category: "Support", status: "published" },
+];
+
 export default function FaqManager() {
   const [items, setItems] = useState<any[]>([]);
   const [f, setF] = useState<any>({ ...BLANK });
@@ -52,6 +76,11 @@ export default function FaqManager() {
   }
   async function setStatus(id: string, status: string) { try { await api(`/api/platform/faqs/${id}`, "PUT", { status }); load(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
   async function del(id: string) { if (!confirm("Delete this FAQ?")) return; try { await api(`/api/platform/faqs/${id}`, "DELETE"); if (f.id === id) setF({ ...BLANK }); load(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function seedStarter() {
+    setMsg(null);
+    try { const d = await api(`/api/platform/faqs/import`, "POST", { items: SEED_FAQS }); setMsg({ k: "ok", t: `Loaded ${d.created} starter FAQ(s).` }); load(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
   async function runImport() {
     setMsg(null); const txt = importText.trim(); if (!txt) return;
     let body: any;
@@ -67,7 +96,10 @@ export default function FaqManager() {
         <div className="flex-between" style={{ alignItems: "flex-start" }}>
           <div><h2 style={{ margin: 0 }}>FAQ management</h2>
             <p className="sub" style={{ marginBottom: 0 }}>Create, categorise, publish/unpublish, archive, delete and bulk-import the FAQs shown to users in Help &amp; support and the mobile app.</p></div>
-          <button className="secondary" onClick={() => setShowImport((s) => !s)}>{showImport ? "Hide import" : "Bulk import"}</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {items.length === 0 && <button className="secondary" onClick={seedStarter}>Load 20 starter FAQs</button>}
+            <button className="secondary" onClick={() => setShowImport((s) => !s)}>{showImport ? "Hide import" : "Bulk import"}</button>
+          </div>
         </div>
         {msg && <div className={`notice ${msg.k === "ok" ? "ok" : "err"}`} style={{ marginTop: 10 }}>{msg.t}</div>}
 

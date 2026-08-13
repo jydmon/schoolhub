@@ -11,6 +11,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_TONE: Record<string, any> = { open: "info", acknowledged: "info", assigned: "info", in_progress: "info", pending_user: "warn", pending_third_party: "warn", resolved: "ok", closed: "mut", reopened: "warn" };
 const PRIORITY_TONE: Record<string, any> = { low: "mut", medium: "info", high: "warn", critical: "danger" };
 const PRIORITIES: [string, string][] = [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["critical", "Critical"]];
+const SEVERITIES: [string, string][] = [["minor", "Minor"], ["normal", "Normal"], ["major", "Major"], ["critical", "Critical"]];
 const CATEGORIES: [string, string][] = [["question", "Question"], ["issue", "Issue"], ["bug", "Bug"], ["account", "Account"], ["other", "Other"]];
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "");
 
@@ -22,7 +23,7 @@ export function SupportTickets() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
   const [reply, setReply] = useState("");
-  const [form, setForm] = useState<any>({ category: "question", priority: "medium", subject: "", body: "" });
+  const [form, setForm] = useState<any>({ category: "question", priority: "medium", severity: "normal", subject: "", body: "" });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -97,6 +98,8 @@ export function SupportTickets() {
           <Seg options={CATEGORIES.map(([k, l]) => ({ label: l, active: form.category === k, onPress: () => setForm({ ...form, category: k }) }))} />
           <Text style={{ fontSize: 12, color: T.muted, marginTop: 8, marginBottom: 4 }}>Priority</Text>
           <Seg options={PRIORITIES.map(([k, l]) => ({ label: l, active: form.priority === k, onPress: () => setForm({ ...form, priority: k }) }))} />
+          <Text style={{ fontSize: 12, color: T.muted, marginTop: 8, marginBottom: 4 }}>Severity</Text>
+          <Seg options={SEVERITIES.map(([k, l]) => ({ label: l, active: form.severity === k, onPress: () => setForm({ ...form, severity: k }) }))} />
           <Field label="Subject" value={form.subject} onChangeText={(v: string) => setForm({ ...form, subject: v })} placeholder="Brief summary" />
           <Field label="Description" value={form.body} onChangeText={(v: string) => setForm({ ...form, body: v })} multiline style={{ minHeight: 90 }} placeholder="What's happening…" />
           <Button title={busy ? "Submitting…" : "Submit request"} disabled={busy} onPress={create} />

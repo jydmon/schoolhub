@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 
 // Super-Admin Document Management System + Trust Centre control. Self-contained
 // (own fetch helpers) so it slots into AdminPortal with a single import.
@@ -15,6 +15,21 @@ const NEXT: Record<string, { to: string; label: string; danger?: boolean }[]> = 
   archived: [{ to: "draft", label: "Restore to draft" }],
 };
 const BLANK = { title: "", category: "policy", summary: "", bodyHtml: "", ownerName: "", linkUrl: "", effectiveDate: "", reviewDate: "", publicTrust: true, toParents: false, toMobile: false, requireAck: false };
+
+const stripHtml = (s: string) => String(s || "").replace(/<[^>]+>/g, "").replace(/\r/g, "");
+// Line-level diff (LCS) so the version history shows exactly what changed.
+function lineDiff(oldText: string, newText: string): { t: "same" | "add" | "del"; v: string }[] {
+  const a = stripHtml(oldText).split("\n"), b = stripHtml(newText).split("\n");
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const out: { t: "same" | "add" | "del"; v: string }[] = [];
+  let i = 0, j = 0;
+  while (i < m && j < n) { if (a[i] === b[j]) { out.push({ t: "same", v: a[i] }); i++; j++; } else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ t: "del", v: a[i] }); i++; } else { out.push({ t: "add", v: b[j] }); j++; } }
+  while (i < m) out.push({ t: "del", v: a[i++] });
+  while (j < n) out.push({ t: "add", v: b[j++] });
+  return out.filter((s) => s.v.trim() !== "" || s.t !== "same");
+}
 
 async function api(url: string, method = "GET", body?: any) {
   const r = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
@@ -31,6 +46,9 @@ export default function TrustCentreTab() {
   const [edit, setEdit] = useState<any | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [history, setHistory] = useState<any | null>(null);
+  const [diffFor, setDiffFor] = useState<string | null>(null);
+  const [logOpen, setLogOpen] = useState(false);
+  const [acks, setAcks] = useState<any[] | null>(null);
 
   const load = useCallback(async () => {
     try { const d = await api(`/api/platform/trust`); setDocs(d.documents || []); }
@@ -65,7 +83,8 @@ export default function TrustCentreTab() {
       await api(`/api/platform/trust`, "PATCH", {
         id: edit.id, title: edit.title, category: edit.category, summary: edit.summary, bodyHtml: edit.bodyHtml,
         ownerName: edit.ownerName, linkUrl: edit.linkUrl, effectiveDate: edit.effectiveDate || null, reviewDate: edit.reviewDate || null,
-        publicTrust: edit.publicTrust, toParents: edit.toParents, toMobile: edit.toMobile, requireAck: edit.requireAck,
+        reviewIntervalDays: edit.reviewIntervalDays || null, reviewOnChange: !!edit.reviewOnChange,
+        publicTrust: edit.publicTrust, toParents: edit.toParents, toMobile: edit.toMobile, toAll: edit.toAll, requireAck: edit.requireAck,
       });
       setMsg({ k: "ok", t: "Saved." }); load(); openEdit(edit.id);
     } catch (e: any) { setMsg({ k: "err", t: e.message }); }
@@ -77,7 +96,10 @@ export default function TrustCentreTab() {
         <div className="flex-between" style={{ alignItems: "flex-start" }}>
           <div><h2 style={{ margin: 0 }}>Document management &amp; Trust Centre</h2>
             <p className="sub" style={{ marginBottom: 0 }}>Author platform documents through their lifecycle (draft → review → approve → publish → archive), with version history and an audit trail. Publish to the public <a className="linklike" href="/trust" target="_blank" rel="noreferrer">Trust Centre</a>, the mobile app, or parents (optionally requiring acknowledgement).</p></div>
-          <button onClick={() => setShowNew(true)}>New document</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="secondary" onClick={async () => { setLogOpen(true); try { const d = await api(`/api/platform/trust/acks`); setAcks(d.acks || []); } catch { setAcks([]); } }}>Acceptance log</button>
+            <button onClick={() => setShowNew(true)}>New document</button>
+          </div>
         </div>
         {msg && <div className={`notice ${msg.k === "ok" ? "ok" : msg.k === "err" ? "err" : "info"}`} style={{ marginTop: 10 }}>{msg.t}</div>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "12px 0" }}>
@@ -133,10 +155,13 @@ export default function TrustCentreTab() {
                   <div><label>External link (optional)</label><input value={edit.linkUrl || ""} onChange={(e) => setEdit({ ...edit, linkUrl: e.target.value })} placeholder="https://…" /></div>
                   <div><label>Effective date</label><input type="date" value={edit.effectiveDate || ""} onChange={(e) => setEdit({ ...edit, effectiveDate: e.target.value })} /></div>
                   <div><label>Review date</label><input type="date" value={edit.reviewDate || ""} onChange={(e) => setEdit({ ...edit, reviewDate: e.target.value })} /></div>
+                  <div><label>Review every (days)</label><input type="number" value={edit.reviewIntervalDays || ""} onChange={(e) => setEdit({ ...edit, reviewIntervalDays: e.target.value })} placeholder="e.g. 365" /></div>
                 </div>
+                <label className="chip" style={{ margin: "8px 0 0" }}><input type="checkbox" style={{ width: "auto" }} checked={!!edit.reviewOnChange} onChange={(e) => setEdit({ ...edit, reviewOnChange: e.target.checked })} /> Flag for review whenever the policy is changed</label>
+                {edit.reviewDue ? <div className="notice info" style={{ marginTop: 8 }}>⏰ This policy is due for review.</div> : null}
                 <label style={{ marginTop: 10 }}>Publish destinations</label>
                 <div className="chips">
-                  {([["publicTrust", "Public Trust Centre"], ["toParents", "Parent portal"], ["toMobile", "Mobile app"], ["requireAck", "Require acknowledgement"]] as [string, string][]).map(([k, l]) => (
+                  {([["publicTrust", "Public Trust Centre"], ["toParents", "Parent portal"], ["toAll", "All portals (every signed-in user)"], ["toMobile", "Mobile app"], ["requireAck", "Require acknowledgement"]] as [string, string][]).map(([k, l]) => (
                     <label key={k} className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={!!edit[k]} onChange={(e) => setEdit({ ...edit, [k]: e.target.checked })} /> {l}</label>
                   ))}
                 </div>
@@ -152,10 +177,31 @@ export default function TrustCentreTab() {
                 {edit.versions?.length > 0 && (
                   <div style={{ marginTop: 16 }}>
                     <div className="muted" style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Version history</div>
-                    <table><thead><tr><th>When</th><th>Ver.</th><th>Status</th><th>Note</th></tr></thead>
-                      <tbody>{edit.versions.slice(0, 12).map((v: any) => (
-                        <tr key={v.id}><td className="muted">{new Date(v.changedAt).toLocaleString()}</td><td>{v.version}</td><td><span className={`badge ${STATUS_TONE[v.status] || "role"}`}>{v.status}</span></td><td className="muted">{v.note || "—"}</td></tr>
-                      ))}</tbody>
+                    <table><thead><tr><th>When</th><th>Ver.</th><th>Status</th><th>Note</th><th className="right">Changes</th></tr></thead>
+                      <tbody>{edit.versions.slice(0, 12).map((v: any, i: number) => {
+                        const prev = edit.versions[i + 1];
+                        return (
+                          <Fragment key={v.id}>
+                            <tr key={v.id}>
+                              <td className="muted">{new Date(v.changedAt).toLocaleString()}</td><td>{v.version}</td>
+                              <td><span className={`badge ${STATUS_TONE[v.status] || "role"}`}>{v.status}</span></td><td className="muted">{v.note || "—"}</td>
+                              <td className="right">{prev ? <button className="linklike" style={{ fontSize: 12 }} onClick={() => setDiffFor(diffFor === v.id ? null : v.id)}>{diffFor === v.id ? "Hide" : "Show changes"}</button> : <span className="muted" style={{ fontSize: 11 }}>first version</span>}</td>
+                            </tr>
+                            {diffFor === v.id && prev && (
+                              <tr key={v.id + "-diff"}><td colSpan={5}>
+                                <div style={{ background: "#f8fafc", border: "1px solid var(--line)", borderRadius: 8, padding: 10, fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12, maxHeight: 260, overflow: "auto" }}>
+                                  {lineDiff(prev.bodyHtml || "", v.bodyHtml || "").map((s, k) => (
+                                    <div key={k} style={{ color: s.t === "add" ? "#166534" : s.t === "del" ? "#b91c1c" : "#64748b", background: s.t === "add" ? "#dcfce7" : s.t === "del" ? "#fee2e2" : "transparent", textDecoration: s.t === "del" ? "line-through" : "none", padding: "1px 4px" }}>
+                                      {s.t === "add" ? "+ " : s.t === "del" ? "− " : "  "}{s.v || " "}
+                                    </div>
+                                  ))}
+                                  {(prev.title !== v.title) && <div style={{ color: "#166534" }}>Title changed: “{prev.title}” → “{v.title}”</div>}
+                                </div>
+                              </td></tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}</tbody>
                     </table>
                   </div>
                 )}
@@ -171,6 +217,25 @@ export default function TrustCentreTab() {
             <div className="flex-between"><h2 style={{ margin: 0 }}>{history.title}</h2><button className="secondary small" onClick={() => setHistory(null)}>Close</button></div>
             <p className="sub">Status: {history.status} · version {history.version} · {history.versionCount} history entries · {history.ackCount || 0} acknowledgements.</p>
             <button className="secondary" onClick={() => { openEdit(history.id); setHistory(null); }}>Open full editor & history</button>
+          </div>
+        </div>
+      )}
+
+      {logOpen && (
+        <div className="modal-overlay" onClick={() => setLogOpen(false)}>
+          <div className="modal" style={{ maxWidth: 760, width: "96%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex-between"><h2 style={{ margin: 0 }}>Policy acceptance log</h2><button className="secondary small" onClick={() => setLogOpen(false)}>Close</button></div>
+            <p className="sub">Every acceptance recorded across the platform. {acks ? `${acks.length} record(s).` : ""}</p>
+            {!acks ? <p className="muted">Loading…</p> : (
+              <table><thead><tr><th>When</th><th>User</th><th>Document</th><th>Ver.</th></tr></thead>
+                <tbody>
+                  {acks.map((a) => (
+                    <tr key={a.id}><td className="mono muted" style={{ fontSize: 12 }}>{new Date(a.ackedAt).toLocaleString()}</td><td>{a.userName || a.userEmail}<div className="muted" style={{ fontSize: 11 }}>{a.userEmail}</div></td><td>{a.docTitle}<div className="muted" style={{ fontSize: 11 }}>{a.docCategory}</div></td><td>{a.version}</td></tr>
+                  ))}
+                  {acks.length === 0 && <tr><td colSpan={4} className="muted">No acceptances recorded yet.</td></tr>}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
