@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef, createContext, useContext } f
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog, useBeforeUnload } from "@/components/ConfirmDialog";
 import HistoryExplorer from "@/components/HistoryExplorer";
+import TrustCentreTab from "./TrustCentreTab";
 import { PLATFORM_AREAS, AREA_LABELS } from "@/lib/platform-staff-logic";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
@@ -122,6 +123,7 @@ const NAV: NavGroup[] = [
   { label: "Content", items: [
     { key: "templates", label: "Templates", icon: "🧩" },
     { key: "policies", label: "Policies", icon: "📋" },
+    { key: "trust", label: "Documents & Trust", icon: "🛡️" },
     { key: "videos", label: "Help Videos", icon: "🎬" },
     { key: "website", label: "Website CMS", icon: "🌐" },
   ] },
@@ -146,7 +148,7 @@ const NAV: NavGroup[] = [
 ];
 const TITLES: Record<string, string> = {
   tenants: "Schools", groups: "Trusts & Groups", templates: "Templates", policies: "Policies",
-  videos: "Help Videos", website: "Website CMS", integrations: "Integrations", crm: "CRM", email: "Platform comms",
+  trust: "Documents & Trust Centre", videos: "Help Videos", website: "Website CMS", integrations: "Integrations", crm: "CRM", email: "Platform comms",
   subs: "Subscriptions", packages: "Packages", revenue: "Parent Revenue", usage: "User analytics",
   reports: "Reports", support: "Help desk", trouble: "Troubleshooting", team: "Team & Access", audit: "Audit trail",
 };
@@ -178,6 +180,7 @@ export default function AdminPortal({ email = "" }: { email?: string }) {
         {tab === "reports" && <Reports />}
         {tab === "templates" && <Templates />}
         {tab === "policies" && <Policies />}
+        {tab === "trust" && <TrustCentreTab />}
         {tab === "crm" && <Crm />}
         {tab === "videos" && <Videos />}
         {tab === "website" && <WebsitePages />}

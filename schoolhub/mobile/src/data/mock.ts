@@ -14,6 +14,7 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
       { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "home", label: "Home", icon: "🏠" },
       { key: "calendar", label: "Calendar", icon: "📅" },
+      { key: "clubs", label: "Clubs", icon: "⚽" },
       { key: "transport", label: "Transport", icon: "🚌" },
       { key: "reports", label: "Reports", icon: "📄" },
       { key: "alerts", label: "Alerts", icon: "🔔" },

@@ -100,6 +100,12 @@ export function TMFleet({ schoolId }: { schoolId: string }) {
   const [edit, setEdit] = useState<any | null>(null);
   const [msg, setMsg] = useState("");
   const sel = useSel();
+  const [q, setQ] = useState("");
+  const [typeF, setTypeF] = useState("all");
+  const [statusF, setStatusF] = useState("all");
+  const [sortKey, setSortKey] = useState("reference");
+  const [sortDir, setSortDir] = useState<1 | -1>(1);
+  const sortBy = (k: string) => { if (sortKey === k) setSortDir((d) => (d === 1 ? -1 : 1)); else { setSortKey(k); setSortDir(1); } };
   const load = useCallback(async () => { setRows((await fetch(`/api/schools/${schoolId}/vehicles`).then((r) => r.json())).vehicles ?? []); sel.clear(); }, [schoolId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [load]);
   async function add(e: React.FormEvent) { e.preventDefault(); await fetch(`/api/schools/${schoolId}/vehicles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, capacity: Number(f.capacity) }) }); setF({ reference: "", label: "", capacity: 16, type: "minibus" }); load(); }
@@ -110,7 +116,18 @@ export function TMFleet({ schoolId }: { schoolId: string }) {
   async function setActive(id: string, active: boolean) { await fetch(`/api/schools/${schoolId}/vehicles/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active }) }); load(); }
   async function bulkDeactivate() { for (const id of sel.ids) await fetch(`/api/schools/${schoolId}/vehicles/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: false }) }); load(); }
   const openEdit = (v: any) => setEdit({ id: v.id, reference: v.reference, label: v.label || "", capacity: v.capacity, type: v.type, motDue: v.motDue || "", insuranceDue: v.insuranceDue || "", serviceDue: v.serviceDue || "", taxDue: v.taxDue || "", notes: v.notes || "", active: v.active });
-  const allOn = rows.length > 0 && rows.every((v) => sel.on(v.id));
+  const view = rows.filter((v) => {
+    if (q && !`${v.reference} ${v.label || ""}`.toLowerCase().includes(q.toLowerCase())) return false;
+    if (typeF !== "all" && v.type !== typeF) return false;
+    if (statusF === "active" && v.active === false) return false;
+    if (statusF === "retired" && v.active !== false) return false;
+    return true;
+  }).sort((a, b) => {
+    const va = a[sortKey] ?? ""; const vb = b[sortKey] ?? "";
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * sortDir;
+    return String(va).localeCompare(String(vb)) * sortDir;
+  });
+  const allOn = view.length > 0 && view.every((v) => sel.on(v.id));
   return (
     <>
       <div className="panel">
@@ -118,10 +135,22 @@ export function TMFleet({ schoolId }: { schoolId: string }) {
         <p className="sub">Your vehicles and their compliance reminders. MOT / insurance / service / tax dates are flagged as they approach or fall overdue. Use the ⋯ menu to edit or retire a vehicle.</p>
         {msg && <div className="notice err">{msg}</div>}
         {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={() => { if (confirm(`Retire ${sel.ids.length} vehicle(s)?`)) bulkDeactivate(); }}>Retire (set inactive)</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", margin: "8px 0" }}>
+          <div style={{ flex: 2, minWidth: 160 }}><label>Search</label><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Reg or label…" /></div>
+          <div><label>Type</label><select value={typeF} onChange={(e) => setTypeF(e.target.value)}><option value="all">All types</option><option>minibus</option><option>coach</option><option>car</option></select></div>
+          <div><label>Status</label><select value={statusF} onChange={(e) => setStatusF(e.target.value)}><option value="all">All</option><option value="active">In service</option><option value="retired">Retired</option></select></div>
+          <div style={{ display: "flex", alignItems: "flex-end", marginLeft: "auto" }}><span className="muted" style={{ fontSize: 12 }}>{view.length} of {rows.length}</span></div>
+        </div>
         <table>
-          <thead><tr><th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(rows.map((v) => v.id), e.target.checked)} aria-label="Select all" /></th><th>Reg / ref</th><th>Label</th><th>Type</th><th>Cap.</th><th>MOT</th><th>Insurance</th><th>Service</th><th>Tax</th><th className="right">Actions</th></tr></thead>
+          <thead><tr>
+            <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(view.map((v) => v.id), e.target.checked)} aria-label="Select all" /></th>
+            {([["reference","Reg / ref"],["label","Label"],["type","Type"],["capacity","Cap."],["motDue","MOT"],["insuranceDue","Insurance"],["serviceDue","Service"],["taxDue","Tax"]] as [string,string][]).map(([k,lbl]) => (
+              <th key={k} onClick={() => sortBy(k)} style={{ cursor: "pointer", userSelect: "none" }}>{lbl}{sortKey === k ? (sortDir === 1 ? " ▲" : " ▼") : ""}</th>
+            ))}
+            <th className="right">Actions</th>
+          </tr></thead>
           <tbody>
-            {rows.map((v) => (
+            {view.map((v) => (
               <tr key={v.id} style={{ opacity: v.active === false ? 0.5 : 1 }}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(v.id)} onChange={() => sel.toggle(v.id)} aria-label={`Select ${v.reference}`} /></td>
                 <td className="mono">{v.reference}{v.active === false && <span className="badge archived" style={{ marginLeft: 6 }}>retired</span>}</td><td>{v.label || "—"}</td><td>{v.type}</td><td>{v.capacity}</td>
@@ -129,7 +158,7 @@ export function TMFleet({ schoolId }: { schoolId: string }) {
                 <td className="right"><Kebab items={[{ label: "Edit vehicle", onClick: () => openEdit(v) }, v.active === false ? { label: "Return to service", onClick: () => setActive(v.id, true) } : { label: "Retire (set inactive)", danger: true, onClick: () => setActive(v.id, false) }]} /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={10} className="muted">No vehicles yet.</td></tr>}
+            {view.length === 0 && <tr><td colSpan={10} className="muted">{rows.length === 0 ? "No vehicles yet." : "No vehicles match your filters."}</td></tr>}
           </tbody>
         </table>
         <form onSubmit={add} style={{ marginTop: 12 }}><div className="row">

@@ -3,7 +3,7 @@ import { View, Text, Pressable } from "react-native";
 import {
   Screen, Card, CardTitle, Sub, Badge, Button, Row, LineItem, Seg, Field, Note, Bubble, Toggle, Sheet, Loading, T, toast,
 } from "@/ui/kit";
-import { AI, POLICIES, TROUBLE, RoleKey } from "@/data/mock";
+import { AI, TROUBLE, RoleKey } from "@/data/mock";
 import { useApi } from "@/data/useApi";
 import { api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
@@ -204,6 +204,44 @@ function MfaControl() {
   );
 }
 
+/* ---------------- Trust & policies (live: /api/me/trust-acks) ---------------- */
+const CAT_ICON: Record<string, string> = { policy: "📋", security: "🔒", privacy: "🕵️", compliance: "✅", terms: "📜", certification: "🏅", subprocessor: "🔗", other: "📄" };
+function TrustPolicies() {
+  const [items, setItems] = useState<any[] | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = () => api.get("/api/me/trust-acks").then((d: any) => setItems(d.items || [])).catch(() => setItems([]));
+  useEffect(() => { load(); }, []);
+  async function ack(d: any) {
+    setBusy(d.id);
+    try { await api.post("/api/me/trust-acks", { documentId: d.id }); toast("Acknowledged"); await load(); }
+    catch { toast("Couldn't save"); } finally { setBusy(null); }
+  }
+  if (items === null) return <Loading label="Loading documents…" />;
+  if (!items.length) return <Sub style={{ marginTop: 8 }}>No documents to show right now.</Sub>;
+  return (
+    <View style={{ marginTop: 6 }}>
+      {items.map((d, i) => (
+        <View key={d.id} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: T.line, paddingVertical: 10 }}>
+          <Pressable onPress={() => setOpenId(openId === d.id ? null : d.id)}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ fontSize: 13, fontWeight: "600", color: T.ink, flex: 1, paddingRight: 8 }}>{CAT_ICON[d.category] || "📄"} {d.title}</Text>
+              {d.requireAck ? <Badge tone={d.acknowledged ? "ok" : "warn"}>{d.acknowledged ? "done" : "action"}</Badge> : <Badge tone="mut">info</Badge>}
+            </View>
+            {d.summary ? <Text style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>{d.summary}</Text> : null}
+          </Pressable>
+          {openId === d.id ? (
+            <View style={{ marginTop: 6 }}>
+              <Text style={{ fontSize: 12, color: T.ink, lineHeight: 18 }}>{(d.bodyHtml || "").replace(/<[^>]+>/g, "").trim() || "No further detail published."}</Text>
+              {d.requireAck && !d.acknowledged ? <Button sm title={busy === d.id ? "Saving…" : "I have read & understood"} disabled={busy === d.id} onPress={() => ack(d)} style={{ marginTop: 8 }} /> : null}
+            </View>
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /* ---------------- Account ---------------- */
 export function Account({ roleKey }: { roleKey: RoleKey }) {
   const { boot, logout } = useAuth();
@@ -254,11 +292,9 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
         </Card>
       </Sheet>
 
-      <Sheet visible={sheet === "policies"} title="Legal & Compliance" onClose={() => setSheet(null)}>
-        <Sub style={{ marginTop: 6 }}>View and accept updated documents.</Sub>
-        {POLICIES.map(([t], i) => (
-          <LineItem key={t} first={i === 0} t={t} right={<Button sm tone="secondary" title="View" onPress={() => toast(t)} />} />
-        ))}
+      <Sheet visible={sheet === "policies"} title="Trust & policies" onClose={() => setSheet(null)}>
+        <Sub style={{ marginTop: 6 }}>Review and acknowledge updated documents.</Sub>
+        {sheet === "policies" ? <TrustPolicies /> : null}
       </Sheet>
     </Screen>
   );

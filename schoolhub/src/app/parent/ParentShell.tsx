@@ -6,9 +6,9 @@ import ParentPages from "./ParentPages";
 
 const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", overview: "Family dashboard", children: "My children",
-  calendar: "Calendar", timetable: "Timetable", notifications: "Notifications", menu: "Menu",
+  calendar: "Calendar", timetable: "Timetable", notifications: "Notifications", menu: "Menu", clubs: "Clubs & activities",
   transport: "Transport", trips: "Trips", rewards: "Rewards", reports: "Report Centre",
-  dm: "Messages", messaging: "Contact preferences", profile: "My profile", compliance: "Terms & compliance", preferences: "My preferences", subscription: "My subscription", help: "Help & support",
+  dm: "Messages", messaging: "Contact preferences", profile: "My profile", compliance: "Terms & compliance", trust: "Trust & policies", preferences: "My preferences", subscription: "My subscription", help: "Help & support",
 };
 
 export default function ParentShell({ email = "" }: { email?: string }) {
@@ -35,6 +35,7 @@ export default function ParentShell({ email = "" }: { email?: string }) {
     { label: "Account", items: [
       { key: "profile", label: "My profile", icon: "🙂" },
       { key: "compliance", label: "Terms & compliance", icon: "📋" },
+      { key: "trust", label: "Trust & policies", icon: "🛡️" },
       { key: "preferences", label: "My preferences", icon: "⚙️" },
       { key: "messaging", label: "Contact preferences", icon: "✉️" },
       { key: "subscription", label: "My subscription", icon: "💳" },
@@ -47,6 +48,7 @@ export default function ParentShell({ email = "" }: { email?: string }) {
     { label: "School", items: [
       { key: "timetable", label: "Timetable", icon: "🗓️" },
       { key: "menu", label: "Menu", icon: "🍽️" },
+      { key: "clubs", label: "Clubs & activities", icon: "⚽" },
       { key: "rewards", label: "Rewards", icon: "⭐" },
       { key: "transport", label: "Transport", icon: "🚌" },
       { key: "trips", label: "Trips", icon: "🧳" },

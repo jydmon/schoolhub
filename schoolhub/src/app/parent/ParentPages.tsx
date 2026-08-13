@@ -7,6 +7,8 @@ import ParentCalendar from "./ParentCalendar";
 import ParentTimetable from "./ParentTimetable";
 import ParentChildren from "./ParentChildren";
 import ParentMenu from "./ParentMenu";
+import ParentClubs from "./ParentClubs";
+import ParentTrust from "./ParentTrust";
 import ParentReportsCentre from "./ParentReportsCentre";
 import ParentSubscription from "./ParentSubscription";
 import AccountProfile from "@/components/AccountProfile";
@@ -54,6 +56,8 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
     case "timetable": return <ParentTimetable children={kids} />;
     case "notifications": return <ParentNotifications onNavigate={onNavigate} />;
     case "menu": return <ParentMenu />;
+    case "clubs": return <ParentClubs />;
+    case "trust": return <ParentTrust />;
     case "transport": return <ParentTransport children={kids} />;
     case "trips": return <ParentTrips />;
     case "rewards": return <ParentRewards />;
