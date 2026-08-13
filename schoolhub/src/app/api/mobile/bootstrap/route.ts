@@ -16,20 +16,26 @@ export async function GET() {
     const isParent = roles.includes(ROLES.PARENT);
     const isStaff = roles.some((r) => STAFF.includes(r));
     const isAdmin = roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SCHOOL_LEADER) || ctx.isPlatformAdmin;
-
     const appRole = isDriver && !isStaff && !isParent ? "driver" : isAdmin ? "admin" : isStaff ? "teacher" : "parent";
 
+    // Only long-standing columns here so bootstrap can't 500 on a not-yet-migrated column.
     const [children, unread, user, policy] = await Promise.all([
       prisma.guardianLink.findMany({
         where: { parentUserId: ctx.userId },
         include: { student: { select: { id: true, firstName: true, lastName: true, yearGroup: true } } },
       }),
       prisma.notification.count({ where: { userId: ctx.userId, read: false } }),
-      prisma.user.findUnique({ where: { id: ctx.userId }, select: { mfaEnabled: true, mustChangePassword: true, passwordChangedAt: true } }),
+      prisma.user.findUnique({ where: { id: ctx.userId }, select: { mfaEnabled: true, mustChangePassword: true } }),
       getSecurityPolicy(),
     ]);
 
-    const exp = passwordExpiry(user?.passwordChangedAt ?? null, policy);
+    // Password expiry — guarded (feature activates once passwordChangedAt exists).
+    let exp = { expired: false, daysLeft: null as number | null };
+    try {
+      const pc = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { passwordChangedAt: true } });
+      const e = passwordExpiry(pc?.passwordChangedAt ?? null, policy);
+      exp = { expired: e.expired, daysLeft: e.daysLeft };
+    } catch { /* not migrated yet */ }
 
     return ok({
       user: { id: ctx.userId, email: ctx.email, name: ctx.fullName },
@@ -38,14 +44,13 @@ export async function GET() {
       schools: Array.from(new Set(ctx.memberships.map((m) => m.schoolId))),
       children: children.map((c) => ({ id: c.student.id, name: `${c.student.firstName} ${c.student.lastName}`, yearGroup: c.student.yearGroup })),
       unreadNotifications: unread,
-      // Security posture — lets the app gate MFA enrolment / password change.
       security: {
         mfaEnabled: !!user?.mfaEnabled,
         mfaRequired: policy.mfaRequired,
         mfaEnrollmentRequired: policy.mfaRequired && !user?.mfaEnabled,
         passwordExpired: exp.expired,
         passwordDaysLeft: exp.daysLeft,
-        mustChangePassword: user?.mustChangePassword || (exp.expired && !exp.canDefer),
+        mustChangePassword: user?.mustChangePassword || false,
       },
       features: { transport: true, trips: true, knowledge: true, ai: true, rewards: true, comms: true, biometric: true, offline: true },
       serverTime: new Date().toISOString(),

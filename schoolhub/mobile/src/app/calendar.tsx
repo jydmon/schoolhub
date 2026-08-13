@@ -51,6 +51,7 @@ export default function ParentCalendarScreen() {
 
   const today = new Date();
   const monthCells = useMemo(() => { const start = startOfWeek(new Date(cursor.getFullYear(), cursor.getMonth(), 1)); return Array.from({ length: 42 }, (_, i) => addDays(start, i)); }, [cursor]);
+  const homework = useMemo(() => items.filter((it) => it.type === "homework" && new Date(it.startsAt) >= new Date(new Date().setHours(0, 0, 0, 0))).sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, 6), [items]);
 
   const Item = ({ it }: any) => (
     <Pressable onPress={() => setDetail(it)} style={{ flexDirection: "row", gap: 8, borderLeftWidth: 3, borderLeftColor: color(it), backgroundColor: "#fff", borderWidth: 1, borderColor: T.line, borderRadius: 8, padding: 8, marginBottom: 6 }}>
@@ -61,6 +62,17 @@ export default function ParentCalendarScreen() {
 
   return (
     <Screen>
+      {homework.length > 0 ? (
+        <Card>
+          <CardTitle>📚 Upcoming homework</CardTitle>
+          {homework.map((it, i) => (
+            <Pressable key={it.id} onPress={() => setDetail(it)}>
+              <LineItem first={i === 0} t={it.title} m={new Date(it.startsAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} right={<Badge tone="info">open</Badge>} />
+            </Pressable>
+          ))}
+        </Card>
+      ) : null}
+
       <Card>
         <Seg options={(["month", "week", "day"] as View[]).map((v) => ({ label: v[0].toUpperCase() + v.slice(1), active: view === v, onPress: () => setView(v) }))} />
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>

@@ -175,10 +175,39 @@ function HelpFaqs() {
   );
 }
 
+/* ---------------- MFA control (live) ---------------- */
+function MfaControl() {
+  const { boot } = useAuth();
+  const [enabled, setEnabled] = useState<boolean>(!!boot?.security?.mfaEnabled);
+  const [setup, setSetup] = useState<any>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function start() { setBusy(true); try { const d = await api.post<any>("/api/auth/mfa", {}); setSetup(d); } catch { toast("Couldn't start"); } finally { setBusy(false); } }
+  async function confirm() { setBusy(true); try { await api.put("/api/auth/mfa", { token: code }); setEnabled(true); setSetup(null); setCode(""); toast("MFA enabled"); } catch (e: any) { toast(e?.data?.error || "Invalid code"); } finally { setBusy(false); } }
+  async function disable() { setBusy(true); try { await api.del("/api/auth/mfa"); setEnabled(false); toast("MFA disabled"); } catch { toast("Couldn't disable"); } finally { setBusy(false); } }
+  return (
+    <Card style={{ marginTop: 6 }}>
+      <CardTitle right={<Badge tone={enabled ? "ok" : "mut"}>{enabled ? "On" : "Off"}</Badge>}>Two-factor authentication</CardTitle>
+      <Sub>Add a second step at sign-in using an authenticator app. Optional unless your administrator requires it.</Sub>
+      {enabled ? <Button tone="secondary" title="Disable MFA" disabled={busy} onPress={disable} /> :
+        setup ? (
+          <>
+            <View style={{ backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: T.line, borderRadius: 10, padding: 10, marginTop: 6 }}>
+              <Text style={{ fontSize: 11, color: T.muted }}>Setup key</Text>
+              <Text selectable style={{ fontFamily: "monospace" as any, fontSize: 13, color: T.ink }}>{setup.secret}</Text>
+            </View>
+            <Field label="Authenticator code" keyboardType="number-pad" value={code} onChangeText={setCode} placeholder="6-digit code" />
+            <Button title={busy ? "Verifying…" : "Verify & enable"} disabled={busy || !code} onPress={confirm} />
+          </>
+        ) : <Button title="Enable MFA" disabled={busy} onPress={start} />}
+    </Card>
+  );
+}
+
 /* ---------------- Account ---------------- */
 export function Account({ roleKey }: { roleKey: RoleKey }) {
   const { boot, logout } = useAuth();
-  const [sheet, setSheet] = useState<null | "notif" | "help" | "policies">(null);
+  const [sheet, setSheet] = useState<null | "notif" | "help" | "policies" | "security">(null);
   const roleLabel = roleKey.charAt(0).toUpperCase() + roleKey.slice(1);
 
   return (
@@ -193,6 +222,7 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
       <Card>
         <CardTitle>Support & settings</CardTitle>
         <Pressable onPress={() => setSheet("notif")}><LineItem first t="🔔  Notifications & contact preferences" right={<Badge tone="mut">manage</Badge>} /></Pressable>
+        <Pressable onPress={() => setSheet("security")}><LineItem t="🔐  Security (two-factor)" right={<Badge tone="mut">manage</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("help")}><LineItem t="🛟  Help centre" right={<Badge tone="mut">open</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("policies")}><LineItem t="📜  Policies" right={<Badge tone="mut">read</Badge>} /></Pressable>
       </Card>
@@ -201,6 +231,10 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
 
       <Sheet visible={sheet === "notif"} title="Notifications & preferences" onClose={() => setSheet(null)}>
         {sheet === "notif" ? <NotificationPrefs /> : null}
+      </Sheet>
+
+      <Sheet visible={sheet === "security"} title="Security" onClose={() => setSheet(null)}>
+        {sheet === "security" ? <MfaControl /> : null}
       </Sheet>
 
       <Sheet visible={sheet === "help"} title="Help Centre" onClose={() => setSheet(null)}>

@@ -28,6 +28,22 @@ const tip = (it: any) => `${it.title} · ${time(it)}${it.location ? ` · ${it.lo
 
 type View = "day" | "week" | "month" | "quarter" | "year" | "list";
 
+// Self-contained styling so the calendar reads clearly regardless of theme CSS.
+const S: Record<string, React.CSSProperties> = {
+  viewBtns: { display: "flex", gap: 6, flexWrap: "wrap" },
+  navBtn: { border: "1px solid #e2e8f0", background: "#fff", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#334155" },
+  navBtnOn: { border: "1px solid #4f46e5", background: "#4f46e5", color: "#fff", borderRadius: 8, padding: "5px 10px", cursor: "pointer", fontSize: 13, fontWeight: 700 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginTop: 4 },
+  dow: { textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748b", padding: "4px 0" },
+  cell: { minHeight: 98, border: "1px solid #e9edf4", borderRadius: 10, padding: 6, background: "#fff", display: "flex", flexDirection: "column", gap: 3, overflow: "hidden" },
+  cellOther: { background: "#f8fafc" },
+  cellToday: { borderColor: "#4f46e5", boxShadow: "inset 0 0 0 1px #4f46e5" },
+  daynum: { alignSelf: "flex-end", fontSize: 12, color: "#475569", cursor: "pointer", fontWeight: 600 },
+  ev: { display: "block", width: "100%", textAlign: "left", color: "#fff", border: "none", borderRadius: 6, padding: "3px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(15,23,41,0.5)", zIndex: 200, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 24, overflowY: "auto" },
+  modal: { background: "#fff", borderRadius: 16, maxWidth: 520, width: "94%", padding: 20 },
+};
+
 export default function ParentCalendar({ children, schools }: { children: { id: string; name: string; schoolId?: string }[]; schools: { id: string; name: string }[] }) {
   const [view, setView] = useState<View>("month");
   const [cursor, setCursor] = useState<Date>(() => new Date());
@@ -35,12 +51,10 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
   const [rangeTo, setRangeTo] = useState("");
   const [items, setItems] = useState<any[]>([]);
   const [detail, setDetail] = useState<any>(null);
-
   const [fChild, setFChild] = useState("all");
   const [fSchool, setFSchool] = useState("all");
   const [fType, setFType] = useState("all");
 
-  // Fetch window per view (with padding so grids that spill into adjacent months are covered).
   const window = useMemo(() => {
     if (view === "day") { const s = new Date(cursor); s.setHours(0, 0, 0, 0); return { from: addDays(s, -1), to: addDays(s, 2) }; }
     if (view === "week") { const s = startOfWeek(cursor); return { from: addDays(s, -1), to: addDays(s, 8) }; }
@@ -70,6 +84,11 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
     return ymd(s) <= ymd(day) && ymd(day) <= ymd(e);
   }).sort((a, b) => a.startsAt.localeCompare(b.startsAt)), [filtered]);
 
+  // Upcoming homework — pinned at the top of the calendar page.
+  const homework = useMemo(() => filtered.filter((it) => it.type === "homework")
+    .filter((it) => new Date(it.startsAt) >= new Date(new Date().setHours(0, 0, 0, 0)))
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt)).slice(0, 8), [filtered]);
+
   const today = new Date();
   const nav = (dir: number) => {
     if (view === "day") setCursor((c) => addDays(c, dir));
@@ -87,28 +106,42 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
     : view === "year" ? `${cursor.getFullYear()}` : "Upcoming";
 
   const chip = (it: any) => (
-    <button key={it.id} className="cal-ev" style={{ background: color(it) }} title={tip(it)} onClick={() => setDetail(it)}>
-      {icon(it)} {it.title}
-    </button>
+    <button key={it.id} style={{ ...S.ev, background: color(it) }} title={tip(it)} onClick={() => setDetail(it)}>{icon(it)} {it.title}</button>
   );
 
   return (
     <div id="p-calendar">
+      {/* Homework pinned to the top of the calendar page */}
+      {homework.length > 0 && (
+        <div className="panel">
+          <h2 style={{ fontSize: 16, margin: 0 }}>📚 Upcoming homework</h2>
+          <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+            {homework.map((it) => (
+              <button key={it.id} onClick={() => setDetail(it)} title={tip(it)} style={{ display: "flex", gap: 10, alignItems: "center", width: "100%", textAlign: "left", border: "1px solid #e9edf4", borderLeft: "4px solid #0f766e", borderRadius: 10, padding: "8px 12px", background: "#fff", cursor: "pointer" }}>
+                <span style={{ fontSize: 12, color: "#64748b", minWidth: 96 }}>{new Date(it.startsAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}</span>
+                <span style={{ flex: 1, fontWeight: 600, color: "#0f172a" }}>{it.title}</span>
+                {it.childNames?.length ? <span style={{ fontSize: 11, color: "#64748b" }}>{Array.from(new Set(it.childNames)).join(", ")}</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="panel">
-        <div className="cal-toolbar" style={{ flexWrap: "wrap", gap: 8 }}>
-          <div className="cal-views">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={S.viewBtns}>
             {(["day", "week", "month", "quarter", "year", "list"] as View[]).map((v) => (
-              <button key={v} className={view === v ? "active" : ""} onClick={() => setView(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
+              <button key={v} style={view === v ? S.navBtnOn : S.navBtn} onClick={() => setView(v)}>{v[0].toUpperCase() + v.slice(1)}</button>
             ))}
           </div>
           {view !== "list" && (
-            <div className="cal-nav">
-              <button className="secondary small" onClick={() => nav(-1)}>‹</button>
-              <button className="secondary small" onClick={() => setCursor(new Date())}>Today</button>
-              <button className="secondary small" onClick={() => nav(1)}>›</button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button style={S.navBtn} onClick={() => nav(-1)}>‹</button>
+              <button style={S.navBtn} onClick={() => setCursor(new Date())}>Today</button>
+              <button style={S.navBtn} onClick={() => nav(1)}>›</button>
             </div>
           )}
-          <div className="cal-title">{label}</div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: "#0f172a", marginLeft: "auto" }}>{label}</div>
         </div>
 
         <div className="row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
@@ -122,73 +155,66 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
           <div style={{ display: "flex", alignItems: "flex-end", marginLeft: "auto" }}><span className="muted" style={{ fontSize: 12 }}>{filtered.length} item(s)</span></div>
         </div>
 
-        <div className="cal-legend" style={{ marginTop: 10 }}>
-          <span><span className="cal-dot" style={{ background: TYPE_COLOR.event }} />Events</span>
-          <span><span className="cal-dot" style={{ background: TYPE_COLOR.trip }} />Trips</span>
-          <span><span className="cal-dot" style={{ background: TYPE_COLOR.homework }} />Homework</span>
-          <span><span className="cal-dot" style={{ background: TYPE_COLOR.timetable }} />Timetable</span>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10, fontSize: 12, color: "#64748b" }}>
+          {[["event", "Events"], ["trip", "Trips"], ["homework", "Homework"], ["timetable", "Timetable"]].map(([k, l]) => (
+            <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: TYPE_COLOR[k] }} />{l}</span>
+          ))}
         </div>
       </div>
 
       <div className="panel">
-        {/* DAY */}
         {view === "day" && (
           <div>
             {onDay(cursor).length === 0 ? <p className="muted">Nothing scheduled on this day.</p> :
               onDay(cursor).map((it) => (
-                <button key={it.id} onClick={() => setDetail(it)} title={tip(it)} style={{ display: "flex", gap: 10, width: "100%", textAlign: "left", alignItems: "flex-start", border: "1px solid var(--line)", borderLeft: `4px solid ${color(it)}`, borderRadius: 10, padding: "10px 12px", marginBottom: 8, background: "#fff", cursor: "pointer" }}>
-                  <span className="mono muted" style={{ fontSize: 12, minWidth: 74 }}>{time(it)}</span>
-                  <span style={{ flex: 1 }}><strong>{icon(it)} {it.title}</strong><div className="muted" style={{ fontSize: 12 }}>{[it.location, Array.from(new Set(it.childNames)).join(", "), schools.length > 1 ? it.schoolName : ""].filter(Boolean).join(" · ")}</div></span>
+                <button key={it.id} onClick={() => setDetail(it)} title={tip(it)} style={{ display: "flex", gap: 10, width: "100%", textAlign: "left", alignItems: "flex-start", border: "1px solid #e9edf4", borderLeft: `4px solid ${color(it)}`, borderRadius: 10, padding: "10px 12px", marginBottom: 8, background: "#fff", cursor: "pointer" }}>
+                  <span style={{ fontSize: 12, color: "#64748b", minWidth: 74 }}>{time(it)}</span>
+                  <span style={{ flex: 1 }}><strong>{icon(it)} {it.title}</strong><div style={{ fontSize: 12, color: "#64748b" }}>{[it.location, Array.from(new Set(it.childNames)).join(", "), schools.length > 1 ? it.schoolName : ""].filter(Boolean).join(" · ")}</div></span>
                   <span className="badge role">{it.type}</span>
                 </button>
               ))}
           </div>
         )}
 
-        {/* WEEK */}
         {view === "week" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 8 }}>
             {Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(cursor), i)).map((day, i) => (
-              <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 10, minHeight: 140, padding: 6, background: sameDay(day, today) ? "#eef2ff" : "#fff" }}>
-                <div className="muted" style={{ fontSize: 11, fontWeight: 700 }}>{DOW[i]} {day.getDate()}</div>
-                {onDay(day).map((it) => chip(it))}
+              <div key={i} style={{ border: "1px solid #e9edf4", borderRadius: 10, minHeight: 150, padding: 6, background: sameDay(day, today) ? "#eef2ff" : "#fff" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b" }}>{DOW[i]} {day.getDate()}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 4 }}>{onDay(day).map((it) => chip(it))}</div>
               </div>
             ))}
           </div>
         )}
 
-        {/* MONTH */}
         {view === "month" && (
-          <div className="cal-grid">
-            {DOW.map((d) => <div key={d} className="cal-dow">{d}</div>)}
+          <div style={S.grid}>
+            {DOW.map((d) => <div key={d} style={S.dow}>{d}</div>)}
             {monthMatrix(cursor.getFullYear(), cursor.getMonth()).map((day, i) => {
               const de = onDay(day); const other = day.getMonth() !== cursor.getMonth();
               return (
-                <div key={i} className={`cal-cell${other ? " other" : ""}${sameDay(day, today) ? " today" : ""}`}>
-                  <span className="cal-daynum" onClick={() => drill(day)} style={{ cursor: "pointer" }}>{day.getDate()}</span>
+                <div key={i} style={{ ...S.cell, ...(other ? S.cellOther : {}), ...(sameDay(day, today) ? S.cellToday : {}) }}>
+                  <span style={S.daynum} onClick={() => drill(day)}>{day.getDate()}</span>
                   {de.slice(0, 4).map((it) => chip(it))}
-                  {de.length > 4 && <button className="cal-more" onClick={() => drill(day)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>+{de.length - 4} more</button>}
+                  {de.length > 4 && <button onClick={() => drill(day)} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b", fontSize: 11, textAlign: "left" }}>+{de.length - 4} more</button>}
                 </div>
               );
             })}
           </div>
         )}
 
-        {/* QUARTER */}
         {view === "quarter" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 14 }}>
             {[0, 1, 2].map((q) => { const m = startOfQuarter(cursor).getMonth() + q; const y = cursor.getFullYear() + Math.floor(m / 12); return <MiniMonth key={q} year={y} month={m % 12} onDay={onDay} onPick={drill} today={today} />; })}
           </div>
         )}
 
-        {/* YEAR */}
         {view === "year" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 14 }}>
             {Array.from({ length: 12 }, (_, m) => <MiniMonth key={m} year={cursor.getFullYear()} month={m} onDay={onDay} onPick={drill} today={today} />)}
           </div>
         )}
 
-        {/* LIST */}
         {view === "list" && (
           <table>
             <thead><tr><th>When</th><th>What</th><th>Child</th>{schools.length > 1 && <th>School</th>}<th></th></tr></thead>
@@ -196,7 +222,7 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
               {filtered.map((it) => (
                 <tr key={it.id} style={{ cursor: "pointer" }} onClick={() => setDetail(it)} title={tip(it)}>
                   <td className="mono muted" style={{ whiteSpace: "nowrap", fontSize: 12 }}>{new Date(it.startsAt).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })} · {time(it)}</td>
-                  <td><span className="cal-dot" style={{ background: color(it) }} />{icon(it)} <strong>{it.title}</strong><div className="muted" style={{ fontSize: 11 }}>{it.location || it.description || ""}</div></td>
+                  <td><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: color(it), marginRight: 6 }} />{icon(it)} <strong>{it.title}</strong><div className="muted" style={{ fontSize: 11 }}>{it.location || it.description || ""}</div></td>
                   <td className="muted">{Array.from(new Set(it.childNames)).join(", ")}</td>
                   {schools.length > 1 && <td className="muted">{it.schoolName}</td>}
                   <td className="right"><span className="badge role">{it.type}</span></td>
@@ -209,11 +235,11 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
       </div>
 
       {detail && (
-        <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div className="modal" style={{ maxWidth: 520, width: "94%" }} onClick={(e) => e.stopPropagation()}>
+        <div style={S.overlay} onClick={() => setDetail(null)}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
             <div className="flex-between" style={{ alignItems: "flex-start" }}>
               <div><h2 style={{ margin: 0 }}>{icon(detail)} {detail.title}</h2><div className="muted" style={{ fontSize: 13 }}>{detail.type} · {new Date(detail.startsAt).toLocaleString()}</div></div>
-              <button className="secondary small" onClick={() => setDetail(null)}>Close</button>
+              <button style={S.navBtn} onClick={() => setDetail(null)}>Close</button>
             </div>
             <table style={{ marginTop: 12 }}><tbody>
               <tr><th style={{ width: 130 }}>For</th><td>{Array.from(new Set(detail.childNames)).join(", ")}</td></tr>
@@ -232,15 +258,15 @@ export default function ParentCalendar({ children, schools }: { children: { id: 
 function MiniMonth({ year, month, onDay, onPick, today }: { year: number; month: number; onDay: (d: Date) => any[]; onPick: (d: Date) => void; today: Date }) {
   const cells = monthMatrix(year, month);
   return (
-    <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10 }}>
+    <div style={{ border: "1px solid #e9edf4", borderRadius: 12, padding: 10, background: "#fff" }}>
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{MONTHS[month]} {year}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
-        {DOW.map((d) => <div key={d} className="muted" style={{ fontSize: 9, textAlign: "center" }}>{d[0]}</div>)}
+        {DOW.map((d) => <div key={d} style={{ fontSize: 9, textAlign: "center", color: "#94a3b8" }}>{d[0]}</div>)}
         {cells.map((day, i) => {
           const de = onDay(day); const other = day.getMonth() !== month; const has = de.length > 0;
           return (
             <button key={i} onClick={() => onPick(day)} title={has ? `${de.length} item(s) — ${de.map((x) => x.title).slice(0, 4).join(", ")}` : day.toLocaleDateString()}
-              style={{ aspectRatio: "1", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 10, position: "relative", background: sameDay(day, today) ? "#4f46e5" : has ? "#eef2ff" : "transparent", color: sameDay(day, today) ? "#fff" : other ? "#cbd5e1" : "var(--ink)" }}>
+              style={{ aspectRatio: "1", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 10, position: "relative", background: sameDay(day, today) ? "#4f46e5" : has ? "#eef2ff" : "transparent", color: sameDay(day, today) ? "#fff" : other ? "#cbd5e1" : "#0f172a" }}>
               {day.getDate()}
               {has && !sameDay(day, today) ? <span style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: 2, background: color(de[0]) }} /> : null}
             </button>

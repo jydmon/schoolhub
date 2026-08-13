@@ -23,7 +23,12 @@ export async function POST(req: Request) {
       return ok({ error: "Too many attempts. Please wait a few minutes and try again." }, 429);
     }
 
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    // Explicit select of only long-standing columns so login never depends on a
+    // not-yet-migrated column (e.g. passwordChangedAt is handled separately below).
+    const user = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() },
+      select: { id: true, email: true, fullName: true, passwordHash: true, status: true, mfaEnabled: true, mfaSecret: true, mustChangePassword: true, isPlatformAdmin: true, sessionVersion: true, emailVerified: true },
+    });
 
     const device = req.headers.get("user-agent");
     const fail = async (reason: string) => {
@@ -39,34 +44,30 @@ export async function POST(req: Request) {
 
     // MFA gate for accounts that already have it enabled.
     if (user.mfaEnabled) {
-      if (!mfaToken) {
-        return ok({ mfaRequired: true });
-      }
-      if (!user.mfaSecret || !verifyTotp(mfaToken, user.mfaSecret)) {
-        return fail("bad_mfa");
-      }
+      if (!mfaToken) return ok({ mfaRequired: true });
+      if (!user.mfaSecret || !verifyTotp(mfaToken, user.mfaSecret)) return fail("bad_mfa");
     }
 
-    const policy = await getSecurityPolicy();
+    const policy = await getSecurityPolicy(); // fault-tolerant (defaults on error)
 
-    // Grandfather: stamp passwordChangedAt on first login after this ships so the
-    // whole user base isn't marked "expired" at once.
-    const stampPwChanged = (user as any).passwordChangedAt ? {} : { passwordChangedAt: new Date() };
+    // Password-expiry evaluation + first-login stamp — fully guarded so a missing
+    // `passwordChangedAt` column can NEVER break login. Feature activates once the
+    // schema is applied.
+    let exp = { expired: false, canDefer: false, daysLeft: null as number | null };
+    try {
+      const pc = await prisma.user.findUnique({ where: { id: user.id }, select: { passwordChangedAt: true } });
+      if (!pc?.passwordChangedAt) await prisma.user.update({ where: { id: user.id }, data: { passwordChangedAt: new Date() } });
+      else exp = passwordExpiry(pc.passwordChangedAt, policy);
+    } catch { /* passwordChangedAt not migrated yet — skip expiry */ }
 
     setSessionCookie(user, remember);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date(), ...stampPwChanged },
-    });
+    try { await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }); } catch {}
     await recordAudit({ action: AUDIT.USER_LOGIN, actorUserId: user.id, actorEmail: user.email, ip });
     await recordLoginEvent({ userId: user.id, email: user.email, ip, device, result: "success" });
 
-    // Mandatory-MFA enrolment gate + password-expiry evaluation.
     const mfaEnrollmentRequired = policy.mfaRequired && !user.mfaEnabled;
-    const exp = passwordExpiry((user as any).passwordChangedAt, policy);
     const mustChange = user.mustChangePassword || (exp.expired && !exp.canDefer);
 
-    // Native clients store this token and send it as `Authorization: Bearer`.
     const token = signSession(
       { sub: user.id, email: user.email, isPlatformAdmin: user.isPlatformAdmin, ver: user.sessionVersion ?? 0 },
       remember ? SESSION_TTL_REMEMBER : SESSION_TTL,
@@ -74,14 +75,7 @@ export async function POST(req: Request) {
 
     return ok({
       token,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        isPlatformAdmin: user.isPlatformAdmin,
-        emailVerified: user.emailVerified,
-        mfaEnabled: user.mfaEnabled,
-      },
+      user: { id: user.id, email: user.email, fullName: user.fullName, isPlatformAdmin: user.isPlatformAdmin, emailVerified: user.emailVerified, mfaEnabled: user.mfaEnabled },
       mfaEnrollmentRequired,
       passwordExpired: exp.expired,
       passwordCanDefer: exp.canDefer,
