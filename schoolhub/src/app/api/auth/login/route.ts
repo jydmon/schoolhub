@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { verifyPassword, signSession } from "@/lib/auth";
+import { verifyPassword, signSession, SESSION_TTL, SESSION_TTL_REMEMBER } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/session";
 import { verifyTotp } from "@/lib/mfa";
 import { loginSchema } from "@/lib/validation";
@@ -7,16 +7,16 @@ import { recordAudit } from "@/lib/audit";
 import { AUDIT } from "@/lib/constants";
 import { rateLimit } from "@/lib/ratelimit";
 import { recordLoginEvent } from "@/lib/user-admin";
+import { getSecurityPolicy, passwordExpiry } from "@/lib/security-policy";
 import { handleError, clientIp, ok } from "@/lib/http";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { email, password, mfaToken } = loginSchema.parse(body);
+    const remember = body?.remember === true;
     const ip = clientIp(req);
 
-    // Per-account throttle to slow credential-stuffing (in addition to the
-    // per-IP limit in middleware).
     const rl = rateLimit(`login:${email.toLowerCase()}`, 8, 5 * 60_000);
     if (!rl.ok) {
       await recordAudit({ action: AUDIT.RATE_LIMITED, actorEmail: email, ip, metadata: { endpoint: "login" } });
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     if (user.status === "disabled") return fail("disabled");
     if (!(await verifyPassword(password, user.passwordHash))) return fail("bad_password");
 
-    // MFA gate for accounts that have it enabled.
+    // MFA gate for accounts that already have it enabled.
     if (user.mfaEnabled) {
       if (!mfaToken) {
         return ok({ mfaRequired: true });
@@ -47,23 +47,30 @@ export async function POST(req: Request) {
       }
     }
 
-    setSessionCookie(user);
+    const policy = await getSecurityPolicy();
+
+    // Grandfather: stamp passwordChangedAt on first login after this ships so the
+    // whole user base isn't marked "expired" at once.
+    const stampPwChanged = (user as any).passwordChangedAt ? {} : { passwordChangedAt: new Date() };
+
+    setSessionCookie(user, remember);
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: new Date(), ...stampPwChanged },
     });
     await recordAudit({ action: AUDIT.USER_LOGIN, actorUserId: user.id, actorEmail: user.email, ip });
     await recordLoginEvent({ userId: user.id, email: user.email, ip, device, result: "success" });
 
-    // Native (mobile) clients can't read the httpOnly cookie, so also return the
-    // signed session token in the body. They store it securely and send it as an
-    // `Authorization: Bearer <token>` header (see getAuthContext). Web ignores it.
-    const token = signSession({
-      sub: user.id,
-      email: user.email,
-      isPlatformAdmin: user.isPlatformAdmin,
-      ver: user.sessionVersion ?? 0,
-    });
+    // Mandatory-MFA enrolment gate + password-expiry evaluation.
+    const mfaEnrollmentRequired = policy.mfaRequired && !user.mfaEnabled;
+    const exp = passwordExpiry((user as any).passwordChangedAt, policy);
+    const mustChange = user.mustChangePassword || (exp.expired && !exp.canDefer);
+
+    // Native clients store this token and send it as `Authorization: Bearer`.
+    const token = signSession(
+      { sub: user.id, email: user.email, isPlatformAdmin: user.isPlatformAdmin, ver: user.sessionVersion ?? 0 },
+      remember ? SESSION_TTL_REMEMBER : SESSION_TTL,
+    );
 
     return ok({
       token,
@@ -75,6 +82,11 @@ export async function POST(req: Request) {
         emailVerified: user.emailVerified,
         mfaEnabled: user.mfaEnabled,
       },
+      mfaEnrollmentRequired,
+      passwordExpired: exp.expired,
+      passwordCanDefer: exp.canDefer,
+      passwordDaysLeft: exp.daysLeft,
+      mustChangePassword: mustChange,
     });
   } catch (err) {
     return handleError(err);

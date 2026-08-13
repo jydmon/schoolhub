@@ -10,9 +10,18 @@ export default function CommsTab({ schoolId }: { schoolId: string }) {
   const [history, setHistory] = useState<any[]>([]);
   const [f, setF] = useState<any>({ title: "", body: "", targetType: "school", targetValue: "", audience: "parents", priority: "normal", channels: { inapp: true, push: true, email: false, sms: false } });
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const [p2p, setP2p] = useState<boolean | null>(null);
+  const [p2pMsg, setP2pMsg] = useState(false);
 
   const load = useCallback(async () => setHistory((await fetch(`/api/schools/${schoolId}/messages`).then((r) => r.json())).messages ?? []), [schoolId]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetch(`/api/schools/${schoolId}/messaging-policy`).then((r) => r.json()).then((d) => setP2p(!!d.parentToParent)).catch(() => setP2p(false)); }, [schoolId]);
+
+  async function saveP2p(v: boolean) {
+    setP2p(v);
+    const res = await fetch(`/api/schools/${schoolId}/messaging-policy`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentToParent: v }) });
+    if (res.ok) { setP2pMsg(true); setTimeout(() => setP2pMsg(false), 1500); }
+  }
 
   async function send(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
@@ -52,6 +61,16 @@ export default function CommsTab({ schoolId }: { schoolId: string }) {
           </div>
           <button type="submit" style={{ marginTop: 14 }}>Send message</button>
         </form>
+      </div>
+
+      <div className="panel">
+        <h2 style={{ fontSize: 16, margin: 0 }}>Messaging policy</h2>
+        <p className="sub">By default, parents can only message staff linked to their child (class teachers, assigned drivers, transport managers and the school office) — never other parents. Enable the option below only if your school wants to allow parent-to-parent messaging.</p>
+        {p2pMsg && <div className="notice ok">Saved.</div>}
+        <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 400 }}>
+          <input type="checkbox" style={{ width: "auto", margin: 0 }} checked={!!p2p} onChange={(e) => saveP2p(e.target.checked)} disabled={p2p === null} />
+          Allow parents at this school to message each other
+        </label>
       </div>
 
       <div className="panel">

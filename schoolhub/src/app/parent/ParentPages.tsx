@@ -8,6 +8,7 @@ import ParentTimetable from "./ParentTimetable";
 import ParentChildren from "./ParentChildren";
 import ParentMenu from "./ParentMenu";
 import ParentReportsCentre from "./ParentReportsCentre";
+import ParentSubscription from "./ParentSubscription";
 import AccountProfile from "@/components/AccountProfile";
 import HelpSupport from "@/components/HelpSupport";
 import Messaging from "@/components/Messaging";
@@ -33,7 +34,6 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
   const kids = children.map((c: any) => ({ id: c.id, name: c.name, schoolId: c.schoolId }));
   const schools = Array.from(new Map(children.map((c: any) => [c.schoolId, c.schoolName])).entries()).map(([id, name]) => ({ id: id as string, name: name as string }));
 
-  // Pages that need the child/school list wait for it to load; the rest render immediately.
   const needsChildren = ["children", "calendar", "timetable", "transport", "reports"].includes(active);
   if (needsChildren && !ready) return <div className="panel">Loading…</div>;
 
@@ -59,6 +59,7 @@ export default function ParentPages({ active, onNavigate }: { active: string; on
     case "rewards": return <ParentRewards />;
     case "reports": return <ParentReportsCentre children={kids} schools={schools} />;
     case "messaging": return <ParentMessaging />;
+    case "subscription": return <ParentSubscription />;
     case "profile": return <AccountProfile />;
     case "compliance": return <ParentProfile />;
     case "dm": return <Messaging />;

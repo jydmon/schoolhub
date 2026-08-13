@@ -7,8 +7,8 @@ import ParentPages from "./ParentPages";
 const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", overview: "Family dashboard", children: "My children",
   calendar: "Calendar", timetable: "Timetable", notifications: "Notifications", menu: "Menu",
-  transport: "Transport", trips: "Trips", rewards: "Rewards", reports: "Reports centre",
-  messaging: "Contact preferences", dm: "Messages", profile: "My profile", compliance: "Terms & compliance", preferences: "Preferences", help: "Help & support",
+  transport: "Transport", trips: "Trips", rewards: "Rewards", reports: "Report Centre",
+  dm: "Messages", messaging: "Contact preferences", profile: "My profile", compliance: "Terms & compliance", preferences: "My preferences", subscription: "My subscription", help: "Help & support",
 };
 
 export default function ParentShell({ email = "" }: { email?: string }) {
@@ -19,7 +19,6 @@ export default function ParentShell({ email = "" }: { email?: string }) {
     fetch(`/api/parent/notifications`).then((r) => r.json()).then((d) => setUnread(d.unread ?? 0)).catch(() => {});
   }, []);
   useEffect(() => { loadUnread(); }, [loadUnread]);
-  // Refresh the badge when leaving the notifications page (items may have been read).
   useEffect(() => { if (active !== "notifications") loadUnread(); }, [active, loadUnread]);
 
   function nav(k: string) {
@@ -27,29 +26,38 @@ export default function ParentShell({ email = "" }: { email?: string }) {
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Standardised navigation (per spec): Assistant always at the top, then
+  // Account, Family, School, Support and Reports.
   const PARENT_NAV: NavGroup[] = [
     { label: "Assistant", items: [
       { key: "assistant", label: "Ask AI Assistant", icon: "🤖" },
+    ] },
+    { label: "Account", items: [
+      { key: "profile", label: "My profile", icon: "🙂" },
+      { key: "compliance", label: "Terms & compliance", icon: "📋" },
+      { key: "preferences", label: "My preferences", icon: "⚙️" },
+      { key: "messaging", label: "Contact preferences", icon: "✉️" },
+      { key: "subscription", label: "My subscription", icon: "💳" },
     ] },
     { label: "Family", items: [
       { key: "overview", label: "Overview", icon: "🏠" },
       { key: "children", label: "My children", icon: "👧" },
       { key: "calendar", label: "Calendar", icon: "📅" },
+    ] },
+    { label: "School", items: [
       { key: "timetable", label: "Timetable", icon: "🗓️" },
-      { key: "notifications", label: "Notifications", icon: "🔔", badge: unread },
       { key: "menu", label: "Menu", icon: "🍽️" },
+      { key: "rewards", label: "Rewards", icon: "⭐" },
       { key: "transport", label: "Transport", icon: "🚌" },
       { key: "trips", label: "Trips", icon: "🧳" },
-      { key: "rewards", label: "Rewards", icon: "⭐" },
-      { key: "reports", label: "Reports centre", icon: "📄" },
-      { key: "dm", label: "Messages", icon: "💬" },
-      { key: "messaging", label: "Contact preferences", icon: "✉️" },
     ] },
-    { label: "Account", items: [
-      { key: "profile", label: "My profile", icon: "🙂" },
-      { key: "compliance", label: "Terms & compliance", icon: "📋" },
-      { key: "preferences", label: "Preferences", icon: "⚙️" },
+    { label: "Support", items: [
       { key: "help", label: "Help & support", icon: "🆘" },
+      { key: "dm", label: "Messaging", icon: "💬" },
+      { key: "notifications", label: "Notifications", icon: "🔔", badge: unread },
+    ] },
+    { label: "Reports", items: [
+      { key: "reports", label: "Report Centre", icon: "📄" },
     ] },
   ];
 

@@ -12,8 +12,22 @@ import { ROLES } from "./constants";
 
 const STAFF_ROLES: string[] = [ROLES.SCHOOL_ADMIN, ROLES.SCHOOL_LEADER, ROLES.TEACHER, ROLES.TRANSPORT_MANAGER, ROLES.SUPPORT_STAFF];
 
+// User-facing notification categories. "security" is always on and cannot be
+// disabled. Message `kind`s are mapped to these via categoryForKind().
+export const NOTIFICATION_CATEGORIES: [string, string][] = [
+  ["transport", "Transport updates"],
+  ["checkinout", "Student check-in / check-out"],
+  ["announcements", "School announcements"],
+  ["timetable", "Timetable changes"],
+  ["messages", "Messages"],
+  ["rewards", "Rewards & achievements"],
+  ["trips", "Trip notifications"],
+  ["security", "Security alerts"],
+];
+
 export type Prefs = {
   channels: Record<string, boolean>;
+  categories: Record<string, boolean>;
   digest: string;
   quietStart?: string | null;
   quietEnd?: string | null;
@@ -22,23 +36,50 @@ export type Prefs = {
   rewardPrefs: Record<string, boolean>;
 };
 
+const DEFAULT_CATEGORIES: Record<string, boolean> = {
+  transport: true, checkinout: true, announcements: true, timetable: true,
+  messages: true, rewards: true, trips: true, security: true,
+};
+
 const DEFAULT_PREFS: Prefs = {
   channels: { inapp: true, push: true, email: true, sms: false, whatsapp: false },
+  categories: { ...DEFAULT_CATEGORIES },
   digest: "immediate", quietStart: null, quietEnd: null, preferredLanguage: "en", perChild: {},
   rewardPrefs: { immediatePositive: true, dailySummary: false, weeklySummary: true, incident: true, detention: true, milestone: true },
 };
 
 export async function getPrefs(userId: string): Promise<Prefs> {
   const p = await prisma.notificationPreference.findUnique({ where: { userId } });
-  if (!p) return DEFAULT_PREFS;
-  const safe = (s: string, d: any) => { try { return JSON.parse(s); } catch { return d; } };
+  if (!p) return { ...DEFAULT_PREFS, categories: { ...DEFAULT_CATEGORIES } };
+  const safe = (s: string | null | undefined, d: any) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
   // Merge stored prefs over defaults so an empty "{}" (or a partial object) falls
   // back to sensible defaults for any missing keys.
   return {
     channels: { ...DEFAULT_PREFS.channels, ...safe(p.channelsJson, {}) },
+    categories: { ...DEFAULT_CATEGORIES, ...safe((p as any).categoriesJson, {}), security: true },
     digest: p.digest, quietStart: p.quietStart, quietEnd: p.quietEnd, preferredLanguage: p.preferredLanguage,
     perChild: safe(p.perChildJson, {}), rewardPrefs: { ...DEFAULT_PREFS.rewardPrefs, ...safe(p.rewardPrefsJson, {}) },
   };
+}
+
+/** Map a notification `kind` to a preference category. */
+export function categoryForKind(kind?: string | null): string {
+  const k = (kind || "").toLowerCase();
+  if (k.includes("transport") || k.includes("journey") || k.includes("bus") || k.includes("route")) return "transport";
+  if (k.includes("board") || k.includes("checkin") || k.includes("check-in") || k.includes("pickup") || k.includes("dropoff")) return "checkinout";
+  if (k.includes("announce") || k.includes("newsletter")) return "announcements";
+  if (k.includes("timetable") || k.includes("lesson")) return "timetable";
+  if (k.includes("message") || k.includes("chat")) return "messages";
+  if (k.includes("reward") || k.includes("behaviour") || k.includes("merit") || k.includes("achievement")) return "rewards";
+  if (k.includes("trip") || k.includes("event")) return "trips";
+  if (k.includes("security") || k.includes("login") || k.includes("password") || k.includes("mfa")) return "security";
+  return "announcements";
+}
+
+/** Whether a user wants notifications for a category (security is always on). */
+export function categoryEnabled(prefs: Prefs, category: string): boolean {
+  if (category === "security") return true;
+  return prefs.categories?.[category] !== false;
 }
 
 function withinQuiet(p: Prefs, now = new Date()): boolean {
@@ -51,42 +92,36 @@ function withinQuiet(p: Prefs, now = new Date()): boolean {
 }
 
 // ---- channel adapters ----
-// In-app is real (a Notification row). email/push/sms/whatsapp use adapters that
-// log in console-mode and swap to real providers via env (see each lib). Push
-// targets the user's *registered devices* (Device rows). SMS honours opt-out;
-// WhatsApp requires opt-in and uses an approved template for business-initiated
-// (non-emergency) messages — so delivery tracking reflects real consent state.
 type DeliverResult = { status: "sent" | "failed"; providerId?: string };
 
 export async function deliver(channel: string, userId: string, title: string, body?: string, emergency = false): Promise<DeliverResult> {
   if (channel === "email") {
     const u = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
-    if (!u?.email) return { status: "failed" }; // no address on file
+    if (!u?.email) return { status: "failed" };
     await sendEmail({ to: u.email, subject: title, body: body || "" });
     return { status: "sent" };
   }
 
   if (channel === "push") {
     const devices = await prisma.device.findMany({ where: { userId }, select: { pushToken: true, platform: true } });
-    if (devices.length === 0) return { status: "failed" }; // no registered device
+    if (devices.length === 0) return { status: "failed" };
     for (const d of devices) {
       // eslint-disable-next-line no-console
-      console.log(`[push:${d.platform}] token=${d.pushToken.slice(0, 12)}… → ${title}`); // → FCM/APNs
+      console.log(`[push:${d.platform}] token=${d.pushToken.slice(0, 12)}… → ${title}`);
     }
     return { status: "sent" };
   }
 
   if (channel === "sms" || channel === "whatsapp") {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { phone: true, smsOptOut: true, whatsappOptIn: true } });
-    if (!user?.phone) return { status: "failed" }; // no number on file
+    if (!user?.phone) return { status: "failed" };
 
     if (channel === "sms") {
-      if (user.smsOptOut && !emergency) return { status: "failed" }; // replied STOP (emergencies still go)
+      if (user.smsOptOut && !emergency) return { status: "failed" };
       const r = await sendSms(user.phone, body ? `${title} — ${body}` : title);
       return { status: r.status, providerId: r.providerId };
     }
-    // whatsapp
-    if (!user.whatsappOptIn) return { status: "failed" }; // must opt in before we may message
+    if (!user.whatsappOptIn) return { status: "failed" };
     const r = emergency
       ? await sendWhatsApp(user.phone, { kind: "text", body: body ? `${title}: ${body}` : title })
       : await sendWhatsApp(user.phone, { kind: "template", template: "general_update", variables: [title, body || ""] });
@@ -131,8 +166,8 @@ export async function resolveRecipients(schoolId: string, target: { type: string
       break;
     }
     case "staff": await addAllStaff(); break;
-    case "parents": break; // all guardians in school
-    case "club": break; // resolved via events in a later iteration
+    case "parents": break;
+    case "club": break;
   }
 
   if (!["trip", "staff"].includes(target.type)) {
@@ -147,16 +182,19 @@ export async function resolveRecipients(schoolId: string, target: { type: string
 }
 
 /** Fan a message out to recipients across channels, honouring prefs (unless emergency). */
-export async function dispatch(msg: { id: string; schoolId: string; title: string; body?: string | null; channels: string; priority: string }, userIds: string[]) {
+export async function dispatch(msg: { id: string; schoolId: string; title: string; body?: string | null; channels: string; priority: string; kind?: string }, userIds: string[]) {
   const channels = msg.channels.split(",").map((c) => c.trim()).filter(Boolean);
   const emergency = msg.priority === "emergency";
+  const category = categoryForKind(msg.kind || "message");
   const now = new Date();
   const rows: any[] = [];
 
   for (const userId of userIds) {
     const prefs = emergency ? DEFAULT_PREFS : await getPrefs(userId);
+    const wantsCategory = emergency || categoryEnabled(prefs, category);
     const quiet = emergency ? false : withinQuiet(prefs, now);
-    const chosen = emergency ? channels : channels.filter((c) => c === "inapp" || prefs.channels[c]);
+    // In-app is always recorded; external channels honour channel + category prefs.
+    const chosen = emergency ? channels : channels.filter((c) => c === "inapp" || (prefs.channels[c] && wantsCategory));
     for (const ch of chosen) {
       let status = "delivered";
       let providerId: string | undefined;
@@ -164,7 +202,7 @@ export async function dispatch(msg: { id: string; schoolId: string; title: strin
         if (quiet) { status = "queued"; }
         else { const r = await deliver(ch, userId, msg.title, msg.body || undefined, emergency); status = r.status; providerId = r.providerId; }
       }
-      rows.push({ userId, schoolId: msg.schoolId, messageId: msg.id, kind: "message", title: msg.title, body: msg.body || null, channel: ch, status, providerId: providerId ?? null });
+      rows.push({ userId, schoolId: msg.schoolId, messageId: msg.id, kind: msg.kind || "message", title: msg.title, body: msg.body || null, channel: ch, status, providerId: providerId ?? null });
     }
   }
   if (rows.length) await prisma.notification.createMany({ data: rows });

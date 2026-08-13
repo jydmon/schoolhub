@@ -3,6 +3,7 @@
 import { SiplatMark } from "./TopBar";
 import LogoutButton from "./LogoutButton";
 import Onboarding from "./Onboarding";
+import AnnouncementBanner from "./AnnouncementBanner";
 
 export type NavItem = { key: string; label: string; icon: string; badge?: number };
 export type NavGroup = { label: string; items: NavItem[] };
@@ -45,7 +46,10 @@ export default function AppShell({
             <LogoutButton />
           </div>
         </div>
-        <div className="main-body">{children}</div>
+        <div className="main-body">
+          <AnnouncementBanner />
+          {children}
+        </div>
       </div>
       <Onboarding />
     </div>

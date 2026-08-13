@@ -13,6 +13,7 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
     tabs: [
       { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "home", label: "Home", icon: "🏠" },
+      { key: "calendar", label: "Calendar", icon: "📅" },
       { key: "transport", label: "Transport", icon: "🚌" },
       { key: "reports", label: "Reports", icon: "📄" },
       { key: "alerts", label: "Alerts", icon: "🔔" },
@@ -22,9 +23,9 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
   teacher: {
     title: "Teacher", school: "Northwind Academy", who: "Tom Reed", av: "TR", em: "🍎",
     tabs: [
+      { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "trips", label: "Trips", icon: "🧭" },
       { key: "reports", label: "Reports", icon: "📝" },
-      { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "account", label: "Account", icon: "⚙️" },
     ],
   },
@@ -38,10 +39,10 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
   admin: {
     title: "Admin", school: "Northwind Academy", who: "Alice Turner", av: "AT", em: "🛠️",
     tabs: [
+      { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "operations", label: "Operations", icon: "📊" },
       { key: "emergency", label: "Emergency", icon: "🚨" },
       { key: "integrations", label: "Links", icon: "🔌" },
-      { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "account", label: "Account", icon: "⚙️" },
     ],
   },

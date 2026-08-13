@@ -2,16 +2,27 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const CHANNELS: [string, string][] = [["inapp", "In-app"], ["push", "Push"], ["email", "Email"], ["sms", "SMS"]];
+const CHANNELS: [string, string][] = [["inapp", "In-app"], ["push", "Push"], ["email", "Email"], ["sms", "SMS"], ["whatsapp", "WhatsApp"]];
+const CATEGORIES: [string, string][] = [
+  ["transport", "Transport updates"],
+  ["checkinout", "Student check-in / check-out"],
+  ["announcements", "School announcements"],
+  ["timetable", "Timetable changes"],
+  ["messages", "Messages"],
+  ["rewards", "Rewards & achievements"],
+  ["trips", "Trip notifications"],
+  ["security", "Security alerts"],
+];
 const LANGS: [string, string][] = [["en", "English"], ["fr", "Français"], ["es", "Español"], ["pl", "Polski"], ["ur", "اردو"], ["ar", "العربية"]];
 
 // One consistent "My profile" experience for every role: identity, contact,
-// notification preferences, and security (change password).
+// notification & contact preferences, and security (change password).
 export default function AccountProfile() {
   const [p, setP] = useState<any>(null);
   const [f, setF] = useState({ fullName: "", username: "", phone: "", photoUrl: "" });
   const [prefs, setPrefs] = useState<any>(null);
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+  const [showPw, setShowPw] = useState(false);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [pwMsg, setPwMsg] = useState<{ kind: string; text: string } | null>(null);
   const [prefMsg, setPrefMsg] = useState(false);
@@ -41,10 +52,12 @@ export default function AccountProfile() {
     setPwMsg({ kind: "ok", text: d.message || "Password updated." }); setPw({ current: "", next: "", confirm: "" });
   }
   async function savePrefs() {
-    const res = await fetch("/api/me/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channels: prefs.channels, digest: prefs.digest, quietStart: prefs.quietStart, quietEnd: prefs.quietEnd, preferredLanguage: prefs.preferredLanguage }) });
-    if (res.ok) { setPrefMsg(true); setTimeout(() => setPrefMsg(false), 1500); }
+    const res = await fetch("/api/me/preferences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ channels: prefs.channels, categories: prefs.categories, digest: prefs.digest, quietStart: prefs.quietStart, quietEnd: prefs.quietEnd, preferredLanguage: prefs.preferredLanguage }) });
+    if (res.ok) { const d = await res.json().catch(() => ({})); if (d.prefs) setPrefs(d.prefs); setPrefMsg(true); setTimeout(() => setPrefMsg(false), 1500); }
   }
   const setCh = (k: string, v: boolean) => setPrefs({ ...prefs, channels: { ...prefs.channels, [k]: v } });
+  const setCat = (k: string, v: boolean) => setPrefs({ ...prefs, categories: { ...prefs.categories, [k]: v } });
+  const pwType = showPw ? "text" : "password";
 
   if (!p) return <div className="panel">Loading…</div>;
 
@@ -74,20 +87,35 @@ export default function AccountProfile() {
 
       {prefs && (
         <div className="panel">
-          <h2 style={{ margin: 0 }}>Notification settings</h2>
-          <p className="sub">Choose how you receive notifications. Safety-critical alerts always come through.</p>
+          <h2 style={{ margin: 0 }}>Notification &amp; contact preferences</h2>
+          <p className="sub">Choose how and what you&apos;re notified about. Safety-critical security alerts always come through.</p>
           {prefMsg && <div className="notice ok">Saved.</div>}
+
+          <h3 style={{ marginBottom: 6 }}>Channels</h3>
           <div className="chips">
-            <span className="muted" style={{ fontSize: 13 }}>Channels:</span>
             {CHANNELS.map(([k, l]) => <label key={k} className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={!!prefs.channels?.[k]} onChange={(e) => setCh(k, e.target.checked)} /> {l}</label>)}
           </div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <div><label>Digest</label><select value={prefs.digest} onChange={(e) => setPrefs({ ...prefs, digest: e.target.value })}><option value="immediate">Immediate</option><option value="daily">Daily summary</option><option value="weekly">Weekly digest</option></select></div>
+
+          <h3 style={{ margin: "14px 0 6px" }}>Notifications I want</h3>
+          <div className="chips">
+            {CATEGORIES.map(([k, l]) => {
+              const locked = k === "security";
+              return (
+                <label key={k} className="chip" style={{ margin: 0, opacity: locked ? 0.7 : 1 }}>
+                  <input type="checkbox" style={{ width: "auto" }} disabled={locked} checked={locked ? true : prefs.categories?.[k] !== false} onChange={(e) => setCat(k, e.target.checked)} /> {l}{locked ? " (always on)" : ""}
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="row" style={{ marginTop: 14 }}>
+            <div><label>Frequency</label><select value={prefs.digest} onChange={(e) => setPrefs({ ...prefs, digest: e.target.value })}><option value="immediate">Immediate</option><option value="daily">Daily summary</option><option value="weekly">Weekly digest</option></select></div>
             <div><label>Quiet from</label><input value={prefs.quietStart || ""} onChange={(e) => setPrefs({ ...prefs, quietStart: e.target.value })} placeholder="21:00" /></div>
             <div><label>Quiet to</label><input value={prefs.quietEnd || ""} onChange={(e) => setPrefs({ ...prefs, quietEnd: e.target.value })} placeholder="07:00" /></div>
             <div><label>Language</label><select value={prefs.preferredLanguage} onChange={(e) => setPrefs({ ...prefs, preferredLanguage: e.target.value })}>{LANGS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
           </div>
-          <button style={{ marginTop: 12 }} onClick={savePrefs}>Save notification settings</button>
+          <button style={{ marginTop: 12 }} onClick={savePrefs}>Save preferences</button>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>These settings sync with the SIPlat mobile app. SMS is opt-out; WhatsApp requires opt-in per provider policy.</p>
         </div>
       )}
 
@@ -97,11 +125,14 @@ export default function AccountProfile() {
         {pwMsg && <div className={`notice ${pwMsg.kind}`}>{pwMsg.text}</div>}
         <form onSubmit={changePw} style={{ maxWidth: 420 }}>
           <label>Current password</label>
-          <input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" />
+          <input type={pwType} value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} autoComplete="current-password" />
           <label style={{ marginTop: 10 }}>New password</label>
-          <input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} autoComplete="new-password" placeholder="At least 8 characters" />
+          <input type={pwType} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} autoComplete="new-password" placeholder="At least 8 characters" />
           <label style={{ marginTop: 10 }}>Confirm new password</label>
-          <input type="password" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" />
+          <input type={pwType} value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} autoComplete="new-password" />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontWeight: 400 }}>
+            <input type="checkbox" style={{ width: "auto", margin: 0 }} checked={showPw} onChange={(e) => setShowPw(e.target.checked)} /> Show passwords
+          </label>
           <button type="submit" style={{ marginTop: 12 }}>Change password</button>
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Changing your password signs you out of all other devices.</p>
         </form>

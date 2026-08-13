@@ -5,6 +5,8 @@ import { prisma } from "./db";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-only-change-me";
 const SESSION_TTL = parseInt(process.env.SESSION_TTL_SECONDS ?? "28800", 10);
+// "Keep me logged in" — a longer session on trusted devices (default 30 days).
+const SESSION_TTL_REMEMBER = parseInt(process.env.SESSION_TTL_REMEMBER_SECONDS ?? String(30 * 86400), 10);
 
 export const SESSION_COOKIE = "schoolhub_session";
 
@@ -27,8 +29,8 @@ export type SessionClaims = {
   ver: number; // session version — must match the user's current sessionVersion
 };
 
-export function signSession(claims: SessionClaims): string {
-  return jwt.sign(claims, JWT_SECRET, { expiresIn: SESSION_TTL });
+export function signSession(claims: SessionClaims, ttlSeconds: number = SESSION_TTL): string {
+  return jwt.sign(claims, JWT_SECRET, { expiresIn: ttlSeconds });
 }
 
 export function verifySession(token: string): SessionClaims | null {
@@ -47,6 +49,7 @@ export function verifySession(token: string): SessionClaims | null {
 }
 
 export const SESSION_MAX_AGE = SESSION_TTL;
+export { SESSION_TTL, SESSION_TTL_REMEMBER };
 
 // ---- One-time tokens (email verification / password reset) ----
 

@@ -37,6 +37,7 @@ export default function TransportShell({ email = "" }: { email?: string }) {
 
   function nav(k: string) { setActive(k); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }
 
+  // Standardised navigation: role content groups, then Support and Account.
   const NAV: NavGroup[] = [
     { label: "Operations", items: [
       { key: "dashboard", label: "Dashboard", icon: "📊" },
@@ -57,10 +58,12 @@ export default function TransportShell({ email = "" }: { email?: string }) {
       { key: "enquiries", label: "Enquiries", icon: "❓" },
       { key: "fees", label: "Fees & cost", icon: "💷" },
     ] },
-    { label: "Account", items: [
-      { key: "dm", label: "Messages", icon: "💬" },
-      { key: "profile", label: "My profile", icon: "🙂" },
+    { label: "Support", items: [
+      { key: "dm", label: "Messaging", icon: "💬" },
       { key: "help", label: "Help & support", icon: "🆘" },
+    ] },
+    { label: "Account", items: [
+      { key: "profile", label: "My profile", icon: "🙂" },
     ] },
   ];
 

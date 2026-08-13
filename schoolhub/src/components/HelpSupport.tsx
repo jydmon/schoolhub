@@ -3,14 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
+const dtShort = (v: any) => (v ? new Date(v).toLocaleDateString() : "—");
 const STATUS_BADGE: Record<string, string> = { open: "trial", in_progress: "trial", waiting: "archived", resolved: "active", closed: "archived" };
-const FAQS: { q: string; a: string }[] = [
-  { q: "How do I change my password?", a: "Go to My profile → Security, enter your current password and a new one. Changing it signs you out of other devices." },
-  { q: "I didn't receive an email notification.", a: "Check My profile → Notification settings and make sure Email is enabled. If emails still don't arrive, your school's email provider may not be configured yet — raise a ticket below and an administrator will help." },
-  { q: "How do I update my contact details?", a: "My profile lets you update your name, username, contact number and photo. Your email and role are managed by your school." },
-  { q: "Who can see my messages and data?", a: "Access is strictly role-based and limited to your school. Parents see only their own children; teachers see only their assigned pupils; drivers see only their own journeys." },
-  { q: "How do I get help with something not covered here?", a: "Raise a support request below. Your school administrators are notified and can reply — you'll see their responses on this page and get a notification." },
-];
 
 export default function HelpSupport({ contactHint }: { contactHint?: string }) {
   const [tab, setTab] = useState<"help" | "mine" | "manage">("help");
@@ -21,13 +15,26 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
   const [reply, setReply] = useState("");
   const [form, setForm] = useState({ category: "question", subject: "", body: "" });
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
-  const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [openFaq, setOpenFaq] = useState<string | null>(null);
+
+  // FAQs
+  const [faqs, setFaqs] = useState<any[]>([]);
+  const [faqAdmin, setFaqAdmin] = useState(false);
+  const [allFaqs, setAllFaqs] = useState<any[]>([]);
+  const [ff, setFf] = useState<any>({ id: "", question: "", answer: "", category: "", status: "published" });
+  const [importText, setImportText] = useState("");
+  const [faqMsg, setFaqMsg] = useState("");
 
   const load = useCallback(async (scope: "mine" | "manage") => {
     const d = await fetch(`/api/support/tickets?scope=${scope}`).then((r) => r.json());
     setTickets(d.tickets ?? []); setCanManage(!!d.canManage);
   }, []);
-  useEffect(() => { load("mine").then(() => load("manage").then(() => {})); }, [load]);
+  const loadFaqs = useCallback(async () => {
+    const d = await fetch(`/api/faqs`).then((r) => r.json()).catch(() => ({}));
+    setFaqs(d.items ?? []); setFaqAdmin(!!d.canManage);
+    if (d.canManage) fetch(`/api/platform/faqs`).then((r) => r.json()).then((x) => setAllFaqs(x.items ?? [])).catch(() => {});
+  }, []);
+  useEffect(() => { load("mine").then(() => load("manage").then(() => {})); loadFaqs(); }, [load, loadFaqs]);
   useEffect(() => { if (tab === "mine") load("mine"); if (tab === "manage") load("manage"); }, [tab, load]);
   const loadDetail = useCallback(async (id: string) => { const d = await fetch(`/api/support/tickets/${id}`).then((r) => r.json()); setDetail(d); }, []);
   useEffect(() => { if (open) loadDetail(open); }, [open, loadDetail]);
@@ -49,6 +56,37 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
     if (!open) return;
     await fetch(`/api/support/tickets/${open}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
     loadDetail(open); load(tab === "manage" ? "manage" : "mine");
+  }
+
+  // ---- FAQ admin actions ----
+  async function faqSave() {
+    setFaqMsg("");
+    const isEdit = !!ff.id;
+    const url = isEdit ? `/api/platform/faqs/${ff.id}` : `/api/platform/faqs`;
+    const res = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ff) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setFaqMsg(d.error || "Failed"); return; }
+    setFf({ id: "", question: "", answer: "", category: "", status: "published" }); setFaqMsg(isEdit ? "Saved." : "Created."); loadFaqs();
+  }
+  async function faqSetStatus(id: string, status: string) {
+    await fetch(`/api/platform/faqs/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
+    loadFaqs();
+  }
+  async function faqDelete(id: string) {
+    await fetch(`/api/platform/faqs/${id}`, { method: "DELETE" });
+    loadFaqs();
+  }
+  async function faqImport() {
+    setFaqMsg("");
+    const txt = importText.trim();
+    if (!txt) return;
+    let body: any;
+    if (txt.startsWith("[") || txt.startsWith("{")) { try { const j = JSON.parse(txt); body = Array.isArray(j) ? { items: j } : j.items ? j : { items: [j] }; } catch { body = { csv: txt }; } }
+    else body = { csv: txt };
+    const res = await fetch(`/api/platform/faqs/import`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setFaqMsg(d.error || "Import failed"); return; }
+    setImportText(""); setFaqMsg(`Imported ${d.created} of ${d.total} FAQs.`); loadFaqs();
   }
 
   if (open && detail) {
@@ -87,6 +125,8 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
     );
   }
 
+  const cats = Array.from(new Set(faqs.map((f) => f.category || "General")));
+
   return (
     <>
       <div className="panel">
@@ -103,15 +143,71 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
         <>
           <div className="panel">
             <h2 style={{ fontSize: 16, margin: 0 }}>Frequently asked questions</h2>
-            <div style={{ marginTop: 8 }}>
-              {FAQS.map((it, i) => (
-                <div key={i} style={{ borderTop: "1px solid var(--line)", padding: "8px 0" }}>
-                  <button className="linklike" style={{ fontSize: 14, fontWeight: 600, textAlign: "left" }} onClick={() => setOpenFaq(openFaq === i ? null : i)}>{openFaq === i ? "▾" : "▸"} {it.q}</button>
-                  {openFaq === i && <p className="muted" style={{ margin: "6px 0 0", fontSize: 13 }}>{it.a}</p>}
-                </div>
-              ))}
-            </div>
+            {faqs.length === 0 && <p className="muted" style={{ marginTop: 8 }}>No FAQs published yet.</p>}
+            {cats.map((cat) => (
+              <div key={cat} style={{ marginTop: 10 }}>
+                {cats.length > 1 && <div className="muted" style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{cat}</div>}
+                {faqs.filter((f) => (f.category || "General") === cat).map((it) => (
+                  <div key={it.id} style={{ borderTop: "1px solid var(--line)", padding: "8px 0" }}>
+                    <button className="linklike" style={{ fontSize: 14, fontWeight: 600, textAlign: "left" }} onClick={() => setOpenFaq(openFaq === it.id ? null : it.id)}>{openFaq === it.id ? "▾" : "▸"} {it.question}</button>
+                    {openFaq === it.id && (
+                      <>
+                        <p className="muted" style={{ margin: "6px 0 0", fontSize: 13, whiteSpace: "pre-wrap" }}>{it.answer}</p>
+                        <p className="muted" style={{ margin: "4px 0 0", fontSize: 11 }}>Published {dtShort(it.publishedAt || it.createdAt)} · Updated {dtShort(it.updatedAt)}</p>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
+
+          {faqAdmin && (
+            <div className="panel">
+              <h2 style={{ fontSize: 16, margin: 0 }}>Manage FAQs (Super Administrator)</h2>
+              {faqMsg && <div className={`notice ${faqMsg.includes("fail") || faqMsg.includes("Failed") ? "err" : "ok"}`}>{faqMsg}</div>}
+              <div className="row" style={{ marginTop: 8 }}>
+                <div style={{ flex: 3 }}><label>Question</label><input value={ff.question} onChange={(e) => setFf({ ...ff, question: e.target.value })} /></div>
+                <div><label>Category</label><input value={ff.category} onChange={(e) => setFf({ ...ff, category: e.target.value })} placeholder="General" /></div>
+                <div><label>Status</label><select value={ff.status} onChange={(e) => setFf({ ...ff, status: e.target.value })}><option value="published">Published</option><option value="draft">Draft</option><option value="archived">Archived</option></select></div>
+              </div>
+              <label>Answer</label>
+              <textarea rows={3} value={ff.answer} onChange={(e) => setFf({ ...ff, answer: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontSize: 13 }} />
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={faqSave} disabled={!ff.question || !ff.answer}>{ff.id ? "Save changes" : "Add FAQ"}</button>
+                {ff.id && <button className="secondary" onClick={() => setFf({ id: "", question: "", answer: "", category: "", status: "published" })}>Cancel edit</button>}
+              </div>
+
+              <details style={{ marginTop: 12 }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700 }}>Bulk import</summary>
+                <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Paste CSV (<code>question,answer,category,status</code> header) or a JSON array of <code>{`{question, answer, category?, status?}`}</code>.</p>
+                <textarea rows={5} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={"question,answer,category,status\nHow do I reset my password?,Go to My profile → Security.,Account,published"} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontSize: 12, fontFamily: "monospace" }} />
+                <button style={{ marginTop: 8 }} onClick={faqImport} disabled={!importText.trim()}>Import FAQs</button>
+              </details>
+
+              <table style={{ marginTop: 12 }}>
+                <thead><tr><th>Question</th><th>Category</th><th>Status</th><th>Updated</th><th className="right"></th></tr></thead>
+                <tbody>
+                  {allFaqs.map((f) => (
+                    <tr key={f.id}>
+                      <td><strong>{f.question}</strong></td>
+                      <td className="muted">{f.category || "General"}</td>
+                      <td><span className={`badge ${f.status === "published" ? "active" : f.status === "archived" ? "archived" : "trial"}`}>{f.status}</span></td>
+                      <td className="mono muted" style={{ fontSize: 12 }}>{dtShort(f.updatedAt)}</td>
+                      <td className="right" style={{ whiteSpace: "nowrap" }}>
+                        <button className="small secondary" onClick={() => setFf({ id: f.id, question: f.question, answer: f.answer, category: f.category || "", status: f.status })}>Edit</button>{" "}
+                        {f.status !== "published" ? <button className="small secondary" onClick={() => faqSetStatus(f.id, "published")}>Publish</button> : <button className="small secondary" onClick={() => faqSetStatus(f.id, "draft")}>Unpublish</button>}{" "}
+                        {f.status !== "archived" && <button className="small secondary" onClick={() => faqSetStatus(f.id, "archived")}>Archive</button>}{" "}
+                        <button className="small secondary" onClick={() => faqDelete(f.id)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {allFaqs.length === 0 && <tr><td colSpan={5} className="muted">No FAQs yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <div className="panel">
             <h2 style={{ fontSize: 16, margin: 0 }}>Submit a support request</h2>
             {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}

@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
+  SESSION_TTL_REMEMBER,
   signSession,
   verifySession,
 } from "./auth";
@@ -39,25 +40,27 @@ export async function getAuthContext(): Promise<AuthContext | null> {
   };
 }
 
-/** Issue a session cookie for a user. */
+/** Issue a session cookie for a user. `remember` extends the lifetime for
+ *  "Keep me logged in" on trusted devices. */
 export function setSessionCookie(user: {
   id: string;
   email: string;
   isPlatformAdmin: boolean;
   sessionVersion?: number;
-}) {
+}, remember = false) {
+  const ttl = remember ? SESSION_TTL_REMEMBER : SESSION_MAX_AGE;
   const token = signSession({
     sub: user.id,
     email: user.email,
     isPlatformAdmin: user.isPlatformAdmin,
     ver: user.sessionVersion ?? 0,
-  });
+  }, ttl);
   cookies().set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: SESSION_MAX_AGE,
+    maxAge: ttl,
   });
 }
 

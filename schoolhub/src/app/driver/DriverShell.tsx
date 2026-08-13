@@ -26,18 +26,21 @@ export default function DriverShell({ email = "" }: { email?: string }) {
 
   function nav(k: string) { setActive(k); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }
 
+  // Standardised navigation: role content, then Support and Account.
   const NAV: NavGroup[] = [
     { label: "Driving", items: [
       { key: "home", label: "Home", icon: "🏠" },
       { key: "journeys", label: "Today's journeys", icon: "🚌" },
       { key: "checks", label: "Vehicle checks", icon: "🛠️" },
       { key: "history", label: "Journey log", icon: "🗂️" },
-      { key: "messages", label: "Office", icon: "✉️", badge: unread },
+      { key: "messages", label: "Transport office", icon: "✉️", badge: unread },
+    ] },
+    { label: "Support", items: [
+      { key: "dm", label: "Messaging", icon: "💬" },
+      { key: "help", label: "Help & support", icon: "🆘" },
     ] },
     { label: "Account", items: [
-      { key: "dm", label: "Messages", icon: "💬" },
       { key: "profile", label: "My profile", icon: "🙂" },
-      { key: "help", label: "Help & support", icon: "🆘" },
     ] },
   ];
 

@@ -1,12 +1,19 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import {
-  Screen, Card, CardTitle, Sub, Badge, Button, Row, LineItem, Seg, Field, Note, Bubble, Toggle, Sheet, Loading, Empty, T, toast,
+  Screen, Card, CardTitle, Sub, Badge, Button, Row, LineItem, Seg, Field, Note, Bubble, Toggle, Sheet, Loading, T, toast,
 } from "@/ui/kit";
 import { AI, POLICIES, TROUBLE, RoleKey } from "@/data/mock";
 import { useApi } from "@/data/useApi";
 import { api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+
+const CHANNELS: [string, string][] = [["inapp", "In-app"], ["push", "Push"], ["email", "Email"], ["sms", "SMS"], ["whatsapp", "WhatsApp"]];
+const CATEGORIES: [string, string][] = [
+  ["transport", "Transport updates"], ["checkinout", "Check-in / check-out"], ["announcements", "Announcements"],
+  ["timetable", "Timetable changes"], ["messages", "Messages"], ["rewards", "Rewards & achievements"],
+  ["trips", "Trip notifications"], ["security", "Security alerts"],
+];
 
 /* ---------------- Assistant (live: POST /api/ai/ask) ---------------- */
 export function Assistant({ roleKey }: { roleKey: RoleKey }) {
@@ -21,17 +28,13 @@ export function Assistant({ roleKey }: { roleKey: RoleKey }) {
 
   async function ask(question: string) {
     if (!question.trim() || busy) return;
-    setQ("");
-    setMsgs((m) => [...m, ["me", question]]);
-    setBusy(true);
+    setQ(""); setMsgs((m) => [...m, ["me", question]]); setBusy(true);
     try {
       const res = await api.post<any>("/api/ai/ask", { question });
       setMsgs((m) => [...m, ["ai", res?.answer || "I couldn't find an answer to that."]]);
-    } catch (e: any) {
+    } catch {
       setMsgs((m) => [...m, ["ai", "Sorry — I couldn't reach the assistant just now. Please try again."]]);
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
   return (
@@ -61,7 +64,7 @@ export function Assistant({ roleKey }: { roleKey: RoleKey }) {
   );
 }
 
-/* ---------------- Alerts / notification inbox (live: /api/me/notifications) ---------------- */
+/* ---------------- Alerts / notification inbox ---------------- */
 export function Inbox() {
   const { refreshBadge } = useAuth();
   const { data, loading, error, reload } = useApi<any>("/api/me/notifications");
@@ -71,8 +74,7 @@ export function Inbox() {
   async function mark(ids?: string[], all?: boolean) {
     try {
       await api.post("/api/me/notifications", all ? { all: true } : { ids });
-      const next = all ? 0 : Math.max(0, unread - (ids?.length || 0));
-      refreshBadge(next);
+      refreshBadge(all ? 0 : Math.max(0, unread - (ids?.length || 0)));
       reload();
     } catch { toast("Couldn't update"); }
   }
@@ -87,8 +89,7 @@ export function Inbox() {
         {items.length === 0 ? (
           <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 8 }}>You're all caught up.</Text>
         ) : items.map((n, i) => (
-          <LineItem key={n.id || i} first={i === 0} highlight={!n.read}
-            t={n.title} m={n.body || n.message}
+          <LineItem key={n.id || i} first={i === 0} highlight={!n.read} t={n.title} m={n.body || n.message}
             right={
               <View style={{ alignItems: "flex-end", gap: 4 }}>
                 {n.kind ? <Badge tone="mut">{String(n.kind)}</Badge> : null}
@@ -103,11 +104,81 @@ export function Inbox() {
   );
 }
 
-/* ---------------- Account (live identity + settings sheets) ---------------- */
+/* ---------------- Notification & contact preferences (live) ---------------- */
+function NotificationPrefs() {
+  const [prefs, setPrefs] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { api.get("/api/me/preferences").then((d: any) => setPrefs(d.prefs)).catch(() => setPrefs({ channels: {}, categories: {}, digest: "immediate" })); }, []);
+
+  if (!prefs) return <Loading label="Loading preferences…" />;
+  const setCh = (k: string, v: boolean) => setPrefs({ ...prefs, channels: { ...prefs.channels, [k]: v } });
+  const setCat = (k: string, v: boolean) => setPrefs({ ...prefs, categories: { ...prefs.categories, [k]: v } });
+
+  async function save() {
+    setSaving(true);
+    try {
+      const d = await api.put<any>("/api/me/preferences", { channels: prefs.channels, categories: prefs.categories, digest: prefs.digest, quietStart: prefs.quietStart, quietEnd: prefs.quietEnd });
+      if (d.prefs) setPrefs(d.prefs);
+      toast("Preferences saved");
+    } catch { toast("Couldn't save"); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <>
+      <Card style={{ marginTop: 6 }}>
+        <CardTitle>Delivery channels</CardTitle>
+        {CHANNELS.map(([k, l], i) => (
+          <Row key={k} first={i === 0}><Text style={s.v}>{l}</Text><Toggle on={!!prefs.channels?.[k]} onPress={() => setCh(k, !prefs.channels?.[k])} /></Row>
+        ))}
+      </Card>
+      <Card>
+        <CardTitle>Notifications I want</CardTitle>
+        {CATEGORIES.map(([k, l], i) => {
+          const locked = k === "security";
+          return (
+            <Row key={k} first={i === 0}>
+              <Text style={[s.v, locked && { color: T.muted }]}>{l}{locked ? "  (always on)" : ""}</Text>
+              <Toggle on={locked ? true : prefs.categories?.[k] !== false} onPress={() => !locked && setCat(k, prefs.categories?.[k] === false)} />
+            </Row>
+          );
+        })}
+      </Card>
+      <Card>
+        <CardTitle>Frequency</CardTitle>
+        <Seg options={[["immediate", "Immediate"], ["daily", "Daily"], ["weekly", "Weekly"]].map(([k, l]) => ({ label: l, active: prefs.digest === k, onPress: () => setPrefs({ ...prefs, digest: k }) }))} />
+      </Card>
+      <Button title={saving ? "Saving…" : "Save preferences"} disabled={saving} onPress={save} />
+      <Note>These settings sync with the SIPlat web portal. Emergency safety alerts are always delivered.</Note>
+    </>
+  );
+}
+
+/* ---------------- FAQs (live) ---------------- */
+function HelpFaqs() {
+  const [items, setItems] = useState<any[]>([]);
+  const [openId, setOpenId] = useState<string | null>(null);
+  useEffect(() => { api.get("/api/faqs").then((d: any) => setItems(d.items || [])).catch(() => {}); }, []);
+  if (!items.length) return null;
+  return (
+    <Card>
+      <CardTitle>Frequently asked questions</CardTitle>
+      {items.map((f, i) => (
+        <View key={f.id || i} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: T.line, paddingVertical: 8 }}>
+          <Pressable onPress={() => setOpenId(openId === f.id ? null : f.id)}>
+            <Text style={{ fontSize: 13, fontWeight: "600", color: T.ink }}>{openId === f.id ? "▾ " : "▸ "}{f.question}</Text>
+          </Pressable>
+          {openId === f.id ? <Text style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>{f.answer}</Text> : null}
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+/* ---------------- Account ---------------- */
 export function Account({ roleKey }: { roleKey: RoleKey }) {
   const { boot, logout } = useAuth();
   const [sheet, setSheet] = useState<null | "notif" | "help" | "policies">(null);
-  const [ch, setCh] = useState({ push: true, email: true, sms: false });
   const roleLabel = roleKey.charAt(0).toUpperCase() + roleKey.slice(1);
 
   return (
@@ -121,24 +192,15 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
 
       <Card>
         <CardTitle>Support & settings</CardTitle>
-        <Pressable onPress={() => setSheet("notif")}><LineItem first t="🔔  Notifications" right={<Badge tone="mut">manage</Badge>} /></Pressable>
+        <Pressable onPress={() => setSheet("notif")}><LineItem first t="🔔  Notifications & contact preferences" right={<Badge tone="mut">manage</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("help")}><LineItem t="🛟  Help centre" right={<Badge tone="mut">open</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("policies")}><LineItem t="📜  Policies" right={<Badge tone="mut">read</Badge>} /></Pressable>
       </Card>
 
       <Button tone="secondary" title="Sign out" onPress={logout} />
 
-      <Sheet visible={sheet === "notif"} title="Notifications" onClose={() => setSheet(null)}>
-        <Card style={{ marginTop: 6 }}>
-          <CardTitle>Delivery channels</CardTitle>
-          {([["push", "Push"], ["email", "Email"], ["sms", "SMS"]] as const).map(([k, label], i) => (
-            <Row key={k} first={i === 0}>
-              <Text style={s.v}>{label}</Text>
-              <Toggle on={(ch as any)[k]} onPress={() => setCh((c) => ({ ...c, [k]: !(c as any)[k] }))} />
-            </Row>
-          ))}
-        </Card>
-        <Note>Emergency safety alerts are always on. Everything else is your choice.</Note>
+      <Sheet visible={sheet === "notif"} title="Notifications & preferences" onClose={() => setSheet(null)}>
+        {sheet === "notif" ? <NotificationPrefs /> : null}
       </Sheet>
 
       <Sheet visible={sheet === "help"} title="Help Centre" onClose={() => setSheet(null)}>
@@ -146,16 +208,14 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
           <View style={{ flex: 1 }}><Field placeholder="Search or ask a question…" /></View>
           <Button sm title="✨" onPress={() => toast("AI help (demo)")} />
         </View>
+        {sheet === "help" ? <View style={{ marginTop: 10 }}><HelpFaqs /></View> : null}
         <Card style={{ marginTop: 10 }}>
           <CardTitle>🩺 Troubleshooting</CardTitle>
           {TROUBLE.map(([t, m], i) => <LineItem key={t} first={i === 0} t={t} m={m} />)}
         </Card>
         <Card>
           <CardTitle>💬 Contact support</CardTitle>
-          <Seg options={[
-            { label: "Live chat", onPress: () => toast("Live chat (demo)") },
-            { label: "Email", onPress: () => toast("Email (demo)") },
-          ]} />
+          <Seg options={[{ label: "Live chat", onPress: () => toast("Live chat (demo)") }, { label: "Email", onPress: () => toast("Email (demo)") }]} />
           <Button title="Raise a ticket" onPress={() => toast("Ticket raised (demo)")} />
         </Card>
       </Sheet>

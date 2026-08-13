@@ -31,6 +31,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
 
   function nav(k: string) { setActive(k); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }
 
+  // Standardised navigation: Assistant on top, role content, then Support and Account.
   const NAV: NavGroup[] = [
     { label: "Assistant", items: [{ key: "assistant", label: "Ask AI Assistant", icon: "🤖" }] },
     { label: "Teaching", items: [
@@ -45,12 +46,14 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
       { key: "calendar", label: "Calendar", icon: "📅" },
       { key: "trips", label: "My trips", icon: "🧳" },
     ] },
-    { label: "Account", items: [
-      { key: "dm", label: "Messages", icon: "💬" },
+    { label: "Support", items: [
+      { key: "dm", label: "Messaging", icon: "💬" },
       { key: "notifications", label: "Notifications", icon: "🔔", badge: unread },
-      { key: "history", label: "My history", icon: "🗂️" },
-      { key: "profile", label: "My profile", icon: "🙂" },
       { key: "help", label: "Help & support", icon: "🆘" },
+    ] },
+    { label: "Account", items: [
+      { key: "profile", label: "My profile", icon: "🙂" },
+      { key: "history", label: "My history", icon: "🗂️" },
     ] },
   ];
 
