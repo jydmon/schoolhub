@@ -513,15 +513,22 @@ function MiniMonths({ months, events, onMonth, year }: { months: Date[]; events:
     <div className={`cal-mini${year ? " year" : ""}`}>
       {months.map((m, mi) => {
         const cells = monthMatrix(m.getFullYear(), m.getMonth());
+        const monthCount = events.filter((e) => { const s = new Date(e.startsAt); return s.getFullYear() === m.getFullYear() && s.getMonth() === m.getMonth(); }).length;
         return (
           <div key={mi} className="cal-mini-card">
-            <div className="flex-between"><h4>{MONTHS[m.getMonth()]} {m.getFullYear()}</h4><button className="linklike" style={{ fontSize: 11 }} onClick={() => onMonth(m)}>Open</button></div>
+            <div className="cal-mini-hdr">
+              <h4>{MONTHS[m.getMonth()]} {m.getFullYear()}</h4>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {monthCount > 0 ? <span className="cal-mini-count" title={`${monthCount} item(s) this month`}>{monthCount}</span> : null}
+                <button className="linklike" style={{ fontSize: 11 }} onClick={() => onMonth(m)}>Open</button>
+              </div>
+            </div>
             <div className="cal-mini-grid">
-              {DOW.map((d) => <div key={d} className="cal-mini-d muted" style={{ fontWeight: 700 }}>{d[0]}</div>)}
+              {DOW.map((d) => <div key={d} className="cal-mini-d head muted" style={{ fontWeight: 700 }}>{d[0]}</div>)}
               {cells.map((day, i) => {
                 const has = events.some((e) => eventOnDay(e, day));
                 const other = day.getMonth() !== m.getMonth();
-                return <div key={i} className={`cal-mini-d${other ? " other" : ""}${sameDay(day, today) ? " today" : ""}${has && !other ? " has" : ""}`} title={has ? "Has events" : ""}>{day.getDate()}</div>;
+                return <div key={i} onClick={has && !other ? () => onMonth(m) : undefined} className={`cal-mini-d${other ? " other" : ""}${sameDay(day, today) ? " today" : ""}${has && !other ? " has" : ""}`} title={has ? "Has events — open month" : ""}>{day.getDate()}</div>;
               })}
             </div>
           </div>

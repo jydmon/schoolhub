@@ -7,6 +7,7 @@ import { AI, TROUBLE, RoleKey } from "@/data/mock";
 import { useApi } from "@/data/useApi";
 import { api } from "@/api/client";
 import { useAuth } from "@/auth/AuthContext";
+import { SupportTickets } from "@/app/tickets";
 
 const CHANNELS: [string, string][] = [["inapp", "In-app"], ["push", "Push"], ["email", "Email"], ["sms", "SMS"], ["whatsapp", "WhatsApp"]];
 const CATEGORIES: [string, string][] = [
@@ -245,7 +246,7 @@ function TrustPolicies() {
 /* ---------------- Account ---------------- */
 export function Account({ roleKey }: { roleKey: RoleKey }) {
   const { boot, logout } = useAuth();
-  const [sheet, setSheet] = useState<null | "notif" | "help" | "policies" | "security">(null);
+  const [sheet, setSheet] = useState<null | "notif" | "help" | "policies" | "security" | "tickets">(null);
   const roleLabel = roleKey.charAt(0).toUpperCase() + roleKey.slice(1);
 
   return (
@@ -261,6 +262,7 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
         <CardTitle>Support & settings</CardTitle>
         <Pressable onPress={() => setSheet("notif")}><LineItem first t="🔔  Notifications & contact preferences" right={<Badge tone="mut">manage</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("security")}><LineItem t="🔐  Security (two-factor)" right={<Badge tone="mut">manage</Badge>} /></Pressable>
+        <Pressable onPress={() => setSheet("tickets")}><LineItem t="🎫  Support tickets" right={<Badge tone="mut">open</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("help")}><LineItem t="🛟  Help centre" right={<Badge tone="mut">open</Badge>} /></Pressable>
         <Pressable onPress={() => setSheet("policies")}><LineItem t="📜  Policies" right={<Badge tone="mut">read</Badge>} /></Pressable>
       </Card>
@@ -273,6 +275,10 @@ export function Account({ roleKey }: { roleKey: RoleKey }) {
 
       <Sheet visible={sheet === "security"} title="Security" onClose={() => setSheet(null)}>
         {sheet === "security" ? <MfaControl /> : null}
+      </Sheet>
+
+      <Sheet visible={sheet === "tickets"} title="Support tickets" onClose={() => setSheet(null)}>
+        {sheet === "tickets" ? <SupportTickets /> : null}
       </Sheet>
 
       <Sheet visible={sheet === "help"} title="Help Centre" onClose={() => setSheet(null)}>

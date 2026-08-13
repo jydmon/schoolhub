@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { View, Text } from "react-native";
-import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Empty, Note, Field, RouteMap, T, toast } from "@/ui/kit";
+import { View, Text, Pressable } from "react-native";
+import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, Empty, Note, Field, Sheet, RouteMap, T, toast } from "@/ui/kit";
 import { useApi } from "@/data/useApi";
 import { api } from "@/api/client";
+import { SupportTickets } from "@/app/tickets";
 
 /* ---------------- Search across the parent's own children (live) ---------------- */
 function HomeSearch() {
@@ -55,6 +56,7 @@ const tone = (t?: string) => (t === "warn" ? "warn" : t === "good" ? "ok" : "inf
 
 function Home() {
   const { data, loading, error } = useApi<any>("/api/parent/dashboard");
+  const [help, setHelp] = useState(false);
   const d = data || {};
   const children: any[] = d.children || [];
   const per = new Map((d.perChild || []).map((p: any) => [p.id, p]));
@@ -112,7 +114,15 @@ function Home() {
         </Card>
       ) : null}
 
+      <Card>
+        <Pressable onPress={() => setHelp(true)}><LineItem first t="🎫  Help & support tickets" m="Raise a request and track its progress" right={<Badge tone="info">open</Badge>} /></Pressable>
+      </Card>
+
       {error ? <Note>Showing saved data — couldn't refresh from dev.siplat.com right now.</Note> : null}
+
+      <Sheet visible={help} title="Support tickets" onClose={() => setHelp(false)}>
+        {help ? <SupportTickets /> : null}
+      </Sheet>
     </Screen>
   );
 }
