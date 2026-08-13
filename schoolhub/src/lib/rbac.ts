@@ -13,6 +13,10 @@ export type AuthContext = {
   fullName: string;
   isPlatformAdmin: boolean;
   memberships: MembershipLite[];
+  // Set only inside an approved support-access session (item 13): the platform
+  // admin viewing this user's portal, and the request authorising it.
+  impersonatorId?: string;
+  impersonationRequestId?: string;
 };
 
 /** Collect the permission set granted by a list of roles. */

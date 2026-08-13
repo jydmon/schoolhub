@@ -51,6 +51,26 @@ export function verifySession(token: string): SessionClaims | null {
 export const SESSION_MAX_AGE = SESSION_TTL;
 export { SESSION_TTL, SESSION_TTL_REMEMBER };
 
+// ---- Support-access impersonation token (item 13) ----
+// A distinct, short-lived token carried in its own cookie so the admin's own
+// session is never disturbed. Ending/expiry simply reverts to the admin.
+export const IMPERSONATION_COOKIE = "schoolhub_impersonation";
+export type ImpClaims = { sub: string; by: string; rid: string };
+
+export function signImpersonation(claims: ImpClaims, ttlSeconds: number): string {
+  return jwt.sign({ ...claims, typ: "imp" }, JWT_SECRET, { expiresIn: ttlSeconds });
+}
+
+export function verifyImpersonation(token: string): ImpClaims | null {
+  try {
+    const d = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
+    if (d.typ !== "imp" || !d.sub || !d.by || !d.rid) return null;
+    return { sub: String(d.sub), by: String(d.by), rid: String(d.rid) };
+  } catch {
+    return null;
+  }
+}
+
 // ---- One-time tokens (email verification / password reset) ----
 
 export function generateToken(): string {

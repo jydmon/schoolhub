@@ -7,6 +7,7 @@ import { SCREENS } from "@/app/registry";
 import { RoleContext } from "@/app/ctx";
 import { useAuth } from "@/auth/AuthContext";
 import AnnouncementsBanner from "@/app/announcements";
+import SupportAccessNotice from "@/app/support-access";
 
 export default function AppShell({ roleKey }: { roleKey: RoleKey }) {
   const insets = useSafeAreaInsets();
@@ -33,6 +34,7 @@ export default function AppShell({ roleKey }: { roleKey: RoleKey }) {
 
         {/* announcement banner (login banner, all roles) */}
         <AnnouncementsBanner />
+        <SupportAccessNotice />
 
         {/* body */}
         <View style={{ flex: 1 }}>{ScreenComp ? <ScreenComp /> : <View />}</View>

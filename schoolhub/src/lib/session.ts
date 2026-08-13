@@ -4,8 +4,10 @@ import {
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   SESSION_TTL_REMEMBER,
+  IMPERSONATION_COOKIE,
   signSession,
   verifySession,
+  verifyImpersonation,
 } from "./auth";
 import type { AuthContext } from "./rbac";
 
@@ -14,6 +16,31 @@ import type { AuthContext } from "./rbac";
  *  reliably persist/resend cookies, so they send the same signed JWT as an
  *  `Authorization: Bearer <token>` header. We accept either. */
 export async function getAuthContext(): Promise<AuthContext | null> {
+  // Support-access impersonation (item 13). Fully guarded: if anything is off
+  // we fall through to the admin's own session below, so normal auth is never
+  // affected. Only activates when a valid impersonation cookie is present.
+  try {
+    const impTok = cookies().get(IMPERSONATION_COOKIE)?.value;
+    if (impTok) {
+      const imp = verifyImpersonation(impTok);
+      if (imp) {
+        const req = await prisma.supportAccessRequest.findUnique({ where: { id: imp.rid } });
+        const okWindow = req && req.status === "active" && req.targetUserId === imp.sub && req.requesterId === imp.by && (!req.expiresAt || new Date(req.expiresAt).getTime() > Date.now());
+        if (okWindow) {
+          const admin = await prisma.user.findUnique({ where: { id: imp.by }, select: { isPlatformAdmin: true, status: true } });
+          const tuser = await prisma.user.findUnique({ where: { id: imp.sub }, include: { memberships: true } });
+          if (admin?.isPlatformAdmin && admin.status !== "suspended" && tuser && tuser.status !== "suspended") {
+            return {
+              userId: tuser.id, email: tuser.email, fullName: tuser.fullName, isPlatformAdmin: tuser.isPlatformAdmin,
+              memberships: tuser.memberships.map((m) => ({ schoolId: m.schoolId, role: m.role })),
+              impersonatorId: imp.by, impersonationRequestId: imp.rid,
+            };
+          }
+        }
+      }
+    }
+  } catch { /* ignore — revert to the admin's own session */ }
+
   let token = cookies().get(SESSION_COOKIE)?.value;
   if (!token) {
     const auth = headers().get("authorization") || headers().get("Authorization");
@@ -66,6 +93,14 @@ export function setSessionCookie(user: {
 
 export function clearSessionCookie() {
   cookies().set(SESSION_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
+}
+
+// ---- Support-access impersonation cookie (item 13) ----
+export function setImpersonationCookie(token: string, ttlSeconds: number) {
+  cookies().set(IMPERSONATION_COOKIE, token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: ttlSeconds });
+}
+export function clearImpersonationCookie() {
+  cookies().set(IMPERSONATION_COOKIE, "", { httpOnly: true, path: "/", maxAge: 0 });
 }
 
 export class AuthError extends Error {

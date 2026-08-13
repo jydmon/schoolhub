@@ -2644,3 +2644,31 @@ model TrustDocumentAck {
   @@unique([documentId, userId, version])
   @@index([userId])
 }
+
+// ---- Item 13: Secure Super-Admin support access (impersonation) ----
+// A platform super admin requests time-bound access to a user's portal; the
+// user must approve before any access is granted. Fully audited + revocable.
+model SupportAccessRequest {
+  id             String    @id @default(cuid())
+  requesterId    String    // platform super admin who asked
+  requesterName  String?
+  requesterEmail String?
+  targetUserId   String    // whose portal is being accessed
+  targetName     String?
+  targetEmail    String?
+  reason         String
+  // pending | approved | rejected | active | ended | revoked | expired
+  status         String    @default("pending")
+  durationMins   Int       @default(60)
+  requestedAt    DateTime  @default(now())
+  respondedAt    DateTime?
+  approvedAt     DateTime?
+  expiresAt      DateTime?
+  startedAt      DateTime?
+  endedAt        DateTime?
+  endedReason    String?   // expired | revoked | ended_by_admin | rejected
+
+  @@index([requesterId])
+  @@index([targetUserId])
+  @@index([status])
+}
