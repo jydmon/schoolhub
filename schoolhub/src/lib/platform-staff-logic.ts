@@ -40,7 +40,13 @@ export const PLATFORM_ROLES: { key: string; name: string; areas: string[] }[] = 
   { key: "sales",   name: "Sales & CRM", areas: ["overview", "crm", "templates", "comms"] },
   { key: "analyst", name: "Analyst (read-only)", areas: ["overview", "analytics", "usage", "subscriptions"] },
   { key: "content", name: "Content & Marketing", areas: ["overview", "cms", "templates", "crm"] },
+  // Account Manager: owns a geographic portfolio of schools (by county/state
+  // and/or country). Sees the schools they cover plus those schools' billing.
+  { key: "account_manager", name: "Account Manager", areas: ["overview", "tenants", "subscriptions"] },
 ];
+
+/** The role key whose staff carry a geographic (county/country) portfolio. */
+export const GEO_SCOPED_ROLE = "account_manager";
 
 export function isValidArea(a: string): a is PlatformArea {
   return (PLATFORM_AREAS as readonly string[]).includes(a);
@@ -65,6 +71,41 @@ export function visibleAreas(grantedAreas: string[], allAreas: string[] = PLATFO
   const g = normalizeAreas(grantedAreas);
   if (g.includes("*")) return allAreas.slice();
   return allAreas.filter((a) => g.includes(a));
+}
+
+// ---- Account Manager geographic scope ------------------------------------
+// A scope is two name lists: counties/states and countries. A school falls in a
+// manager's portfolio when its county matches one of the manager's counties, OR
+// its country matches one of the manager's countries (case-insensitive, trimmed).
+
+const norm = (s: string | null | undefined): string => String(s ?? "").trim().toLowerCase();
+
+/** Clean a scope list: trim, drop blanks, dedupe (preserving first-seen case). */
+export function normalizeScope(v: string[] | null | undefined): string[] {
+  if (!Array.isArray(v)) return [];
+  const out: string[] = []; const seen = new Set<string>();
+  for (const raw of v) { const t = String(raw ?? "").trim(); const k = t.toLowerCase(); if (t && !seen.has(k)) { seen.add(k); out.push(t); } }
+  return out;
+}
+
+export type GeoScope = { counties: string[]; countries: string[] };
+
+/** Does an Account Manager's geo scope cover a given school? */
+export function managerCoversSchool(scope: GeoScope, school: { county?: string | null; country?: string | null }): boolean {
+  const counties = (scope.counties || []).map(norm);
+  const countries = (scope.countries || []).map(norm);
+  const sc = norm(school.county), sn = norm(school.country);
+  if (counties.length && sc && counties.includes(sc)) return true;
+  if (countries.length && sn && countries.includes(sn)) return true;
+  return false;
+}
+
+/** Human-readable summary of a geo scope, e.g. "Kent, Essex · United Kingdom". */
+export function describeScope(scope: GeoScope): string {
+  const parts: string[] = [];
+  if (scope.counties?.length) parts.push(scope.counties.join(", "));
+  if (scope.countries?.length) parts.push(scope.countries.join(", "));
+  return parts.join(" · ");
 }
 
 /** Validate a proposed staff role assignment. */

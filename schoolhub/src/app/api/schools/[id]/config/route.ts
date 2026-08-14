@@ -41,12 +41,17 @@ export async function PATCH(req: Request, { params }: Params) {
       "colorPrimary",
       "colorAccent",
       "addressLine1",
+      "addressLine2",
       "city",
+      "county",
       "postcode",
+      "country",
       "contactName",
       "contactEmail",
       "contactPhone",
       "headTeacher",
+      "headTeacherEmail",
+      "headTeacherPhone",
     ] as const) {
       if (input[k] !== undefined) schoolData[k] = input[k];
     }

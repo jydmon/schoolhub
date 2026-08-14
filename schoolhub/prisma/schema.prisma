@@ -58,12 +58,17 @@ model School {
   addressLine1 String?
   addressLine2 String?
   city         String?
+  county       String? // county / state (also drives Account Manager geo-assignment)
   postcode     String?
   country      String  @default("United Kingdom")
   contactName  String?
   contactEmail String?
   contactPhone String?
   headTeacher  String? // current head teacher / principal
+  headTeacherEmail String?
+  headTeacherPhone String?
+  // Onboarding: set once the School Administrator completes the mandatory profile.
+  profileCompletedAt DateTime?
 
   groupId String?
   group   SchoolGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
@@ -1959,6 +1964,10 @@ model PlatformStaff {
   roleKey      String
   role         PlatformRole @relation(fields: [roleKey], references: [key])
   status       String   @default("active") // active | suspended | invited
+  // Geographic portfolio for Account Managers: the schools they cover, by
+  // county/state and/or country. JSON arrays of names; empty = no geo scope.
+  scopeCountiesJson  String @default("[]")
+  scopeCountriesJson String @default("[]")
   invitedById  String?
   lastActiveAt DateTime?
   createdAt    DateTime @default(now())

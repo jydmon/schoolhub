@@ -9,7 +9,7 @@ import TrustCentreTab from "./TrustCentreTab";
 import FaqManager from "./FaqManager";
 import SupportAccessTab from "./SupportAccessTab";
 import PoliciesTab from "./PoliciesTab";
-import { PLATFORM_AREAS, AREA_LABELS } from "@/lib/platform-staff-logic";
+import { PLATFORM_AREAS, AREA_LABELS, managerCoversSchool, describeScope } from "@/lib/platform-staff-logic";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
 const DirtyCtx = createContext<{ setDirty: (v: boolean) => void }>({ setDirty: () => {} });
@@ -211,7 +211,7 @@ export default function AdminPortal({ email = "" }: { email?: string }) {
 }
 
 /* ============================ TENANTS ============================ */
-type School = { id: string; name: string; slug: string; status: string; group?: { name: string } | null; subscription?: { status: string; plan: { name: string; key: string } } | null; _count: { memberships: number; students: number; campuses: number } };
+type School = { id: string; name: string; slug: string; status: string; county?: string | null; country?: string | null; group?: { name: string } | null; subscription?: { status: string; plan: { name: string; key: string } } | null; _count: { memberships: number; students: number; campuses: number } };
 type Group = { id: string; name: string; _count: { schools: number } };
 
 function Tenants() {
@@ -224,6 +224,12 @@ function Tenants() {
   // Packages available on the create-tenant form come from the Packages list.
   const plansQ = useJson<any>("/api/plans");
   const planList: any[] = (plansQ.data?.plans ?? []).filter((p: any) => p.isActive !== false);
+  // Account Managers and their geographic portfolios (used to show/filter which
+  // manager covers each school). Silently empty if the viewer lacks team access.
+  const staffQ = useJson<any>("/api/platform/staff");
+  const managers: any[] = (staffQ.data?.staff ?? []).filter((s: any) => s.roleKey === "account_manager" && s.status === "active");
+  const [mgrF, setMgrF] = useState("all");
+  const coveringManagers = (s: School) => managers.filter((m) => managerCoversSchool({ counties: m.scopeCounties || [], countries: m.scopeCountries || [] }, s));
   const defaultPlanKey = () => planList.find((p) => p.key === "trial")?.key ?? planList[0]?.key ?? "";
   const dirty = !!(form.schoolName || form.slug || form.adminName || form.adminEmail || form.adminPassword);
   useDirty(dirty);
@@ -253,6 +259,9 @@ function Tenants() {
   function askBulkSuspend() { setConfirm({ title: `Suspend ${selectedIds.length} school${selectedIds.length > 1 ? "s" : ""}?`, message: "This immediately blocks all access for everyone at the selected schools until you reactivate them.", label: "Suspend selected", run: () => { bulk("suspended"); setConfirm(null); } }); }
   const active = schools.filter((s) => s.status === "active").length;
   const suspended = schools.filter((s) => s.status === "suspended").length;
+  const shown = mgrF === "all" ? schools
+    : mgrF === "none" ? schools.filter((s) => coveringManagers(s).length === 0)
+    : schools.filter((s) => coveringManagers(s).some((m) => m.id === mgrF));
   const students = schools.reduce((n, s) => n + (s._count?.students ?? 0), 0);
   return (
     <>
@@ -266,6 +275,17 @@ function Tenants() {
       <div className="panel">
         <h2>Schools</h2>
         <p className="sub">Every school is an isolated tenant. Select rows to act on several at once. Suspend to block all access instantly.</p>
+        {managers.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "8px 0" }}>
+            <label style={{ margin: 0 }}>Account manager</label>
+            <select value={mgrF} onChange={(e) => setMgrF(e.target.value)} style={{ maxWidth: 260 }}>
+              <option value="all">All schools</option>
+              <option value="none">Unassigned (no manager)</option>
+              {managers.map((m) => <option key={m.id} value={m.id}>{m.name || m.email}</option>)}
+            </select>
+            <span className="muted" style={{ fontSize: 12 }}>Showing {shown.length} of {schools.length}</span>
+          </div>
+        )}
         {selectedIds.length > 0 && (
           <div className="bulkbar">
             <span>{selectedIds.length} selected</span>
@@ -275,20 +295,24 @@ function Tenants() {
           </div>
         )}
         <table>
-          <thead><tr><th className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></th><th>School</th><th>Trust</th><th>Plan</th><th>Users</th><th>Status</th><th className="right">Actions</th></tr></thead>
+          <thead><tr><th className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={allChecked} onChange={toggleAll} aria-label="Select all" /></th><th>School</th><th>Trust</th><th>Plan</th><th>Users</th><th>Package type</th><th>Status</th><th>County / State</th><th>Country</th>{managers.length > 0 && <th>Account manager</th>}<th className="right">Actions</th></tr></thead>
           <tbody>
-            {schools.map((s) => (
+            {shown.map((s) => { const cov = coveringManagers(s); return (
               <tr key={s.id}>
                 <td className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={!!sel[s.id]} onChange={(e) => setSel({ ...sel, [s.id]: e.target.checked })} aria-label={`Select ${s.name}`} /></td>
                 <td><strong>{s.name}</strong><div className="mono muted">/{s.slug}</div></td>
                 <td>{s.group?.name ?? <span className="muted">—</span>}</td>
                 <td>{s.subscription?.plan?.name ?? <span className="muted">—</span>}</td>
                 <td>{s._count?.memberships ?? 0}</td>
+                <td>{s.subscription?.plan?.key ? <span className="badge role">{s.subscription.plan.key}</span> : <span className="muted">—</span>}</td>
                 <td><span className={`badge ${s.status}`}>{s.status}</span></td>
+                <td className="muted">{s.county || <span className="muted">—</span>}</td>
+                <td className="muted">{s.country || <span className="muted">—</span>}</td>
+                {managers.length > 0 && <td className="muted">{cov.length ? cov.map((m) => m.name || m.email).join(", ") : <span className="muted">—</span>}</td>}
                 <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => setStatus(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => askSuspend(s)}>Suspend</button>}</td>
               </tr>
-            ))}
-            {schools.length === 0 && <Empty cols={7} text="No tenants yet — onboard one below." />}
+            ); })}
+            {shown.length === 0 && <Empty cols={managers.length > 0 ? 11 : 10} text={schools.length === 0 ? "No tenants yet — onboard one below." : "No schools match this filter."} />}
           </tbody>
         </table>
       </div>
@@ -343,7 +367,7 @@ function Groups() {
 function Team() {
   const { data, err, reload } = useJson<any>("/api/platform/staff");
   const roles = useJson<any>("/api/platform/staff/roles");
-  const [f, setF] = useState({ userId: "", email: "", name: "", roleKey: "" });
+  const [f, setF] = useState({ userId: "", email: "", name: "", roleKey: "", scopeCounties: "", scopeCountries: "" });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   // Custom-role builder
   const [rf, setRf] = useState<{ name: string; areas: Record<string, boolean> }>({ name: "", areas: {} });
@@ -351,11 +375,20 @@ function Team() {
   const [delRole, setDelRole] = useState<any | null>(null);
   const staff: any[] = data?.staff ?? [];
   const roleList: any[] = roles.data?.roles ?? [];
+  const effRoleKey = f.roleKey || roleList[0]?.key;
+  const isAM = effRoleKey === "account_manager";
   const roleDirty = rf.name.trim().length > 0 || Object.values(rf.areas).some(Boolean);
   useDirty(roleDirty);
+  const splitList = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
   async function add(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    try { await send("/api/platform/staff", { ...f, roleKey: f.roleKey || roleList[0]?.key }); setMsg({ k: "ok", t: "Staff member saved." }); setF({ userId: "", email: "", name: "", roleKey: "" }); reload(); }
+    try {
+      const roleKey = effRoleKey;
+      const payload: any = { userId: f.userId, email: f.email, name: f.name, roleKey };
+      if (roleKey === "account_manager") { payload.scopeCounties = splitList(f.scopeCounties); payload.scopeCountries = splitList(f.scopeCountries); }
+      await send("/api/platform/staff", payload);
+      setMsg({ k: "ok", t: "Staff member saved." }); setF({ userId: "", email: "", name: "", roleKey: "", scopeCounties: "", scopeCountries: "" }); reload();
+    }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
   async function status(id: string, s: string) { try { await send(`/api/platform/staff/${id}`, { status: s }, "PATCH"); reload(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
@@ -379,19 +412,20 @@ function Team() {
         <p className="sub">Platform staff and which super-admin areas each role can open. You (the owner) always have full access.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
         <table>
-          <thead><tr><th>Member</th><th>Role</th><th>Areas</th><th>Status</th><th>Last active</th><th className="right">Actions</th></tr></thead>
+          <thead><tr><th>Member</th><th>Role</th><th>Areas</th><th>Coverage</th><th>Status</th><th>Last active</th><th className="right">Actions</th></tr></thead>
           <tbody>
-            {staff.map((s) => (
+            {staff.map((s) => { const cov = describeScope({ counties: s.scopeCounties || [], countries: s.scopeCountries || [] }); return (
               <tr key={s.id}>
                 <td><strong>{s.name || s.email}</strong><div className="mono muted">{s.email}</div></td>
                 <td>{s.roleName || s.roleKey}</td>
                 <td className="muted">{Array.isArray(s.areas) ? (s.areas.includes("*") ? "All areas" : s.areas.join(", ")) : "—"}</td>
+                <td className="muted">{s.roleKey === "account_manager" ? (cov || <span className="badge suspended">No areas set</span>) : "—"}</td>
                 <td><span className={`badge ${s.status}`}>{s.status}</span></td>
                 <td className="mono muted">{dt(s.lastActiveAt)}</td>
                 <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => status(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => status(s.id, "suspended")}>Suspend</button>}</td>
               </tr>
-            ))}
-            {staff.length === 0 && <Empty cols={6} text="No additional staff yet — the owner has full access." />}
+            ); })}
+            {staff.length === 0 && <Empty cols={7} text="No additional staff yet — the owner has full access." />}
           </tbody>
         </table>
       </div>
@@ -450,6 +484,15 @@ function Team() {
             <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
             <div><label>Role</label><select value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value })}>{roleList.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}</select></div>
           </div>
+          {isAM && (
+            <>
+              <div className="notice info" style={{ marginTop: 4 }}>An Account Manager covers a geographic portfolio of schools. Enter the counties/states and/or countries they cover — a school is in their portfolio if its county or country matches. Separate multiple entries with commas.</div>
+              <div className="row">
+                <div><label>Counties / states covered</label><input value={f.scopeCounties} onChange={(e) => setF({ ...f, scopeCounties: e.target.value })} placeholder="e.g. Kent, Essex, Surrey" /></div>
+                <div><label>Countries covered</label><input value={f.scopeCountries} onChange={(e) => setF({ ...f, scopeCountries: e.target.value })} placeholder="e.g. United Kingdom, Ireland" /></div>
+              </div>
+            </>
+          )}
           <button type="submit" style={{ marginTop: 12 }}>Save staff member</button>
         </form>
       </div>

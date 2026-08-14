@@ -39,12 +39,17 @@ export const updateConfigSchema = z.object({
   colorPrimary: z.string().optional(),
   colorAccent: z.string().optional(),
   addressLine1: z.string().optional(),
+  addressLine2: z.string().optional(),
   city: z.string().optional(),
+  county: z.string().optional(),
   postcode: z.string().optional(),
+  country: z.string().optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().email().optional().or(z.literal("")),
   contactPhone: z.string().optional(),
   headTeacher: z.string().optional(),
+  headTeacherEmail: z.string().email().optional().or(z.literal("")),
+  headTeacherPhone: z.string().optional(),
   timezone: z.string().optional(),
   academicYear: z.string().optional(),
   dataRetentionDays: z.number().int().min(1).max(3650).optional(),
@@ -813,16 +818,21 @@ export const previewSchema = z.object({
   vars: z.record(z.string()).optional(),
 });
 
+const scopeList = z.array(z.string().max(80)).max(200).optional();
 export const platformStaffSchema = z.object({
   userId: z.string().min(1),
   email: z.string().email(),
   name: z.string().max(120).optional(),
   roleKey: z.string().min(1),
   status: z.enum(["active", "suspended", "invited"]).optional(),
+  scopeCounties: scopeList,
+  scopeCountries: scopeList,
 });
 export const platformStaffPatchSchema = z.object({
   roleKey: z.string().min(1).optional(),
   status: z.enum(["active", "suspended", "invited"]).optional(),
+  scopeCounties: scopeList,
+  scopeCountries: scopeList,
 });
 
 export const subApprovalSchema = z.object({

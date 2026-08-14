@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { TERMS_TITLE, TERMS_BODY } from "@/lib/terms";
+import { downscaleToDataUrl } from "@/components/image";
 
-type St = { mustChangePassword: boolean; termsAccepted: boolean; tourDismissed: boolean } | null;
+type St = { mustChangePassword: boolean; termsAccepted: boolean; tourDismissed: boolean; needsProfile?: boolean; profileSchoolId?: string | null; profile?: any } | null;
+
+const PROFILE_REQUIRED = ["name", "contactEmail", "contactPhone", "contactName", "addressLine1", "addressLine2", "city", "county", "postcode", "country", "headTeacher", "headTeacherEmail", "headTeacherPhone"];
 
 const TOUR: { title: string; body: string }[] = [
   { title: "Welcome to SIPlat 👋", body: "A quick tour of the essentials. You can skip this at any time." },
@@ -26,6 +29,23 @@ export default function Onboarding() {
   const [pols, setPols] = useState<any[]>([]);
   const [polsClosed, setPolsClosed] = useState(false); // reminder dismissed for this session
   const [viewId, setViewId] = useState<string | null>(null);
+  const [prof, setProf] = useState<any>(null); // school-profile working copy
+
+  // Seed the profile form from the loaded state when the step becomes relevant.
+  useEffect(() => {
+    if (st?.needsProfile && !prof) {
+      const p = st.profile || {};
+      setProf({ name: p.name || "", contactEmail: p.contactEmail || "", contactPhone: p.contactPhone || "", contactName: p.contactName || "", addressLine1: p.addressLine1 || "", addressLine2: p.addressLine2 || "", city: p.city || "", county: p.county || "", postcode: p.postcode || "", country: p.country || "United Kingdom", headTeacher: p.headTeacher || "", headTeacherEmail: p.headTeacherEmail || "", headTeacherPhone: p.headTeacherPhone || "", logoUrl: p.logoUrl || "" });
+    }
+  }, [st, prof]);
+
+  async function saveProfile() {
+    if (!prof || !st?.profileSchoolId) return;
+    const missing = PROFILE_REQUIRED.filter((k) => !String(prof[k] ?? "").trim());
+    if (missing.length) { setMsg("Please complete all required fields."); return; }
+    if (await act("save_profile", { schoolId: st.profileSchoolId, profile: prof })) { setProf(null); refresh(); }
+  }
+  const pf = (k: string, v: string) => setProf((s: any) => ({ ...s, [k]: v }));
 
   const refresh = useCallback(async () => {
     try { const d = await fetch("/api/me/onboarding").then((r) => r.json()); if (!d.error) setSt(d); }
@@ -88,6 +108,60 @@ export default function Onboarding() {
         <div style={{ maxHeight: "48vh", overflow: "auto", border: "1px solid var(--line)", borderRadius: 8, padding: 14, whiteSpace: "pre-wrap", fontSize: 13.5, lineHeight: 1.55 }}>{TERMS_BODY}</div>
         <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
           <button disabled={busy} onClick={acceptTerms}>{busy ? "Recording…" : "I accept the terms"}</button>
+        </div>
+      </Overlay>
+    );
+  }
+
+  // 2b) Mandatory school-profile setup (School Administrators, blocking).
+  if (st.needsProfile && prof) {
+    const req = (k: string) => (String(prof[k] ?? "").trim() ? {} : { borderColor: "#e11d48" });
+    return (
+      <Overlay wide>
+        <h2 style={{ margin: 0 }}>Complete your school profile</h2>
+        <p className="sub">Before you can use the platform, please complete your school&apos;s profile. All fields are required except the logo.</p>
+        {msg && <div className="notice err">{msg}</div>}
+        <div style={{ maxHeight: "58vh", overflow: "auto", paddingRight: 4 }}>
+          <h3 style={{ marginBottom: 6 }}>School information</h3>
+          <div className="row">
+            <div style={{ flex: 2 }}><label>School name</label><input value={prof.name} onChange={(e) => pf("name", e.target.value)} style={req("name")} /></div>
+            <div><label>School email address</label><input value={prof.contactEmail} onChange={(e) => pf("contactEmail", e.target.value)} style={req("contactEmail")} /></div>
+          </div>
+          <div className="row">
+            <div><label>School contact number</label><input value={prof.contactPhone} onChange={(e) => pf("contactPhone", e.target.value)} style={req("contactPhone")} /></div>
+            <div><label>Main contact person</label><input value={prof.contactName} onChange={(e) => pf("contactName", e.target.value)} style={req("contactName")} /></div>
+          </div>
+
+          <h3 style={{ margin: "12px 0 6px" }}>School address</h3>
+          <div className="row">
+            <div><label>Building number / name</label><input value={prof.addressLine1} onChange={(e) => pf("addressLine1", e.target.value)} style={req("addressLine1")} /></div>
+            <div><label>Street name</label><input value={prof.addressLine2} onChange={(e) => pf("addressLine2", e.target.value)} style={req("addressLine2")} /></div>
+            <div><label>Town / City</label><input value={prof.city} onChange={(e) => pf("city", e.target.value)} style={req("city")} /></div>
+          </div>
+          <div className="row">
+            <div><label>County / State</label><input value={prof.county} onChange={(e) => pf("county", e.target.value)} style={req("county")} /></div>
+            <div><label>Postcode / ZIP</label><input value={prof.postcode} onChange={(e) => pf("postcode", e.target.value)} style={req("postcode")} /></div>
+            <div><label>Country</label><input value={prof.country} onChange={(e) => pf("country", e.target.value)} style={req("country")} /></div>
+          </div>
+
+          <h3 style={{ margin: "12px 0 6px" }}>Head teacher</h3>
+          <div className="row">
+            <div><label>Full name</label><input value={prof.headTeacher} onChange={(e) => pf("headTeacher", e.target.value)} style={req("headTeacher")} /></div>
+            <div><label>Email address</label><input value={prof.headTeacherEmail} onChange={(e) => pf("headTeacherEmail", e.target.value)} style={req("headTeacherEmail")} /></div>
+            <div><label>Contact number</label><input value={prof.headTeacherPhone} onChange={(e) => pf("headTeacherPhone", e.target.value)} style={req("headTeacherPhone")} /></div>
+          </div>
+
+          <h3 style={{ margin: "12px 0 6px" }}>Branding <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>(optional — you can add this later)</span></h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 10, border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff" }}>
+              {prof.logoUrl ? <img src={prof.logoUrl} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <span className="muted" style={{ fontSize: 11 }}>No logo</span>}
+            </div>
+            <input type="file" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (file) pf("logoUrl", await downscaleToDataUrl(file, 240, 0.9)); }} />
+            {prof.logoUrl ? <button className="secondary small" onClick={() => pf("logoUrl", "")}>Remove</button> : null}
+          </div>
+        </div>
+        <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
+          <button disabled={busy} onClick={saveProfile}>{busy ? "Saving…" : "Save & continue"}</button>
         </div>
       </Overlay>
     );

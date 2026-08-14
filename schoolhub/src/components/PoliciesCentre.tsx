@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { TERMS_TITLE, TERMS_BODY } from "@/lib/terms";
 
 // Policies page available to every signed-in user. Lists the policies/documents
 // published to them with full tracking: Read / Unread and Accepted / Unaccepted,
@@ -21,6 +22,8 @@ export default function PoliciesCentre() {
   const [q, setQ] = useState("");
   const [reading, setReading] = useState<any | null>(null);
   const [msg, setMsg] = useState<string>("");
+  const [terms, setTerms] = useState<any>(null);
+  const [showTerms, setShowTerms] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -29,6 +32,7 @@ export default function PoliciesCentre() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetch("/api/me/onboarding").then((r) => r.json()).then((d) => { if (!d.error) setTerms(d); }).catch(() => {}); }, []);
 
   async function open(p: any) {
     setReading(p);
@@ -84,6 +88,20 @@ export default function PoliciesCentre() {
   }
 
   return (
+    <>
+      {terms && (
+        <div className="panel">
+          <div className="flex-between" style={{ alignItems: "flex-start" }}>
+            <div><h2 style={{ margin: 0, fontSize: 16 }}>{TERMS_TITLE}</h2>
+              <p className="sub" style={{ marginBottom: 0 }}>{terms.termsAccepted ? `Accepted — version ${terms.acceptedTermsVersion}.` : "Not yet accepted."}</p></div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {terms.termsAccepted ? <span className="badge active" style={{ alignSelf: "center" }}>Accepted</span> : <span className="badge suspended" style={{ alignSelf: "center" }}>Outstanding</span>}
+              <button className="secondary small" onClick={() => setShowTerms((s) => !s)}>{showTerms ? "Hide" : "View"}</button>
+            </div>
+          </div>
+          {showTerms && <div style={{ marginTop: 10, maxHeight: "40vh", overflow: "auto", border: "1px solid var(--line)", borderRadius: 8, padding: 12, whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.55 }}>{TERMS_BODY}</div>}
+        </div>
+      )}
     <div className="panel">
       <div className="flex-between" style={{ alignItems: "flex-start" }}>
         <div><h2 style={{ margin: 0 }}>Policies</h2>
@@ -127,5 +145,6 @@ export default function PoliciesCentre() {
         </tbody>
       </table>
     </div>
+    </>
   );
 }

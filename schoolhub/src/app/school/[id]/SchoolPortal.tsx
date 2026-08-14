@@ -26,6 +26,7 @@ import HistoryTab from "./HistoryTab";
 import ReportsTab from "./ReportsTab";
 import AdminReportsTab from "./AdminReportsTab";
 import OpsTab from "./OpsTab";
+import PolicyComplianceTab from "./PolicyComplianceTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAccessGate } from "@/lib/useAccessGate";
@@ -70,9 +71,9 @@ const SCHOOL_NAV: NavGroup[] = [
     { key: "access", label: "Access management", icon: "🧩" },
     { key: "insights", label: "Reports & search", icon: "📈" },
     { key: "audit", label: "History", icon: "🗂️" },
+    { key: "compliance", label: "Policy compliance", icon: "🛡️" },
     { key: "notifications", label: "Notifications", icon: "🔔" },
-    { key: "profile", label: "My profile", icon: "🙂" },
-    { key: "security", label: "My security", icon: "🔐" },
+    { key: "profile", label: "My profile & security", icon: "🙂" },
     { key: "help", label: "Help & support", icon: "🆘" },
   ] },
 ];
@@ -81,7 +82,7 @@ const SCHOOL_TITLES: Record<string, string> = {
   calendar: "Calendar", timetable: "Timetable", attendance: "Attendance", behaviour: "Behaviour", reports: "Pupils reports", knowledge: "Knowledge", meals: "Meals & menus", clubs: "Clubs & activities",
   transport: "Transport", trips: "Trips", comms: "Comms", assistant: "Ask AI Assistant",
   import: "Manual import", integrations: "Integrations", hub: "Integration Hub",
-  config: "School configuration", access: "Access management", insights: "Reports & search", audit: "History", notifications: "Notifications", profile: "My profile", security: "My security",
+  config: "School configuration", access: "Access management", insights: "Reports & search", audit: "History", compliance: "Policy compliance", notifications: "Notifications", profile: "My profile & security", security: "My profile & security",
 };
 
 const ALL_MODULES = ["dashboard", "calendar", "transport", "trips", "comms", "ai"];
@@ -109,8 +110,8 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
   const [focusStudentId, setFocusStudentId] = useState<string | null>(null);
   // Remember this as the user's current school so future logins land here.
   useEffect(() => { try { document.cookie = `siplat_last_school=${schoolId}; path=/; max-age=${60 * 60 * 24 * 180}; SameSite=Lax`; } catch { /* ignore */ } }, [schoolId]);
-  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "timetable" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "clubs" | "assistant" | "import" | "integrations" | "hub" | "config" | "access" | "users" | "audit" | "notifications" | "profile" | "security" | "insights" | "help" | "dm";
-  const [tab, setTab] = useState<Tab>(canManage ? "ops" : "security");
+  type Tab = "ops" | "students" | "guardians" | "staff" | "calendar" | "timetable" | "attendance" | "transport" | "trips" | "behaviour" | "comms" | "reports" | "knowledge" | "meals" | "clubs" | "assistant" | "import" | "integrations" | "hub" | "config" | "access" | "users" | "audit" | "compliance" | "notifications" | "profile" | "security" | "insights" | "help" | "dm";
+  const [tab, setTab] = useState<Tab>(canManage ? "ops" : "profile");
 
   const manageTabs: [Tab, string][] = [
     ["ops", "Operations"],
@@ -146,7 +147,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
   // Item 12: gate the admin nav when this admin's role has been customized to
   // remove pages. A built-in SchoolAdministrator is not "customized", so gate()
   // is a no-op and the full portal shows exactly as before.
-  const nav: NavGroup[] = canManage ? gate(SCHOOL_NAV) : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }, { key: "help", label: "Help & support", icon: "🆘" }] }];
+  const nav: NavGroup[] = canManage ? gate(SCHOOL_NAV) : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile & security", icon: "🙂" }, { key: "help", label: "Help & support", icon: "🆘" }] }];
   return (
     <AppShell brandSub={initial.school?.name || "School"} brandLogo={initial.school?.logoUrl} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
@@ -177,9 +178,9 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
       {tab === "users" && canManage && <UsersTab schoolId={schoolId} />}
       {tab === "insights" && canManage && <AdminReportsTab schoolId={schoolId} onNavigate={(t) => setTab(t as Tab)} />}
       {tab === "audit" && canManage && <HistoryTab schoolId={schoolId} />}
+      {tab === "compliance" && canManage && <PolicyComplianceTab schoolId={schoolId} />}
       {tab === "notifications" && <NotificationsTab />}
-      {tab === "profile" && <AccountProfile />}
-      {tab === "security" && <SecurityTab />}
+      {(tab === "profile" || tab === "security") && <AccountProfile />}
       {tab === "help" && <HelpSupport />}
       {tab === "dm" && canManage && <Messaging />}
     </AppShell>
@@ -195,12 +196,17 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
     colorPrimary: initial.colorPrimary ?? "#2563eb",
     colorAccent: initial.colorAccent ?? "#0ea5e9",
     addressLine1: initial.addressLine1 ?? "",
+    addressLine2: initial.addressLine2 ?? "",
     city: initial.city ?? "",
+    county: initial.county ?? "",
     postcode: initial.postcode ?? "",
+    country: initial.country ?? "United Kingdom",
     contactName: initial.contactName ?? "",
     contactEmail: initial.contactEmail ?? "",
     contactPhone: initial.contactPhone ?? "",
     headTeacher: initial.headTeacher ?? "",
+    headTeacherEmail: initial.headTeacherEmail ?? "",
+    headTeacherPhone: initial.headTeacherPhone ?? "",
     timezone: cfg.timezone ?? "Europe/London",
     academicYear: cfg.academicYear ?? "",
     dataRetentionDays: cfg.dataRetentionDays ?? 365,
@@ -261,15 +267,24 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
           </div>
         </div>
         <div className="row">
-          <div><label>Address</label><input value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} /></div>
-          <div><label>City</label><input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></div>
-          <div><label>Postcode</label><input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} /></div>
+          <div><label>Building number / name</label><input value={form.addressLine1} onChange={(e) => setForm({ ...form, addressLine1: e.target.value })} /></div>
+          <div><label>Street</label><input value={form.addressLine2} onChange={(e) => setForm({ ...form, addressLine2: e.target.value })} /></div>
+          <div><label>Town / City</label><input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></div>
         </div>
         <div className="row">
-          <div><label>Head teacher / principal</label><input value={form.headTeacher} onChange={(e) => setForm({ ...form, headTeacher: e.target.value })} /></div>
-          <div><label>Contact name</label><input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></div>
-          <div><label>Contact email</label><input value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} /></div>
-          <div><label>Contact phone</label><input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} /></div>
+          <div><label>County / State</label><input value={form.county} onChange={(e) => setForm({ ...form, county: e.target.value })} /></div>
+          <div><label>Postcode / ZIP</label><input value={form.postcode} onChange={(e) => setForm({ ...form, postcode: e.target.value })} /></div>
+          <div><label>Country</label><input value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div><label>Main contact person</label><input value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} /></div>
+          <div><label>School email address</label><input value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} /></div>
+          <div><label>School contact number</label><input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div><label>Head teacher — full name</label><input value={form.headTeacher} onChange={(e) => setForm({ ...form, headTeacher: e.target.value })} /></div>
+          <div><label>Head teacher — email</label><input value={form.headTeacherEmail} onChange={(e) => setForm({ ...form, headTeacherEmail: e.target.value })} /></div>
+          <div><label>Head teacher — contact number</label><input value={form.headTeacherPhone} onChange={(e) => setForm({ ...form, headTeacherPhone: e.target.value })} /></div>
         </div>
         <div className="row">
           <div><label>Time zone</label><input value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} /></div>
@@ -570,7 +585,7 @@ function ProfileTab({ email }: { email?: string }) {
           <input value={p.email} disabled />
           <label>Profile image URL</label>
           <input value={f.photoUrl} onChange={(e) => setF({ ...f, photoUrl: e.target.value })} placeholder="https://…" />
-          <div style={{ marginTop: 8 }}><span className="muted" style={{ fontSize: 12 }}>Two-factor authentication: {p.mfaEnabled ? "on" : "off"} — manage under My security.</span></div>
+          <div style={{ marginTop: 8 }}><span className="muted" style={{ fontSize: 12 }}>Two-factor authentication: {p.mfaEnabled ? "on" : "off"} — manage under My profile &amp; security.</span></div>
           <button type="submit" style={{ marginTop: 12 }}>Save profile</button>
         </form>
       </div>

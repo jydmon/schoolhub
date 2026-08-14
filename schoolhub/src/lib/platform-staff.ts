@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { recordAudit } from "./audit";
 import { AUDIT } from "./constants";
-import { PLATFORM_ROLES, validateStaff, normalizeAreas, canAccessArea } from "./platform-staff-logic";
+import { PLATFORM_ROLES, validateStaff, normalizeAreas, canAccessArea, normalizeScope } from "./platform-staff-logic";
 
 // SIPlat internal staff & access management (platform plane, separate from tenant
 // RBAC). Seeds built-in platform roles, lists/creates/updates staff, and answers
@@ -60,23 +60,30 @@ export async function listStaff() {
     id: s.id, userId: s.userId, email: s.email, name: s.name,
     roleKey: s.roleKey, roleName: s.role?.name ?? s.roleKey,
     areas: safeArr(s.role?.areasJson), status: s.status, lastActiveAt: s.lastActiveAt,
+    scopeCounties: safeArr(s.scopeCountiesJson), scopeCountries: safeArr(s.scopeCountriesJson),
   }));
 }
 
 /** Add or update a staff member's role/status. */
 export async function upsertStaff(input: {
-  userId: string; email: string; name?: string; roleKey: string; status?: string; actorUserId?: string | null;
+  userId: string; email: string; name?: string; roleKey: string; status?: string;
+  scopeCounties?: string[]; scopeCountries?: string[]; actorUserId?: string | null;
 }): Promise<{ id: string }> {
   await ensurePlatformRoles();
   const roleKeys = (await prisma.platformRole.findMany({ select: { key: true } })).map((r) => r.key);
   const check = validateStaff(input, roleKeys);
   if (!check.ok) throw new Error(check.reason);
+  // Geo scope only applies to the Account Manager role; clear it for any other role.
+  const geo = input.roleKey === "account_manager";
+  const counties = geo ? normalizeScope(input.scopeCounties) : [];
+  const countries = geo ? normalizeScope(input.scopeCountries) : [];
+  const scope = { scopeCountiesJson: JSON.stringify(counties), scopeCountriesJson: JSON.stringify(countries) };
   const s = await prisma.platformStaff.upsert({
     where: { userId: input.userId },
-    update: { email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active" },
-    create: { userId: input.userId, email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", invitedById: input.actorUserId ?? null },
+    update: { email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", ...scope },
+    create: { userId: input.userId, email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", invitedById: input.actorUserId ?? null, ...scope },
   });
-  await recordAudit({ action: AUDIT.STAFF_UPDATED, actorUserId: input.actorUserId, targetType: "PlatformStaff", targetId: s.id, metadata: { roleKey: input.roleKey, status: input.status ?? "active" } });
+  await recordAudit({ action: AUDIT.STAFF_UPDATED, actorUserId: input.actorUserId, targetType: "PlatformStaff", targetId: s.id, metadata: { roleKey: input.roleKey, status: input.status ?? "active", scopeCounties: counties, scopeCountries: countries } });
   return { id: s.id };
 }
 

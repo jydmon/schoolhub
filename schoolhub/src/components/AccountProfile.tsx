@@ -66,6 +66,8 @@ export default function AccountProfile() {
     setMfaSetup(null); setMfaCode(""); setMfaMsg({ kind: "ok", text: "Two-factor authentication enabled." }); load();
   }
   async function disableMfa() { const r = await fetch("/api/auth/mfa", { method: "DELETE" }); if (r.ok) { setMfaMsg({ kind: "ok", text: "Two-factor authentication disabled." }); load(); } }
+  async function signOutEverywhere() { const r = await fetch("/api/auth/sessions", { method: "POST" }); if (r.ok) setPwMsg({ kind: "ok", text: "Signed out of all other devices." }); }
+  async function sendVerifyEmail() { await fetch("/api/auth/verify-email"); setPwMsg({ kind: "info", text: "Verification email sent (check the server console in dev)." }); }
   async function savePolicy() {
     const r = await fetch("/api/platform/security-policy", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(policy) });
     if (r.ok) { const d = await r.json().catch(() => ({})); if (d && !d.error) setPolicy(d); setPolMsg(true); setTimeout(() => setPolMsg(false), 1500); }
@@ -172,6 +174,15 @@ export default function AccountProfile() {
           <button type="submit" style={{ marginTop: 12 }}>Change password</button>
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Changing your password signs you out of all other devices.</p>
         </form>
+
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: 16, paddingTop: 14 }}>
+          <strong>Account access</strong>
+          <p className="muted" style={{ fontSize: 12, margin: "4px 0 10px" }}>Manage device sessions and email verification for your account.</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button className="secondary small" onClick={signOutEverywhere}>Sign out of all other devices</button>
+            {p.emailVerified === false ? <button className="secondary small" onClick={sendVerifyEmail}>Verify email address</button> : <span className="muted" style={{ fontSize: 12 }}>Email verified ✓</span>}
+          </div>
+        </div>
       </div>
 
       {policy && (
