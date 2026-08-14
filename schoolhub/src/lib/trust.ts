@@ -182,19 +182,48 @@ export async function trustDocumentsForUser(userId: string) {
     where: { status: "published", OR: [{ toParents: true }, { toAll: true }] },
     orderBy: [{ requireAck: "desc" }, { title: "asc" }],
   });
+  const ids = docs.map((d) => d.id);
   const acks = docs.length
-    ? await prisma.trustDocumentAck.findMany({ where: { userId, documentId: { in: docs.map((d) => d.id) } } })
+    ? await prisma.trustDocumentAck.findMany({ where: { userId, documentId: { in: ids } } })
     : [];
+  // Read receipts are additive — degrade gracefully if the table isn't migrated yet.
+  let reads: { documentId: string; version: number; readAt: Date }[] = [];
+  try { reads = docs.length ? await prisma.trustDocumentRead.findMany({ where: { userId, documentId: { in: ids } } }) : []; }
+  catch { reads = []; }
   const currentAck = new Set(acks.map((a) => `${a.documentId}:${a.version}`));
   const anyAck = new Set(acks.map((a) => a.documentId));
   const ackAt = new Map(acks.map((a) => [`${a.documentId}:${a.version}`, a.ackedAt]));
-  return docs.map((d) => ({
-    id: d.id, slug: d.slug, title: d.title, category: d.category, summary: d.summary, version: d.version,
-    bodyHtml: d.bodyHtml, linkUrl: d.linkUrl, effectiveDate: d.effectiveDate, requireAck: d.requireAck,
-    acknowledged: currentAck.has(`${d.id}:${d.version}`),
-    ackedAt: ackAt.get(`${d.id}:${d.version}`) || null,
-    updatedSinceAck: !currentAck.has(`${d.id}:${d.version}`) && anyAck.has(d.id),
-  }));
+  const currentRead = new Set(reads.map((r) => `${r.documentId}:${r.version}`));
+  const readAt = new Map(reads.map((r) => [`${r.documentId}:${r.version}`, r.readAt]));
+  return docs.map((d) => {
+    const acknowledged = currentAck.has(`${d.id}:${d.version}`);
+    // Accepting implies reading; an explicit read receipt also counts.
+    const read = acknowledged || currentRead.has(`${d.id}:${d.version}`);
+    return {
+      id: d.id, slug: d.slug, title: d.title, category: d.category, summary: d.summary, version: d.version,
+      bodyHtml: d.bodyHtml, linkUrl: d.linkUrl, effectiveDate: d.effectiveDate,
+      publishedAt: d.publishedAt, updatedAt: d.updatedAt, requireAck: d.requireAck,
+      acknowledged,
+      ackedAt: ackAt.get(`${d.id}:${d.version}`) || null,
+      read,
+      readAt: readAt.get(`${d.id}:${d.version}`) || (acknowledged ? ackAt.get(`${d.id}:${d.version}`) : null) || null,
+      updatedSinceAck: !acknowledged && anyAck.has(d.id),
+    };
+  });
+}
+
+// Record that the user has read (viewed) the current version of a document.
+export async function recordTrustRead(userId: string, documentId: string) {
+  const d = await prisma.trustDocument.findUnique({ where: { id: documentId } });
+  if (!d || d.status !== "published") throw new Error("Document not available");
+  try {
+    await prisma.trustDocumentRead.upsert({
+      where: { documentId_userId_version: { documentId, userId, version: d.version } },
+      create: { documentId, userId, version: d.version },
+      update: { readAt: new Date() },
+    });
+  } catch { /* read table not migrated yet — ignore */ }
+  return { ok: true };
 }
 
 /** All acceptance records across the platform — Super Admin oversight (item A6). */

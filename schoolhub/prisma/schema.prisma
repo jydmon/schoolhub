@@ -2653,6 +2653,19 @@ model TrustDocumentAck {
   @@index([userId])
 }
 
+// Read receipt for a policy/document version — distinct from acknowledgement, so
+// the Policies centre can show Read / Unread separately from Accepted / Unaccepted.
+model TrustDocumentRead {
+  id         String   @id @default(cuid())
+  documentId String
+  userId     String
+  version    Int
+  readAt     DateTime @default(now())
+
+  @@unique([documentId, userId, version])
+  @@index([userId])
+}
+
 // ---- Item 13: Secure Super-Admin support access (impersonation) ----
 // A platform super admin requests time-bound access to a user's portal; the
 // user must approve before any access is granted. Fully audited + revocable.

@@ -60,6 +60,11 @@ function Home() {
   const d = data || {};
   const children: any[] = d.children || [];
   const per = new Map((d.perChild || []).map((p: any) => [p.id, p]));
+  // Schools this parent is connected to (via their children). Multi-school
+  // parents get their content clearly separated by school.
+  const schools: string[] = Array.from(new Set(children.map((c: any) => c.schoolName).filter(Boolean)));
+  const multiSchool = schools.length > 1;
+  const kidsAt = (s: string) => children.filter((c: any) => c.schoolName === s);
   if (loading && !data) return <Screen><Loading label="Loading your dashboard…" /></Screen>;
 
   return (
@@ -69,6 +74,17 @@ function Home() {
         <Kpi k="Children" v={String(children.length)} h={children.map((c) => c.firstName || c.name).slice(0, 2).join(", ") || "—"} />
         <Kpi k="Homework due" v={String((d.homeworkDue || []).length)} h="next 7 days" warn={(d.homeworkDue || []).length > 0} />
       </Kpis>
+
+      {schools.length > 0 ? (
+        <Card>
+          <CardTitle right={multiSchool ? <Badge tone="info">{schools.length} schools</Badge> : undefined}>{multiSchool ? "Your schools" : "Your school"}</CardTitle>
+          {schools.map((s, i) => (
+            <LineItem key={s} first={i === 0} t={s} m={kidsAt(s).map((c: any) => c.name || c.firstName).join(", ") || "—"}
+              right={<Badge tone="mut">{kidsAt(s).length} child{kidsAt(s).length === 1 ? "" : "ren"}</Badge>} />
+          ))}
+          {multiSchool ? <Text style={{ color: T.muted, fontSize: 12, paddingTop: 6 }}>Announcements, events and messages below are labelled by school.</Text> : null}
+        </Card>
+      ) : null}
 
       {(d.insights || []).length > 0 ? (
         <Card>
@@ -92,15 +108,23 @@ function Home() {
       <Card>
         <CardTitle>My children</CardTitle>
         {children.length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No children linked to your account.</Text> :
-          children.map((c: any, idx: number) => {
-            const p: any = per.get(c.id);
-            const rate = p?.attendance?.rate;
-            const pos = p?.behaviour?.positivePoints;
+          (multiSchool ? schools : [null]).map((sName: string | null) => {
+            const kids = sName ? kidsAt(sName) : children;
             return (
-              <LineItem key={c.id || idx} first={idx === 0}
-                t={`${c.name}${c.yearGroup ? " · " + c.yearGroup : ""}`}
-                m={`${pos != null ? `+${pos} points` : "—"}${c.schoolName ? " · " + c.schoolName : ""}`}
-                right={<Badge tone={rate == null ? "mut" : rate >= 95 ? "ok" : rate >= 90 ? "info" : "warn"}>{rate == null ? "—" : rate + "%"}</Badge>} />
+              <View key={sName || "all"}>
+                {multiSchool && sName ? <Text style={{ color: T.muted, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.4, paddingTop: 10, paddingBottom: 2 }}>{sName}</Text> : null}
+                {kids.map((c: any, idx: number) => {
+                  const p: any = per.get(c.id);
+                  const rate = p?.attendance?.rate;
+                  const pos = p?.behaviour?.positivePoints;
+                  return (
+                    <LineItem key={c.id || idx} first={idx === 0}
+                      t={`${c.name}${c.yearGroup ? " · " + c.yearGroup : ""}`}
+                      m={`${pos != null ? `+${pos} points` : "—"}${!multiSchool && c.schoolName ? " · " + c.schoolName : ""}`}
+                      right={<Badge tone={rate == null ? "mut" : rate >= 95 ? "ok" : rate >= 90 ? "info" : "warn"}>{rate == null ? "—" : rate + "%"}</Badge>} />
+                  );
+                })}
+              </View>
             );
           })}
       </Card>
@@ -109,7 +133,7 @@ function Home() {
         <Card>
           <CardTitle>Coming up</CardTitle>
           {(d.upcomingEvents || []).slice(0, 5).map((e: any, idx: number) => (
-            <LineItem key={e.id || idx} first={idx === 0} t={e.title} m={when(e.startsAt)} right={<Badge tone="info">{e.type || "event"}</Badge>} />
+            <LineItem key={e.id || idx} first={idx === 0} t={e.title} m={`${when(e.startsAt)}${multiSchool && e.schoolName ? " · " + e.schoolName : ""}`} right={<Badge tone="info">{e.type || "event"}</Badge>} />
           ))}
         </Card>
       ) : null}

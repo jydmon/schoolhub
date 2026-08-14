@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Kebab, useSort, SortTh } from "@/components/TableKit";
+import PoliciesCentre from "@/components/PoliciesCentre";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
 const dtShort = (v: any) => (v ? new Date(v).toLocaleDateString() : "—");
@@ -48,7 +49,7 @@ async function filesToAttachments(files: FileList | null): Promise<any[]> {
 const isImage = (a: any) => (a.type || "").startsWith("image/") || /\.(png|jpe?g|gif|webp)$/i.test(a.name || "");
 
 export default function HelpSupport({ contactHint }: { contactHint?: string }) {
-  const [tab, setTab] = useState<"help" | "mine" | "manage" | "reports">("help");
+  const [tab, setTab] = useState<"help" | "policies" | "mine" | "manage" | "reports">("help");
   const [canManage, setCanManage] = useState(false);
   const [tickets, setTickets] = useState<any[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -230,6 +231,7 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
         <p className="sub">Find answers, raise a request, and track your tickets.{contactHint ? ` ${contactHint}` : ""}</p>
         <div className="tabs" style={{ marginTop: 6 }}>
           <button className={tab === "help" ? "active" : ""} onClick={() => setTab("help")}>Guides &amp; FAQs</button>
+          <button className={tab === "policies" ? "active" : ""} onClick={() => setTab("policies")}>Policies</button>
           <button className={tab === "mine" ? "active" : ""} onClick={() => setTab("mine")}>My tickets</button>
           {canManage && <button className={tab === "manage" ? "active" : ""} onClick={() => setTab("manage")}>Manage requests</button>}
           {canManage && <button className={tab === "reports" ? "active" : ""} onClick={() => setTab("reports")}>Reports</button>}
@@ -320,6 +322,8 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
 
         </>
       )}
+
+      {tab === "policies" && <PoliciesCentre />}
 
       {(tab === "mine" || tab === "manage") && (
         <div className="panel">
