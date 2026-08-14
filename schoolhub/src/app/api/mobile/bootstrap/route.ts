@@ -13,10 +13,12 @@ export async function GET() {
     const ctx = await requireAuth();
     const roles = ctx.memberships.map((m) => m.role);
     const isDriver = roles.includes(ROLES.DRIVER);
-    const isParent = roles.includes(ROLES.PARENT);
     const isStaff = roles.some((r) => STAFF.includes(r));
     const isAdmin = roles.includes(ROLES.SCHOOL_ADMIN) || roles.includes(ROLES.SCHOOL_LEADER) || ctx.isPlatformAdmin;
-    const appRole = isDriver && !isStaff && !isParent ? "driver" : isAdmin ? "admin" : isStaff ? "teacher" : "parent";
+    // Driving is an operational role that needs the driver app (journeys, vehicle
+    // checks, incidents) on mobile, so the Driver role takes precedence over other
+    // roles the same person may also hold. Admins/staff use the web portals.
+    const appRole = isDriver ? "driver" : isAdmin ? "admin" : isStaff ? "teacher" : "parent";
 
     // Only long-standing columns here so bootstrap can't 500 on a not-yet-migrated column.
     const [children, unread, user, policy] = await Promise.all([
