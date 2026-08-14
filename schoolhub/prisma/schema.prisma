@@ -2455,12 +2455,17 @@ model DirectMessageItem {
   body         String  // plain-text form (previews, notifications, search)
   bodyHtml     String? // sanitised rich-text HTML (optional; falls back to body)
   attachmentsJson String @default("[]") // [{name,type,size,dataUrl}] small inline files/images
+  mentionsJson String @default("[]") // JSON array of mentioned userIds (@mentions)
+  parentId     String? // threaded reply: the message this one replies to
+  parent       DirectMessageItem?  @relation("DMReplies", fields: [parentId], references: [id], onDelete: SetNull)
+  replies      DirectMessageItem[] @relation("DMReplies")
   editedAt     DateTime?
   createdAt    DateTime @default(now())
 
   reactions    DirectMessageReaction[]
 
   @@index([threadId])
+  @@index([parentId])
 }
 
 /// An emoji reaction on a direct message. One row per (message, user, emoji).

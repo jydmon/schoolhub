@@ -8,21 +8,47 @@ const dt = (v: any) => (v ? new Date(v).toLocaleString() : "");
 const MAX_ATTACH_BYTES = 2_000_000;
 
 type Attachment = { name: string; type: string; size?: number; dataUrl: string };
+type Mention = { userId: string; name: string };
+type ReplyTo = { id: string; senderName: string; snippet: string };
+
+// Escape a string for use inside a RegExp.
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Render plain-text with @mentions highlighted (rich HTML bodies render as-is).
+function withMentions(text: string, mentions: Mention[]): React.ReactNode {
+  if (!mentions?.length || !text) return text;
+  const names = mentions.map((m) => esc(m.name)).sort((a, b) => b.length - a.length);
+  const re = new RegExp(`@(${names.join("|")})`, "g");
+  const out: React.ReactNode[] = []; let last = 0; let m: RegExpExecArray | null; let k = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(<span key={k++} className="dm-mention">{m[0]}</span>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
 
 // Shared in-app messaging for every role (Teams-style). Rich text, emoji,
-// attachments, reactions, read receipts, search and history. Who you can message
-// is restricted to your school community and role rules (enforced server-side).
+// attachments, reactions, read receipts, search, history — plus @mentions,
+// threaded replies and group chats. Who you can message is restricted to your
+// school community and role rules (enforced server-side).
 export default function Messaging() {
   const [threads, setThreads] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [conv, setConv] = useState<any>(null);
   const [compose, setCompose] = useState(false);
-  const [to, setTo] = useState("");
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [subject, setSubject] = useState("");
   const [cq, setCq] = useState("");
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState<Attachment[]>([]);
+  const [mentions, setMentions] = useState<Mention[]>([]);
+  const [replyTo, setReplyTo] = useState<ReplyTo | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [manage, setManage] = useState(false);
+  const [addSel, setAddSel] = useState<Record<string, boolean>>({});
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composeEditorRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -33,7 +59,6 @@ export default function Messaging() {
     setThreads(d.threads ?? []); setContacts(d.contacts ?? []);
   }, []);
   useEffect(() => { loadList(); }, [loadList]);
-  // Debounced server search.
   useEffect(() => { const t = setTimeout(() => loadList(search.trim()), 250); return () => clearTimeout(t); }, [search, loadList]);
 
   const loadConv = useCallback(async (id: string) => {
@@ -41,7 +66,7 @@ export default function Messaging() {
     setConv(d); loadList(search.trim());
     setTimeout(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, 30);
   }, [loadList, search]);
-  useEffect(() => { if (active) loadConv(active); }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (active) { setReplyTo(null); setMentions([]); setManage(false); loadConv(active); } }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadEarlier() {
     if (!active || !conv?.oldestId) return;
@@ -84,16 +109,21 @@ export default function Messaging() {
     if (!active) return;
     const { html, text } = readEditor(editorRef);
     if (!text && !pending.length) return;
-    const res = await fetch(`/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: active, bodyHtml: html, body: text, attachments: pending }) });
+    const usedMentions = mentions.filter((m) => text.includes("@" + m.name)).map((m) => m.userId);
+    const res = await fetch(`/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: active, bodyHtml: html, body: text, attachments: pending, mentions: usedMentions, parentId: replyTo?.id }) });
     const d = await res.json(); if (d.error) { alert(d.error); return; }
-    clearEditor(editorRef); setPending([]); loadConv(active);
+    clearEditor(editorRef); setPending([]); setMentions([]); setReplyTo(null); loadConv(active);
   }
   async function startNew() {
     const { html, text } = readEditor(composeEditorRef);
-    if (!to || (!text && !pending.length)) return;
-    const res = await fetch(`/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ toUserId: to, bodyHtml: html, body: text, attachments: pending }) });
+    const ids = Object.keys(selected).filter((k) => selected[k]);
+    if (!ids.length || (!text && !pending.length)) return;
+    const isGroup = ids.length > 1;
+    const payload: any = { bodyHtml: html, body: text, attachments: pending };
+    if (isGroup) { payload.toUserIds = ids; payload.subject = subject.trim() || undefined; } else { payload.toUserId = ids[0]; }
+    const res = await fetch(`/api/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const d = await res.json(); if (d.error) { alert(d.error); return; }
-    clearEditor(composeEditorRef); setPending([]); setCompose(false); setTo(""); await loadList(); setActive(d.threadId);
+    clearEditor(composeEditorRef); setPending([]); setSelected({}); setSubject(""); setCompose(false); await loadList(); setActive(d.threadId);
   }
   async function react(messageId: string, emoji: string) {
     if (!active) return;
@@ -101,16 +131,30 @@ export default function Messaging() {
     const d = await res.json(); if (d.error) return;
     setConv((c: any) => ({ ...c, messages: (c.messages || []).map((m: any) => m.id === messageId ? { ...m, reactions: d.reactions } : m) }));
   }
+  async function manageThread(action: string, extra: any = {}) {
+    if (!active) return;
+    const res = await fetch(`/api/messages/${active}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
+    const d = await res.json(); if (d.error) { alert(d.error); return; }
+    if (action === "leave") { setActive(null); setConv(null); setManage(false); loadList(); }
+    else { setManage(false); setAddSel({}); loadConv(active); }
+  }
+
+  function addMention(m: Mention) {
+    editorRef.current?.focus();
+    document.execCommand("insertText", false, "@" + m.name + " ");
+    setMentions((cur) => cur.some((x) => x.userId === m.userId) ? cur : [...cur, m]);
+  }
 
   const filteredContacts = useMemo(() => contacts.filter((c) => !cq || c.name.toLowerCase().includes(cq.toLowerCase()) || (c.role || "").toLowerCase().includes(cq.toLowerCase())), [contacts, cq]);
+  const selectedCount = Object.values(selected).filter(Boolean).length;
   const members = conv?.members || [];
-  // Index of the last of MY messages, for the "Seen" receipt (Teams-style).
+  const mentionMembers: Mention[] = useMemo(() => members.filter((m: any) => !m.mine).map((m: any) => ({ userId: m.userId, name: m.name })), [members]);
   const lastMineIdx = useMemo(() => { const ms = conv?.messages || []; for (let i = ms.length - 1; i >= 0; i--) if (ms[i].mine) return i; return -1; }, [conv]);
 
   return (
     <div className="panel">
-      <div className="flex-between"><div><h2 style={{ margin: 0 }}>Messages</h2><p className="sub" style={{ marginBottom: 0 }}>Message people in your school community. Conversations stay within your school.</p></div>
-        <button onClick={() => { setCompose(true); setActive(null); setConv(null); setPending([]); }}>New message</button></div>
+      <div className="flex-between"><div><h2 style={{ margin: 0 }}>Messages</h2><p className="sub" style={{ marginBottom: 0 }}>Message people in your school community. Start a group, reply to a message, or @mention someone.</p></div>
+        <button onClick={() => { setCompose(true); setActive(null); setConv(null); setPending([]); setSelected({}); setSubject(""); }}>New message</button></div>
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 12 }}>
         <div style={{ flex: "0 0 280px", minWidth: 240 }}>
@@ -127,36 +171,70 @@ export default function Messaging() {
         <div style={{ flex: 1, minWidth: 320 }}>
           {compose ? (
             <div>
-              <label>To</label>
+              <div className="flex-between"><label>To {selectedCount > 0 ? `(${selectedCount})` : ""}</label>{selectedCount > 1 && <span className="badge role">Group</span>}</div>
               <input value={cq} onChange={(e) => setCq(e.target.value)} placeholder="Search people…" style={{ marginBottom: 8 }} />
-              <select value={to} onChange={(e) => setTo(e.target.value)} size={6} style={{ width: "100%", height: "auto" }}>
-                {filteredContacts.map((c) => <option key={c.id} value={c.id}>{c.name} — {c.role}{c.schoolName ? ` · ${c.schoolName}` : ""}</option>)}
-              </select>
-              {filteredContacts.length === 0 && <p className="muted" style={{ fontSize: 13 }}>No contacts available.</p>}
+              <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, padding: 6 }}>
+                {filteredContacts.length === 0 && <p className="muted" style={{ fontSize: 13, margin: 6 }}>No contacts available.</p>}
+                {filteredContacts.map((c) => (
+                  <label key={c.id} className="consent" style={{ display: "flex", alignItems: "center", gap: 8, margin: "2px 0", cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!selected[c.id]} onChange={(e) => setSelected((s) => ({ ...s, [c.id]: e.target.checked }))} />
+                    <span>{c.name} <span className="muted">— {c.role}{c.schoolName ? ` · ${c.schoolName}` : ""}</span></span>
+                  </label>
+                ))}
+              </div>
+              {selectedCount > 1 && <div style={{ marginTop: 8 }}><label>Group name (optional)</label><input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Year 6 trip team" /></div>}
               <label style={{ marginTop: 10 }}>Message</label>
               <RichComposer editorRef={composeEditorRef} onAddFiles={addFiles} pending={pending} onRemove={(i) => setPending((p) => p.filter((_, x) => x !== i))} />
-              <div style={{ marginTop: 10, display: "flex", gap: 8 }}><button onClick={startNew} disabled={!to}>Send</button><button className="secondary" onClick={() => { setCompose(false); setPending([]); }}>Cancel</button></div>
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}><button onClick={startNew} disabled={selectedCount === 0}>Send</button><button className="secondary" onClick={() => { setCompose(false); setPending([]); setSelected({}); }}>Cancel</button></div>
             </div>
           ) : !active || !conv ? (
             <p className="muted">Select a conversation, or start a new message.</p>
           ) : (
             <>
-              <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>{conv.thread?.isGroup ? "👥 " : ""}{conv.thread?.participants?.join(", ")}</div>
+              <div className="flex-between" style={{ marginBottom: 8 }}>
+                <div className="muted" style={{ fontSize: 13 }}>{conv.thread?.isGroup ? "👥 " : ""}{conv.thread?.subject || conv.thread?.participants?.join(", ")}</div>
+                {conv.thread?.isGroup && <button className="secondary small" onClick={() => setManage((s) => !s)}>{manage ? "Close" : "Manage group"}</button>}
+              </div>
+              {manage && conv.thread?.isGroup && (
+                <div className="panel" style={{ background: "#f8fafc", marginBottom: 10 }}>
+                  <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>In this group: {conv.thread?.participants?.join(", ")}</div>
+                  <div className="row">
+                    <div style={{ flex: 3 }}><input defaultValue={conv.thread?.subject || ""} placeholder="Group name" id="dm-rename" /></div>
+                    <div style={{ display: "flex", alignItems: "flex-end" }}><button className="secondary small" onClick={() => manageThread("rename", { subject: (document.getElementById("dm-rename") as HTMLInputElement)?.value })}>Rename</button></div>
+                  </div>
+                  <label style={{ marginTop: 8, fontSize: 12 }}>Add people</label>
+                  <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, padding: 6, background: "#fff" }}>
+                    {contacts.filter((c) => !members.some((m: any) => m.userId === c.id)).map((c) => (
+                      <label key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", margin: "2px 0", cursor: "pointer" }}>
+                        <input type="checkbox" checked={!!addSel[c.id]} onChange={(e) => setAddSel((s) => ({ ...s, [c.id]: e.target.checked }))} /><span style={{ fontSize: 13 }}>{c.name} <span className="muted">— {c.role}</span></span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                    <button className="secondary small" onClick={() => manageThread("add", { memberIds: Object.keys(addSel).filter((k) => addSel[k]) })} disabled={!Object.values(addSel).some(Boolean)}>Add selected</button>
+                    <button className="danger small" onClick={() => manageThread("leave")}>Leave group</button>
+                  </div>
+                </div>
+              )}
               <div ref={scrollRef} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12, minHeight: 280, maxHeight: 460, overflowY: "auto", background: "#fafbfe" }}>
                 {conv.hasMore && <div style={{ textAlign: "center", marginBottom: 8 }}><button className="secondary small" onClick={loadEarlier} disabled={loadingMore}>{loadingMore ? "Loading…" : "Load earlier messages"}</button></div>}
                 {(conv.messages || []).length === 0 ? <p className="muted">No messages yet.</p> : conv.messages.map((m: any, idx: number) => {
                   const seen = m.mine && idx === lastMineIdx ? readersOf(m.createdAt, m.senderId, members) : [];
                   return (
-                    <div key={m.id} style={{ textAlign: m.mine ? "right" : "left", margin: "8px 0" }}>
+                    <div key={m.id} className="dm-msg" style={{ textAlign: m.mine ? "right" : "left", margin: "8px 0" }}>
                       <div style={{ display: "inline-block", maxWidth: "82%", background: m.mine ? "#4f46e5" : "#fff", color: m.mine ? "#fff" : "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 12px", fontSize: 13, textAlign: "left" }}>
                         {(!m.mine && conv.thread?.isGroup) && <div style={{ fontSize: 11, opacity: 0.75, fontWeight: 700 }}>{m.senderName}</div>}
+                        {m.replyTo && <div style={{ borderLeft: "3px solid rgba(127,127,127,.5)", paddingLeft: 6, margin: "2px 0 4px", fontSize: 11, opacity: 0.8 }}><strong>{m.replyTo.senderName}</strong>: {m.replyTo.snippet}</div>}
                         {m.bodyHtml
                           ? <div className="dm-rich" style={{ wordBreak: "break-word" }} dangerouslySetInnerHTML={{ __html: m.bodyHtml }} />
-                          : <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.body}</div>}
+                          : <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{withMentions(m.body, m.mentions)}</div>}
                         {(m.attachments || []).length > 0 && <Attachments items={m.attachments} mine={m.mine} />}
                         <div style={{ fontSize: 10, opacity: 0.65, marginTop: 3 }}>{dt(m.createdAt)}{m.editedAt ? " · edited" : ""}</div>
                       </div>
-                      <ReactionBar msg={m} onReact={react} />
+                      <div className="dm-actions" style={{ display: "flex", gap: 6, marginTop: 3, justifyContent: m.mine ? "flex-end" : "flex-start", alignItems: "center", flexWrap: "wrap" }}>
+                        <ReactionBar msg={m} onReact={react} />
+                        <button className="dm-reply-btn" onClick={() => setReplyTo({ id: m.id, senderName: m.senderName, snippet: (m.body || "📎 attachment").slice(0, 80) })}>Reply</button>
+                      </div>
                       {m.mine && idx === lastMineIdx && seen.length > 0 && (
                         <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>Seen{conv.thread?.isGroup ? ` by ${seen.map((s) => s.name).join(", ")}` : ""}</div>
                       )}
@@ -164,7 +242,13 @@ export default function Messaging() {
                   );
                 })}
               </div>
-              <RichComposer editorRef={editorRef} onAddFiles={addFiles} pending={pending} onRemove={(i) => setPending((p) => p.filter((_, x) => x !== i))} onEnter={send} />
+              {replyTo && (
+                <div className="flex-between" style={{ background: "#eef2ff", border: "1px solid #c7d2fe", borderRadius: 8, padding: "6px 10px", marginTop: 8, fontSize: 12 }}>
+                  <span>↩ Replying to <strong>{replyTo.senderName}</strong>: {replyTo.snippet}</span>
+                  <button className="secondary small" onClick={() => setReplyTo(null)}>✕</button>
+                </div>
+              )}
+              <RichComposer editorRef={editorRef} onAddFiles={addFiles} pending={pending} onRemove={(i) => setPending((p) => p.filter((_, x) => x !== i))} onEnter={send} mentionMembers={mentionMembers} onMention={addMention} />
               <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}><button onClick={send}>Send</button></div>
             </>
           )}
@@ -174,29 +258,42 @@ export default function Messaging() {
         .dm-rich a { color: inherit; text-decoration: underline; }
         .dm-rich ul, .dm-rich ol { margin: 4px 0 4px 18px; }
         .dm-rich p { margin: 4px 0; }
+        .dm-mention { background: rgba(79,70,229,.14); color: inherit; border-radius: 4px; padding: 0 3px; font-weight: 600; }
         .dm-editor:empty:before { content: attr(data-placeholder); color: #9aa3b2; }
         .dm-editor:focus { outline: 2px solid #c7d2fe; }
         .dm-tool { border: 1px solid var(--line); background: #fff; border-radius: 6px; width: 30px; height: 28px; cursor: pointer; font-size: 13px; }
-        .dm-emoji-pop { position: absolute; z-index: 20; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; width: 320px; }
+        .dm-emoji-pop, .dm-mention-pop { position: absolute; z-index: 20; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+        .dm-emoji-pop { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; width: 320px; }
         .dm-emoji-pop button { border: none; background: transparent; font-size: 18px; cursor: pointer; padding: 3px; border-radius: 6px; }
         .dm-emoji-pop button:hover { background: #eef2ff; }
+        .dm-mention-pop { width: 240px; max-height: 200px; overflow-y: auto; }
+        .dm-mention-pop button { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 5px 8px; cursor: pointer; font-size: 13px; border-radius: 6px; }
+        .dm-mention-pop button:hover { background: #eef2ff; }
         .dm-react { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 1px 7px; font-size: 12px; cursor: pointer; }
         .dm-react.mine { background: #eef2ff; border-color: #c7d2fe; }
+        .dm-reply-btn { border: none; background: transparent; color: #6b7280; font-size: 11px; cursor: pointer; padding: 1px 4px; }
+        .dm-reply-btn:hover { color: #4f46e5; text-decoration: underline; }
+        .dm-actions { opacity: 0; transition: opacity .12s; }
+        .dm-msg:hover .dm-actions { opacity: 1; }
       `}</style>
     </div>
   );
 }
 
-// ---- Rich-text composer: formatting toolbar + emoji picker + attachments ----
-function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter }: {
+// ---- Rich-text composer: formatting toolbar, emoji, @mention, attachments ----
+function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter, mentionMembers, onMention }: {
   editorRef: React.RefObject<HTMLDivElement>; onAddFiles: (f: FileList | null) => void;
   pending: Attachment[]; onRemove: (i: number) => void; onEnter?: () => void;
+  mentionMembers?: Mention[]; onMention?: (m: Mention) => void;
 }) {
   const [emoji, setEmoji] = useState(false);
+  const [ment, setMent] = useState(false);
+  const [mq, setMq] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
   const cmd = (c: string, v?: string) => { document.execCommand(c, false, v); editorRef.current?.focus(); };
   function insertEmoji(e: string) { editorRef.current?.focus(); document.execCommand("insertText", false, e); setEmoji(false); }
   function addLink() { const url = prompt("Link URL (https://…)"); if (url) cmd("createLink", url); }
+  const filteredMembers = (mentionMembers || []).filter((m) => !mq || m.name.toLowerCase().includes(mq.toLowerCase()));
   return (
     <div style={{ position: "relative" }}>
       <div style={{ display: "flex", gap: 4, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -205,13 +302,21 @@ function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter }: {
         <button type="button" className="dm-tool" title="Underline" onClick={() => cmd("underline")}><u>U</u></button>
         <button type="button" className="dm-tool" title="Bulleted list" onClick={() => cmd("insertUnorderedList")}>•</button>
         <button type="button" className="dm-tool" title="Link" onClick={addLink}>🔗</button>
-        <button type="button" className="dm-tool" title="Emoji" onClick={() => setEmoji((s) => !s)}>😊</button>
+        <button type="button" className="dm-tool" title="Emoji" onClick={() => { setEmoji((s) => !s); setMent(false); }}>😊</button>
+        {onMention && mentionMembers && mentionMembers.length > 0 && <button type="button" className="dm-tool" title="Mention someone" onClick={() => { setMent((s) => !s); setEmoji(false); }}>@</button>}
         <button type="button" className="dm-tool" title="Attach" onClick={() => fileRef.current?.click()}>📎</button>
         <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style={{ display: "none" }} onChange={(e) => { onAddFiles(e.target.files); if (fileRef.current) fileRef.current.value = ""; }} />
       </div>
       {emoji && (
         <div className="dm-emoji-pop" style={{ bottom: "100%", left: 0, marginBottom: 6 }}>
           {EMOJI_PALETTE.map((e) => <button key={e} type="button" onClick={() => insertEmoji(e)}>{e}</button>)}
+        </div>
+      )}
+      {ment && onMention && (
+        <div className="dm-mention-pop" style={{ bottom: "100%", left: 0, marginBottom: 6 }}>
+          <input value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Mention…" style={{ width: "100%", marginBottom: 6 }} autoFocus />
+          {filteredMembers.length === 0 && <p className="muted" style={{ fontSize: 12, margin: 4 }}>No one to mention.</p>}
+          {filteredMembers.map((m) => <button key={m.userId} type="button" onClick={() => { onMention(m); setMent(false); setMq(""); }}>@{m.name}</button>)}
         </div>
       )}
       <div
@@ -255,16 +360,16 @@ function ReactionBar({ msg, onReact }: { msg: any; onReact: (id: string, emoji: 
   const [open, setOpen] = useState(false);
   const reactions: any[] = msg.reactions || [];
   return (
-    <div style={{ display: "flex", gap: 4, marginTop: 3, justifyContent: msg.mine ? "flex-end" : "flex-start", position: "relative", flexWrap: "wrap" }}>
+    <span style={{ display: "inline-flex", gap: 4, position: "relative", flexWrap: "wrap", alignItems: "center" }}>
       {reactions.map((r) => (
         <button key={r.emoji} className={`dm-react${r.mine ? " mine" : ""}`} title={r.mine ? "You reacted" : `${r.count} reaction${r.count > 1 ? "s" : ""}`} onClick={() => onReact(msg.id, r.emoji)}>{r.emoji} {r.count}</button>
       ))}
       <button className="dm-react" title="Add reaction" onClick={() => setOpen((s) => !s)} style={{ opacity: 0.7 }}>＋</button>
       {open && (
-        <div style={{ position: "absolute", top: "100%", zIndex: 20, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", display: "flex", gap: 2, [msg.mine ? "right" : "left"]: 0 as any }}>
+        <div style={{ position: "absolute", top: "100%", zIndex: 20, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: 4, boxShadow: "0 8px 24px rgba(0,0,0,.12)", display: "flex", gap: 2, left: 0 }}>
           {REACTION_EMOJIS.map((e) => <button key={e} onClick={() => { onReact(msg.id, e); setOpen(false); }} style={{ border: "none", background: "transparent", fontSize: 18, cursor: "pointer", padding: 2 }}>{e}</button>)}
         </div>
       )}
-    </div>
+    </span>
   );
 }

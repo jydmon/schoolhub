@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { groupReactions, type ReactionRow } from "@/lib/messaging-logic";
+import { addThreadMembers, renameThread, leaveThread } from "@/lib/messaging";
+import { dmThreadManageSchema } from "@/lib/validation";
 import { handleError, ok, AppError } from "@/lib/http";
 
 type Params = { params: { threadId: string } };
@@ -25,7 +27,7 @@ export async function GET(req: Request, { params }: Params) {
     const where = { threadId: params.threadId, ...(createdBefore ? { createdAt: { lt: createdBefore } } : {}) };
     const [thread, page, members] = await Promise.all([
       prisma.directThread.findUnique({ where: { id: params.threadId } }),
-      prisma.directMessageItem.findMany({ where, orderBy: { createdAt: "desc" }, take: PAGE + 1, include: { reactions: { select: { emoji: true, userId: true } } } }),
+      prisma.directMessageItem.findMany({ where, orderBy: { createdAt: "desc" }, take: PAGE + 1, include: { reactions: { select: { emoji: true, userId: true } }, parent: { select: { id: true, senderUserId: true, body: true } } } }),
       prisma.directThreadMember.findMany({ where: { threadId: params.threadId }, select: { userId: true, lastReadAt: true } }),
     ]);
     const hasMore = page.length > PAGE;
@@ -53,6 +55,8 @@ export async function GET(req: Request, { params }: Params) {
         bodyHtml: m.bodyHtml,
         attachments: parseAttachments(m.attachmentsJson),
         reactions: groupReactions(m.reactions as ReactionRow[], ctx.userId),
+        mentions: parseAttachments(m.mentionsJson).map((id: string) => ({ userId: id, name: uName.get(id) || "User" })),
+        replyTo: m.parent ? { id: m.parent.id, senderName: uName.get(m.parent.senderUserId) || "User", snippet: (m.parent.body || "").slice(0, 120) } : null,
         createdAt: m.createdAt,
         editedAt: m.editedAt,
         mine: m.senderUserId === ctx.userId,
@@ -60,6 +64,18 @@ export async function GET(req: Request, { params }: Params) {
         senderName: uName.get(m.senderUserId) || "User",
       })),
     });
+  } catch (err) { return handleError(err); }
+}
+
+// Manage a thread: rename (group), add members, or leave.
+export async function PATCH(req: Request, { params }: Params) {
+  try {
+    const ctx = await requireAuth();
+    const b = dmThreadManageSchema.parse(await req.json().catch(() => ({})));
+    if (b.action === "rename") await renameThread(params.threadId, ctx.userId, b.subject || "");
+    else if (b.action === "add") { if (!b.memberIds?.length) throw new AppError("Choose who to add.", 400); await addThreadMembers(params.threadId, ctx.userId, b.memberIds); }
+    else if (b.action === "leave") await leaveThread(params.threadId, ctx.userId);
+    return ok({ ok: true });
   } catch (err) { return handleError(err); }
 }
 

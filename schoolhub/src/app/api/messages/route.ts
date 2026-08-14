@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
-import { messagingContacts, assertCanMessage, findOrCreateDirectThread } from "@/lib/messaging";
+import { messagingContacts, assertCanMessage, findOrCreateDirectThread, createGroupThread } from "@/lib/messaging";
 import { sanitizeRichText, htmlToText } from "@/lib/sanitize-html";
 import { validateAttachments, messagePreview } from "@/lib/messaging-logic";
 import { dmSendSchema } from "@/lib/validation";
@@ -76,28 +76,56 @@ export async function POST(req: Request) {
 
     let threadId = b.threadId;
     if (!threadId) {
-      if (!b.toUserId) throw new AppError("Choose someone to message.", 400);
-      const schoolId = await assertCanMessage(ctx.userId, b.toUserId);
-      threadId = await findOrCreateDirectThread(schoolId, ctx.userId, b.toUserId);
+      // Group creation when multiple recipients (or an explicit subject) are given.
+      const group = (b.toUserIds && b.toUserIds.length > 1) || (b.toUserIds && b.toUserIds.length && b.subject);
+      if (group) {
+        threadId = await createGroupThread(ctx.userId, b.toUserIds!, b.subject);
+      } else {
+        const target = b.toUserId || (b.toUserIds && b.toUserIds[0]);
+        if (!target) throw new AppError("Choose someone to message.", 400);
+        const schoolId = await assertCanMessage(ctx.userId, target);
+        threadId = await findOrCreateDirectThread(schoolId, ctx.userId, target);
+      }
     } else {
       const member = await prisma.directThreadMember.findFirst({ where: { threadId, userId: ctx.userId } });
       if (!member) throw new AppError("You're not part of this conversation.", 403);
     }
 
+    // Members of the (now-resolved) thread — used for mention validation + notify.
+    const allMembers = await prisma.directThreadMember.findMany({ where: { threadId }, select: { userId: true } });
+    const memberIds = new Set(allMembers.map((m) => m.userId));
+
+    // Threaded reply: parent must belong to this thread.
+    let parentId: string | null = null;
+    if (b.parentId) {
+      const parent = await prisma.directMessageItem.findFirst({ where: { id: b.parentId, threadId }, select: { id: true } });
+      if (!parent) throw new AppError("The message you're replying to no longer exists.", 400);
+      parentId = parent.id;
+    }
+
+    // @mentions: keep only real members other than the sender.
+    const mentions = Array.from(new Set((b.mentions || []).filter((id) => memberIds.has(id) && id !== ctx.userId)));
+
     const msg = await prisma.directMessageItem.create({
-      data: { threadId, senderUserId: ctx.userId, body: plain, bodyHtml: safeHtml || null, attachmentsJson: JSON.stringify(attachments) },
+      data: { threadId, senderUserId: ctx.userId, body: plain, bodyHtml: safeHtml || null, attachmentsJson: JSON.stringify(attachments), mentionsJson: JSON.stringify(mentions), parentId },
     });
     await prisma.directThread.update({ where: { id: threadId }, data: { lastAt: new Date() } });
     await prisma.directThreadMember.update({ where: { threadId_userId: { threadId, userId: ctx.userId } }, data: { lastReadAt: new Date() } }).catch(() => {});
 
-    // Notify the other participants (in-app; email follows their prefs).
-    const members = await prisma.directThreadMember.findMany({ where: { threadId, userId: { not: ctx.userId } }, select: { userId: true } });
+    // Notify participants: mentioned people get a distinct "mentioned you"; the
+    // rest of the thread get a normal "new message".
     const me = await prisma.user.findUnique({ where: { id: ctx.userId }, select: { fullName: true } });
-    const thread = await prisma.directThread.findUnique({ where: { id: threadId }, select: { schoolId: true } });
+    const thread = await prisma.directThread.findUnique({ where: { id: threadId }, select: { schoolId: true, subject: true } });
     const preview = messagePreview(plain, attachments.length);
-    if (members.length) await notify(members.map((m) => m.userId), { kind: "message", title: `New message from ${me?.fullName || ctx.email}`, body: preview.slice(0, 120), schoolId: thread?.schoolId }).catch(() => {});
+    const others = allMembers.map((m) => m.userId).filter((id) => id !== ctx.userId);
+    const mentionSet = new Set(mentions);
+    const plainOthers = others.filter((id) => !mentionSet.has(id));
+    const senderName = me?.fullName || ctx.email;
+    const where = thread?.subject ? ` in ${thread.subject}` : "";
+    if (mentions.length) await notify(mentions, { kind: "message", title: `${senderName} mentioned you${where}`, body: preview.slice(0, 120), schoolId: thread?.schoolId }).catch(() => {});
+    if (plainOthers.length) await notify(plainOthers, { kind: "message", title: `New message from ${senderName}${where}`, body: preview.slice(0, 120), schoolId: thread?.schoolId }).catch(() => {});
 
-    return ok({ threadId, message: { id: msg.id, body: msg.body, bodyHtml: msg.bodyHtml, attachments, reactions: [], createdAt: msg.createdAt, mine: true } }, 201);
+    return ok({ threadId, message: { id: msg.id, body: msg.body, bodyHtml: msg.bodyHtml, attachments, mentions, parentId, reactions: [], createdAt: msg.createdAt, mine: true } }, 201);
   } catch (err) { return handleError(err); }
 }
 

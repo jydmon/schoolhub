@@ -5,10 +5,11 @@ import { Screen, Card, CardTitle, Sub, Badge, Button, LineItem, Field, Loading, 
 import { api } from "@/api/client";
 
 // Teams-style direct messaging for mobile: conversation list, open a thread with
-// full history, image attachments, emoji reactions and read receipts, reply, and
-// start a new conversation with an allowed contact. Backed by /api/messages.
+// full history, image attachments, emoji reactions, read receipts, threaded
+// replies, @mentions, and group chats (create + manage). Backed by /api/messages.
 
 type Attachment = { name: string; type: string; dataUrl: string };
+type Mention = { userId: string; name: string };
 const MAX_ATTACH = 4;
 const MAX_ATTACH_CHARS = 2_000_000;
 const REACTIONS = ["👍", "❤️", "😄", "🎉", "👏", "😮", "😢", "🙏", "✅", "👀"];
@@ -54,11 +55,18 @@ export function DirectMessages() {
   const [detail, setDetail] = useState<any>(null);
   const [reply, setReply] = useState("");
   const [replyAtt, setReplyAtt] = useState<Attachment[]>([]);
-  const [reactFor, setReactFor] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; senderName: string; snippet: string } | null>(null);
+  const [mentions, setMentions] = useState<Mention[]>([]);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [showMention, setShowMention] = useState(false);
+  const [manage, setManage] = useState(false);
+  const [renameVal, setRenameVal] = useState("");
+  const [addSel, setAddSel] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
-  // New-message composer
-  const [to, setTo] = useState<string>("");
+  // New-message composer (multi-select => group)
+  const [sel, setSel] = useState<Record<string, boolean>>({});
   const [cq, setCq] = useState("");
+  const [subject, setSubject] = useState("");
   const [newBody, setNewBody] = useState("");
   const [newAtt, setNewAtt] = useState<Attachment[]>([]);
 
@@ -69,7 +77,7 @@ export function DirectMessages() {
   }, []);
   useEffect(() => { load(); }, [load]);
   const loadDetail = useCallback(async (id: string) => { try { setDetail(await api.get<any>(`/api/messages/${id}`)); } catch { toast("Couldn't load"); } }, []);
-  useEffect(() => { if (openId) loadDetail(openId); }, [openId, loadDetail]);
+  useEffect(() => { if (openId) { setReplyTo(null); setMentions([]); setManage(false); loadDetail(openId); } }, [openId, loadDetail]);
 
   async function addReplyImg() { if (replyAtt.length >= MAX_ATTACH) { toast(`Up to ${MAX_ATTACH} photos`); return; } const a = await pickImage(); if (a) setReplyAtt((s) => [...s, a]); }
   async function addNewImg() { if (newAtt.length >= MAX_ATTACH) { toast(`Up to ${MAX_ATTACH} photos`); return; } const a = await pickImage(); if (a) setNewAtt((s) => [...s, a]); }
@@ -77,18 +85,21 @@ export function DirectMessages() {
   async function send() {
     if ((!reply.trim() && !replyAtt.length) || !openId) return;
     setBusy(true);
-    try { await api.post(`/api/messages`, { threadId: openId, body: reply.trim(), attachments: replyAtt }); setReply(""); setReplyAtt([]); loadDetail(openId); }
+    const used = mentions.filter((m) => reply.includes("@" + m.name)).map((m) => m.userId);
+    try { await api.post(`/api/messages`, { threadId: openId, body: reply.trim(), attachments: replyAtt, mentions: used, parentId: replyTo?.id }); setReply(""); setReplyAtt([]); setReplyTo(null); setMentions([]); loadDetail(openId); }
     catch (e: any) { toast(e?.data?.error || "Couldn't send"); } finally { setBusy(false); }
   }
   async function startNew() {
-    if (!to || (!newBody.trim() && !newAtt.length)) { toast("Pick someone and write a message"); return; }
+    const ids = Object.keys(sel).filter((k) => sel[k]);
+    if (!ids.length || (!newBody.trim() && !newAtt.length)) { toast("Pick someone and write a message"); return; }
     setBusy(true);
-    try { const d = await api.post<any>(`/api/messages`, { toUserId: to, body: newBody.trim(), attachments: newAtt }); setNewBody(""); setNewAtt([]); setTo(""); setMode("list"); await load(); setOpenId(d.threadId); }
+    const payload: any = { body: newBody.trim(), attachments: newAtt };
+    if (ids.length > 1) { payload.toUserIds = ids; payload.subject = subject.trim() || undefined; } else { payload.toUserId = ids[0]; }
+    try { const d = await api.post<any>(`/api/messages`, payload); setNewBody(""); setNewAtt([]); setSel({}); setSubject(""); setMode("list"); await load(); setOpenId(d.threadId); }
     catch (e: any) { toast(e?.data?.error || "Couldn't send"); } finally { setBusy(false); }
   }
   async function react(messageId: string, emoji: string) {
-    if (!openId) return;
-    setReactFor(null);
+    if (!openId) return; setMenuFor(null);
     try { const d = await api.post<any>(`/api/messages/${openId}/react`, { messageId, emoji }); setDetail((c: any) => ({ ...c, messages: (c.messages || []).map((m: any) => m.id === messageId ? { ...m, reactions: d.reactions } : m) })); }
     catch { toast("Couldn't react"); }
   }
@@ -97,9 +108,21 @@ export function DirectMessages() {
     try { const d = await api.get<any>(`/api/messages/${openId}?before=${detail.oldestId}`); setDetail((c: any) => ({ ...d, messages: [...(d.messages || []), ...(c.messages || [])], members: c.members, thread: c.thread })); }
     catch { toast("Couldn't load earlier"); }
   }
+  async function manageThread(action: string, extra: any = {}) {
+    if (!openId) return;
+    try {
+      const d = await api.patch<any>(`/api/messages/${openId}`, { action, ...extra });
+      if (d?.error) { toast(d.error); return; }
+      if (action === "leave") { setOpenId(null); setDetail(null); setManage(false); load(); }
+      else { setManage(false); setAddSel({}); loadDetail(openId); }
+    } catch (e: any) { toast(e?.data?.error || "Couldn't update group"); }
+  }
+  function addMention(m: Mention) { setReply((r) => (r ? r + " " : "") + "@" + m.name + " "); setMentions((cur) => cur.some((x) => x.userId === m.userId) ? cur : [...cur, m]); setShowMention(false); }
 
   const filteredContacts = useMemo(() => contacts.filter((c) => !cq || (c.name || "").toLowerCase().includes(cq.toLowerCase()) || (c.role || "").toLowerCase().includes(cq.toLowerCase())), [contacts, cq]);
+  const selCount = Object.values(sel).filter(Boolean).length;
   const members: any[] = detail?.members || [];
+  const mentionMembers: Mention[] = members.filter((m) => !m.mine).map((m) => ({ userId: m.userId, name: m.name }));
   const lastMineIdx = useMemo(() => { const ms = detail?.messages || []; for (let i = ms.length - 1; i >= 0; i--) if (ms[i].mine) return i; return -1; }, [detail]);
   const readersOf = (createdAt: string, senderId: string) => {
     const t = new Date(createdAt).getTime();
@@ -113,16 +136,42 @@ export function DirectMessages() {
       <Screen>
         <Pressable onPress={() => { setOpenId(null); setDetail(null); }}><Text style={{ color: T.brand, fontWeight: "700", marginBottom: 8 }}>← Back to messages</Text></Pressable>
         <Card>
-          <CardTitle right={th.isGroup ? <Badge tone="info">group</Badge> : undefined}>{(th.participants || []).join(", ") || "Conversation"}</CardTitle>
+          <CardTitle right={th.isGroup ? <Pressable onPress={() => { setManage((s) => !s); setRenameVal(th.subject || ""); }}><Badge tone="info">{manage ? "close" : "manage"}</Badge></Pressable> : undefined}>
+            {th.subject || (th.participants || []).join(", ") || "Conversation"}
+          </CardTitle>
+          {th.isGroup ? <Sub>{(th.participants || []).join(", ")}</Sub> : null}
+          {manage && th.isGroup ? (
+            <View style={{ marginTop: 8 }}>
+              <Field label="Group name" value={renameVal} onChangeText={setRenameVal} />
+              <Button sm tone="secondary" title="Rename" onPress={() => manageThread("rename", { subject: renameVal })} />
+              <Text style={{ fontSize: 12, color: T.muted, marginTop: 8 }}>Add people</Text>
+              <ScrollView style={{ maxHeight: 140 }}>
+                {contacts.filter((c) => !members.some((m) => m.userId === c.id)).map((c, i) => (
+                  <Pressable key={c.id} onPress={() => setAddSel((s) => ({ ...s, [c.id]: !s[c.id] }))}>
+                    <LineItem first={i === 0} t={c.name} m={c.role} right={addSel[c.id] ? <Badge tone="ok">✓</Badge> : null} />
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
+                <Button sm tone="secondary" title="Add selected" onPress={() => manageThread("add", { memberIds: Object.keys(addSel).filter((k) => addSel[k]) })} />
+                <Button sm tone="danger" title="Leave group" onPress={() => manageThread("leave")} />
+              </View>
+            </View>
+          ) : null}
         </Card>
         {detail.hasMore ? <Button tone="secondary" sm title="Load earlier messages" onPress={loadEarlier} /> : null}
         {(detail.messages || []).map((m: any, idx: number) => {
           const seen = m.mine && idx === lastMineIdx ? readersOf(m.createdAt, m.senderId) : [];
           return (
             <View key={m.id} style={{ alignItems: m.mine ? "flex-end" : "flex-start", marginBottom: 8, marginTop: idx === 0 ? 8 : 0 }}>
-              <Pressable onLongPress={() => setReactFor(reactFor === m.id ? null : m.id)}>
+              <Pressable onLongPress={() => setMenuFor(menuFor === m.id ? null : m.id)}>
                 <View style={{ maxWidth: "86%", backgroundColor: m.mine ? T.brand : "#fff", borderWidth: 1, borderColor: T.line, borderRadius: 12, padding: 10 }}>
                   {(!m.mine && th.isGroup) ? <Text style={{ fontSize: 10, color: T.muted, fontWeight: "700" }}>{m.senderName}</Text> : null}
+                  {m.replyTo ? (
+                    <View style={{ borderLeftWidth: 3, borderLeftColor: m.mine ? "#c7d2fe" : T.line, paddingLeft: 6, marginBottom: 4 }}>
+                      <Text style={{ fontSize: 10, color: m.mine ? "#E0E7FF" : T.muted }}><Text style={{ fontWeight: "700" }}>{m.replyTo.senderName}</Text>: {m.replyTo.snippet}</Text>
+                    </View>
+                  ) : null}
                   {m.body ? <Text style={{ fontSize: 13, color: m.mine ? "#fff" : T.ink }}>{m.body}</Text> : null}
                   {(m.attachments || []).length ? (
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: m.body ? 5 : 0 }}>
@@ -143,46 +192,64 @@ export function DirectMessages() {
                   ))}
                 </View>
               ) : null}
-              {reactFor === m.id ? (
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 2, marginTop: 4, backgroundColor: "#fff", borderWidth: 1, borderColor: T.line, borderRadius: 10, padding: 4 }}>
-                  {REACTIONS.map((e) => <Pressable key={e} onPress={() => react(m.id, e)} style={{ padding: 3 }}><Text style={{ fontSize: 20 }}>{e}</Text></Pressable>)}
+              {menuFor === m.id ? (
+                <View style={{ marginTop: 4, backgroundColor: "#fff", borderWidth: 1, borderColor: T.line, borderRadius: 10, padding: 4 }}>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 2 }}>
+                    {REACTIONS.map((e) => <Pressable key={e} onPress={() => react(m.id, e)} style={{ padding: 3 }}><Text style={{ fontSize: 20 }}>{e}</Text></Pressable>)}
+                  </View>
+                  <Pressable onPress={() => { setReplyTo({ id: m.id, senderName: m.senderName, snippet: (m.body || "📎 attachment").slice(0, 60) }); setMenuFor(null); }} style={{ paddingVertical: 6, paddingHorizontal: 4 }}>
+                    <Text style={{ color: T.brand, fontWeight: "700", fontSize: 13 }}>↩ Reply</Text>
+                  </Pressable>
                 </View>
               ) : null}
               {m.mine && idx === lastMineIdx && seen.length > 0 ? <Text style={{ fontSize: 9, color: T.muted, marginTop: 2 }}>Seen{th.isGroup ? ` by ${seen.join(", ")}` : ""}</Text> : null}
             </View>
           );
         })}
+        {replyTo ? (
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#eef2ff", borderWidth: 1, borderColor: "#c7d2fe", borderRadius: 8, padding: 8, marginTop: 6 }}>
+            <Text style={{ fontSize: 12, color: T.ink, flex: 1 }}>↩ {replyTo.senderName}: {replyTo.snippet}</Text>
+            <Pressable onPress={() => setReplyTo(null)}><Text style={{ color: T.brand, fontWeight: "700" }}>  ✕</Text></Pressable>
+          </View>
+        ) : null}
+        {showMention && mentionMembers.length > 0 ? (
+          <View style={{ backgroundColor: "#fff", borderWidth: 1, borderColor: T.line, borderRadius: 8, padding: 4, marginTop: 6 }}>
+            {mentionMembers.map((m) => <Pressable key={m.userId} onPress={() => addMention(m)} style={{ paddingVertical: 6, paddingHorizontal: 6 }}><Text style={{ fontSize: 13, color: T.ink }}>@{m.name}</Text></Pressable>)}
+          </View>
+        ) : null}
         <Field placeholder="Write a message…" value={reply} onChangeText={setReply} multiline style={{ minHeight: 54, marginTop: 6 }} />
         <AttachStrip items={replyAtt} onRemove={(i) => setReplyAtt((s) => s.filter((_, x) => x !== i))} />
         <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
           <Button tone="secondary" title={`📷${replyAtt.length ? ` (${replyAtt.length})` : ""}`} onPress={addReplyImg} />
+          {th.isGroup ? <Button tone="secondary" title="＠" onPress={() => setShowMention((s) => !s)} /> : null}
           <View style={{ flex: 1 }}><Button title={busy ? "Sending…" : "Send"} disabled={busy} onPress={send} /></View>
         </View>
-        <Note>Long-press a message to react. Messaging stays within your school.</Note>
+        <Note>Long-press a message to react or reply. Messaging stays within your school.</Note>
       </Screen>
     );
   }
 
-  // ----- New message -----
+  // ----- New message / group -----
   if (mode === "new") {
     return (
       <Screen>
         <Pressable onPress={() => setMode("list")}><Text style={{ color: T.brand, fontWeight: "700", marginBottom: 8 }}>← Back</Text></Pressable>
         <Card>
-          <CardTitle>New message</CardTitle>
+          <CardTitle right={selCount > 1 ? <Badge tone="info">group</Badge> : undefined}>New message{selCount > 0 ? ` (${selCount})` : ""}</CardTitle>
           <Field placeholder="Search people…" value={cq} onChangeText={setCq} autoCapitalize="none" />
           <ScrollView style={{ maxHeight: 200, marginTop: 6 }}>
             {filteredContacts.length === 0 ? <Sub>No contacts available.</Sub> : filteredContacts.map((c, i) => (
-              <Pressable key={c.id} onPress={() => setTo(c.id)}>
-                <LineItem first={i === 0} t={c.name} m={`${c.role || ""}${c.schoolName ? " · " + c.schoolName : ""}`} right={to === c.id ? <Badge tone="ok">selected</Badge> : null} />
+              <Pressable key={c.id} onPress={() => setSel((s) => ({ ...s, [c.id]: !s[c.id] }))}>
+                <LineItem first={i === 0} t={c.name} m={`${c.role || ""}${c.schoolName ? " · " + c.schoolName : ""}`} right={sel[c.id] ? <Badge tone="ok">✓</Badge> : null} />
               </Pressable>
             ))}
           </ScrollView>
+          {selCount > 1 ? <Field label="Group name (optional)" value={subject} onChangeText={setSubject} placeholder="e.g. Year 6 trip team" /> : null}
           <Field label="Message" placeholder="Write a message…" value={newBody} onChangeText={setNewBody} multiline style={{ minHeight: 70 }} />
           <AttachStrip items={newAtt} onRemove={(i) => setNewAtt((s) => s.filter((_, x) => x !== i))} />
           <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
             <Button tone="secondary" title={`📷${newAtt.length ? ` (${newAtt.length})` : ""}`} onPress={addNewImg} />
-            <View style={{ flex: 1 }}><Button title={busy ? "Sending…" : "Send"} disabled={busy || !to} onPress={startNew} /></View>
+            <View style={{ flex: 1 }}><Button title={busy ? "Sending…" : "Send"} disabled={busy || selCount === 0} onPress={startNew} /></View>
           </View>
         </Card>
       </Screen>

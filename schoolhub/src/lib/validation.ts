@@ -851,13 +851,22 @@ const dmAttachment = z.object({
 export const dmSendSchema = z.object({
   threadId: z.string().min(1).optional(),
   toUserId: z.string().min(1).optional(),
+  toUserIds: z.array(z.string().min(1)).max(50).optional(), // group creation
+  subject: z.string().max(120).optional(),                  // group name
   body: z.string().max(20000).optional(),
   bodyHtml: z.string().max(40000).optional(),
   attachments: z.array(dmAttachment).max(6).optional(),
+  mentions: z.array(z.string().min(1)).max(50).optional(),   // @mention userIds
+  parentId: z.string().min(1).optional(),                    // threaded reply
 });
 export const dmReactSchema = z.object({
   messageId: z.string().min(1),
   emoji: z.string().min(1).max(16),
+});
+export const dmThreadManageSchema = z.object({
+  action: z.enum(["rename", "add", "leave"]),
+  subject: z.string().max(120).optional(),
+  memberIds: z.array(z.string().min(1)).max(50).optional(),
 });
 
 // Extend campaign actions with duplicate + preview (superset of the earlier enum).

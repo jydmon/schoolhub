@@ -129,3 +129,48 @@ export async function findOrCreateDirectThread(schoolId: string, aId: string, bI
 }
 
 export function isStaffRole(role: string) { return STAFF_ROLES.includes(role); }
+
+// ---- Group chats (Phase 2) ----------------------------------------------
+
+/** Create a named group thread. Validates the creator is allowed to message
+ *  every member (same contact policy as 1:1) and that all share one school. */
+export async function createGroupThread(creatorId: string, memberIds: string[], subject?: string) {
+  const uniq = Array.from(new Set(memberIds.filter((id) => id && id !== creatorId)));
+  if (uniq.length < 2) throw new AppError("Pick at least two people for a group.", 400);
+  let schoolId: string | null = null;
+  for (const id of uniq) {
+    const sid = await assertCanMessage(creatorId, id); // throws if not permitted
+    if (schoolId && sid !== schoolId) throw new AppError("Everyone in a group must be at the same school.", 400);
+    schoolId = sid;
+  }
+  const thread = await prisma.directThread.create({
+    data: { schoolId: schoolId!, subject: (subject || "").trim() || null, createdById: creatorId, members: { create: [{ userId: creatorId }, ...uniq.map((id) => ({ userId: id }))] } },
+  });
+  return thread.id;
+}
+
+/** Add members to an existing thread (turns a 1:1 into a group). The actor must
+ *  be a member and allowed to message each new person. */
+export async function addThreadMembers(threadId: string, actorId: string, memberIds: string[]) {
+  const actorMember = await prisma.directThreadMember.findFirst({ where: { threadId, userId: actorId } });
+  if (!actorMember) throw new AppError("You're not part of this conversation.", 403);
+  const current = await prisma.directThreadMember.findMany({ where: { threadId }, select: { userId: true } });
+  const have = new Set(current.map((m) => m.userId));
+  const toAdd = Array.from(new Set(memberIds.filter((id) => id && !have.has(id))));
+  if (!toAdd.length) return { added: 0 };
+  for (const id of toAdd) await assertCanMessage(actorId, id); // permission check
+  await prisma.directThreadMember.createMany({ data: toAdd.map((userId) => ({ threadId, userId })), skipDuplicates: true });
+  return { added: toAdd.length };
+}
+
+/** Rename a thread's subject (any member may rename a group). */
+export async function renameThread(threadId: string, actorId: string, subject: string) {
+  const member = await prisma.directThreadMember.findFirst({ where: { threadId, userId: actorId } });
+  if (!member) throw new AppError("You're not part of this conversation.", 403);
+  await prisma.directThread.update({ where: { id: threadId }, data: { subject: (subject || "").trim() || null } });
+}
+
+/** Leave a thread (removes the caller's membership). */
+export async function leaveThread(threadId: string, actorId: string) {
+  await prisma.directThreadMember.deleteMany({ where: { threadId, userId: actorId } });
+}
