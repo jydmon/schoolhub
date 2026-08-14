@@ -64,6 +64,9 @@
       ]
     ],
     "runtimeVersion": { "policy": "appVersion" },
+    "updates": {
+      "url": "https://u.expo.dev/df829a40-9fc7-42a9-b606-c66fee8b37f7"
+    },
     "extra": {
       "apiUrl": "https://dev.siplat.com",
       "eas": {
