@@ -92,6 +92,34 @@ export default function FaqManager() {
     try { const d = await api(`/api/platform/faqs/import`, "POST", body); setImportText(""); setShowImport(false); setMsg({ k: "ok", t: `Imported ${d.created} of ${d.total} FAQs.` }); load(); }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
+  // Downloadable import template (CSV — opens directly in Excel/Sheets).
+  function downloadTemplate() {
+    const rows = [
+      ["question", "answer", "category", "status"],
+      ["How do I reset my password?", "Go to My profile → My security and use the reset option.", "Account", "published"],
+      ["Where can I see the school calendar?", "Open the Calendar tab in your portal.", "Parents", "published"],
+    ];
+    const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a"); a.href = url; a.download = "faq-import-template.csv"; a.click(); URL.revokeObjectURL(url);
+  }
+  // Validate an uploaded file against the template BEFORE processing.
+  async function onFile(file: File) {
+    setMsg(null);
+    let text = "";
+    try { text = await file.text(); } catch { setMsg({ k: "err", t: "Couldn't read that file." }); return; }
+    const trimmed = text.replace(/^﻿/, "").trim();
+    if (!trimmed) { setMsg({ k: "err", t: "That file is empty." }); return; }
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) { setImportText(trimmed); setShowImport(true); setMsg({ k: "ok", t: "JSON file loaded — review below, then Run import." }); return; }
+    const header = (trimmed.split(/\r?\n/)[0] || "").toLowerCase();
+    const cols = header.split(",").map((c) => c.replace(/^"|"$/g, "").trim());
+    if (!cols.includes("question") || !cols.includes("answer")) {
+      setMsg({ k: "err", t: "This file doesn't match the template. The first row must include at least ‘question’ and ‘answer’ columns — download the template to see the expected format." });
+      return;
+    }
+    setImportText(trimmed); setShowImport(true);
+    setMsg({ k: "ok", t: "File validated against the template — review below, then Run import." });
+  }
 
   return (
     <>
@@ -101,6 +129,7 @@ export default function FaqManager() {
             <p className="sub" style={{ marginBottom: 0 }}>Create, categorise, publish/unpublish, archive, delete and bulk-import the FAQs shown to users in Help &amp; support and the mobile app.</p></div>
           <div style={{ display: "flex", gap: 8 }}>
             {items.length === 0 && <button className="secondary" onClick={seedStarter}>Load 20 starter FAQs</button>}
+            <button className="secondary" onClick={downloadTemplate}>Download template</button>
             <button className="secondary" onClick={() => setShowImport((s) => !s)}>{showImport ? "Hide import" : "Bulk import"}</button>
           </div>
         </div>
@@ -108,7 +137,8 @@ export default function FaqManager() {
 
         {showImport && (
           <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 8, padding: 12, background: "#f8fafc" }}>
-            <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>Paste CSV (<code>question,answer,category,status</code> header) or a JSON array of <code>{`{question, answer, category?, status?}`}</code>.</p>
+            <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>Upload a file (validated against the template) or paste CSV (<code>question,answer,category,status</code> header) or a JSON array of <code>{`{question, answer, category?, status?}`}</code>. Not sure of the format? Use <button className="linklike" style={{ fontSize: 12 }} onClick={downloadTemplate}>Download template</button>.</p>
+            <input type="file" accept=".csv,.txt,.json,text/csv,application/json" onChange={(e) => { const file = e.target.files?.[0]; if (file) onFile(file); e.currentTarget.value = ""; }} style={{ marginBottom: 8 }} />
             <textarea rows={5} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={"question,answer,category,status\nHow do I reset my password?,Go to My profile → Security.,Account,published"} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontSize: 12, fontFamily: "monospace" }} />
             <button style={{ marginTop: 8 }} onClick={runImport} disabled={!importText.trim()}>Run import</button>
           </div>

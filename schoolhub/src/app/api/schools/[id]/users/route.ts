@@ -30,6 +30,8 @@ export async function GET(_req: Request, { params }: Params) {
           status: m.user.status,
           emailVerified: m.user.emailVerified,
           mfaEnabled: m.user.mfaEnabled,
+          photoUrl: (m.user as any).photoUrl ?? null,
+          appAccess: (m.user as any).appAccess ?? false,
         },
       })),
     });
@@ -58,9 +60,16 @@ export async function POST(req: Request, { params }: Params) {
           fullName: input.fullName,
           status: input.password ? "active" : "invited",
           passwordHash: input.password ? await hashPassword(input.password) : null,
+          // Temporary password → force a change on first login (web or mobile).
+          mustChangePassword: input.password ? !!input.mustChangePassword : false,
+          appAccess: !!input.appAccess,
         },
       });
       created = true;
+    } else if (input.appAccess && !(user as any).appAccess) {
+      // Granting mobile app access to an existing member records the flag; their
+      // existing password is left untouched (never overwritten by an admin).
+      await prisma.user.update({ where: { id: user.id }, data: { appAccess: true } }).catch(() => {});
     }
 
     // Idempotent role grant within this tenant.

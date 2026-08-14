@@ -616,6 +616,31 @@ function Reports() {
 
 /* ============================ TEMPLATES ============================ */
 const BLANK_TPL = { kind: "email_campaign", name: "", category: "", subject: "", body: "", sharedWithTenants: true, status: "draft" };
+
+// Minimal RFC-4180-ish CSV parser → array of row objects keyed by (lowercased) header.
+function parseCsvRows(text: string): Record<string, string>[] {
+  const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim().length);
+  if (!lines.length) return [];
+  const parseLine = (line: string) => {
+    const out: string[] = []; let cur = ""; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (inQ) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else inQ = false; } else cur += c; }
+      else if (c === ",") { out.push(cur); cur = ""; }
+      else if (c === '"') inQ = true;
+      else cur += c;
+    }
+    out.push(cur); return out;
+  };
+  const headers = parseLine(lines[0]).map((h) => h.trim().toLowerCase());
+  return lines.slice(1).map((l) => { const cells = parseLine(l); const o: Record<string, string> = {}; headers.forEach((h, i) => (o[h] = (cells[i] ?? "").trim())); return o; });
+}
+function downloadCsv(filename: string, rows: string[][]) {
+  const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+}
+
 function Templates() {
   const { data, err, reload } = useJson<any>("/api/platform/templates");
   const [f, setF] = useState<any>({ ...BLANK_TPL });
@@ -663,6 +688,26 @@ function Templates() {
     setConfirm(null); sel.clear(); reload();
     if (ok) setMsg({ k: "ok", t: `${ok} template${ok === 1 ? "" : "s"} deleted.` });
   }
+  function downloadTemplate() {
+    downloadCsv("template-library-import-template.csv", [
+      ["kind", "name", "category", "subject", "body", "status", "sharedWithTenants"],
+      ["email_campaign", "Welcome email", "Onboarding", "Welcome to {{school}}", "Hello {{name}}, welcome aboard.", "draft", "true"],
+      ["message_board", "Term dates notice", "General", "", "Please note the upcoming term dates.", "draft", "false"],
+    ]);
+  }
+  async function onImportFile(file: File) {
+    setMsg(null);
+    let text = ""; try { text = await file.text(); } catch { setMsg({ k: "err", t: "Couldn't read that file." }); return; }
+    const parsed = parseCsvRows(text);
+    if (!parsed.length) { setMsg({ k: "err", t: "No rows found in that file." }); return; }
+    if (!("name" in parsed[0]) || !("kind" in parsed[0])) { setMsg({ k: "err", t: "This file doesn't match the template — it must include at least ‘kind’ and ‘name’ columns. Use Download template to see the format." }); return; }
+    let created = 0, failed = 0;
+    for (const r of parsed) {
+      if (!r.name?.trim()) { failed++; continue; }
+      try { await send("/api/platform/templates", { kind: r.kind || "email_campaign", name: r.name, category: r.category || undefined, subject: r.subject || undefined, body: r.body || undefined, sharedWithTenants: /^(1|true|yes|y)$/i.test(r.sharedwithtenants || ""), status: r.status || "draft" }); created++; } catch { failed++; }
+    }
+    setMsg({ k: created ? "ok" : "err", t: `Imported ${created} template(s)${failed ? `, ${failed} skipped` : ""}.` }); reload();
+  }
   return (
     <>
       {view && <DocModal title={view.name} meta={`${view.kind}${view.subject ? " · " + view.subject : ""}`} onClose={() => setView(null)}>{view.body || "(no content)"}</DocModal>}
@@ -673,6 +718,8 @@ function Templates() {
         <p className="sub">Reusable email / message templates with a <strong>draft → approved → published</strong> lifecycle (Status column) and full version history (open History). Mark as shared to make them available to every tenant admin.</p>
         {err && <Notice msg={{ k: "err", t: err }} />}
         <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
+          <button className="secondary small" onClick={downloadTemplate}>Download template</button>
+          <label className="secondary small" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}>Import<input type="file" accept=".csv,.txt,text/csv" style={{ display: "none" }} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImportFile(file); e.currentTarget.value = ""; }} /></label>
           {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
         </TableTools>
         <table>

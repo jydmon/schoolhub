@@ -7,6 +7,9 @@ import { useSel, useSort, SortTh, Kebab, SourceBadge, DetailModal } from "./Enti
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MEALS = ["breakfast", "lunch", "snack", "tea"];
 const COURSES = ["main", "vegetarian", "dessert", "side", "drink"];
+const FREQUENCIES = ["one-off", "weekly", "monthly", "yearly"];
+const FREQ_LABEL: Record<string, string> = { "one-off": "One-off", weekly: "Weekly", monthly: "Monthly", yearly: "Yearly" };
+const blankForm = () => ({ frequency: "weekly", weekOf: "", day: "Mon", yearGroup: "", meal: "lunch", course: "main", name: "", description: "", allergens: "", vegetarian: false, vegan: false, price: "" });
 const gbp = (pence: number) => (pence ? `£${(pence / 100).toFixed(2)}` : "—");
 const editableItem = (i: any) => (i.source ?? "manual") !== "api";
 // Menu items are surfaced to parents/guardians (portal + mobile). Hiding an item
@@ -20,10 +23,11 @@ const groupsSummary = (list: any[]) => {
 export default function MealsTab({ schoolId }: { schoolId: string }) {
   const [items, setItems] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
-  const [f, setF] = useState<any>({ weekOf: "", day: "Mon", yearGroup: "", meal: "lunch", course: "main", name: "", description: "", allergens: "", vegetarian: false, vegan: false, price: "" });
+  const [f, setF] = useState<any>(blankForm());
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<any | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const sel = useSel();
   const srt = useSort("week");
 
@@ -41,14 +45,21 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
   const view = srt.sort(rows, (i, k) => k === "name" ? String(i.name ?? "").toLowerCase() : k === "week" ? (i.weekOf || "") : k === "meal" ? `${i.meal} ${i.course}` : k === "price" ? (i.price ?? 0) : "");
   const allOn = view.length > 0 && view.every((i) => sel.on(i.id));
 
-  async function add(e: React.FormEvent) {
+  function openNew() { setEditId(null); setF(blankForm()); setShowAdd(true); setMsg(null); }
+  function openEdit(i: any) {
+    setEditId(i.id);
+    setF({ frequency: i.frequency || "weekly", weekOf: i.weekOf || "", day: i.day || "Mon", yearGroup: i.yearGroup || i.className || "", meal: i.meal || "lunch", course: i.course || "main", name: i.name || "", description: i.description || "", allergens: i.allergens || "", vegetarian: !!i.vegetarian, vegan: !!i.vegan, price: i.price ? (i.price / 100).toFixed(2) : "" });
+    setShowAdd(true); setMsg(null);
+  }
+  async function submit(e: React.FormEvent) {
     e.preventDefault(); setMsg(null);
-    const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+    const res = editId
+      ? await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editId, ...f }) })
+      : await fetch(`/api/schools/${schoolId}/menus`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Could not add item" }); return; }
-    setMsg({ kind: "ok", text: "Menu item added." });
-    setF({ ...f, name: "", description: "", allergens: "", price: "", vegetarian: false, vegan: false });
-    setShowAdd(false); load();
+    if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || (editId ? "Could not save changes" : "Could not add item") }); return; }
+    setMsg({ kind: "ok", text: editId ? "Menu item updated." : "Menu item added." });
+    setShowAdd(false); setEditId(null); setF(blankForm()); load();
   }
   async function toggle(i: any) {
     setMsg(null);
@@ -86,7 +97,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
     <>
       <ModuleImportCard schoolId={schoolId} type="menus" title="Import meals & menus" hint="No catering system? Bulk-add the weekly menu from a CSV (weekOf date, class/year, veg/vegan, price in pounds)." />
       <div className="panel">
-        <div className="flex-between"><div><h2>Meals &amp; menus</h2><p className="sub" style={{ marginBottom: 0 }}>Weekly canteen menu — from your catering system (read-only) or added/imported here. Shows week, class/year, veg/vegan options, allergens and price. Click an item to open its details.</p></div><button onClick={() => setShowAdd(true)}>New menu item</button></div>
+        <div className="flex-between"><div><h2>Meals &amp; menus</h2><p className="sub" style={{ marginBottom: 0 }}>Weekly canteen menu — from your catering system (read-only) or added/imported here. Shows week, class/year, veg/vegan options, allergens and price. Click an item to open its details. Manually-added menus are fully editable; menus fed from a catering integration are read-only.</p></div><button onClick={openNew}>New menu item</button></div>
         {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
           <input placeholder="Filter menu…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
@@ -102,7 +113,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
             {view.map((i) => (
               <tr key={i.id}>
                 <td className="checkbox-cell"><input type="checkbox" checked={sel.on(i.id)} onChange={() => sel.toggle(i.id)} /></td>
-                <td>{i.weekOf || "—"}<div className="muted" style={{ fontSize: 11 }}>{i.day}</div></td>
+                <td>{i.weekOf || "—"}<div className="muted" style={{ fontSize: 11 }}>{i.day}{i.frequency && i.frequency !== "weekly" ? ` · ${FREQ_LABEL[i.frequency] || i.frequency}` : ""}</div></td>
                 <td className="muted">{i.className || i.yearGroup || "Whole school"}</td>
                 <td className="muted">{i.meal} · {i.course}</td>
                 <td><button className="linklike" onClick={() => setSelected(i)}><strong>{i.name}</strong></button>{i.description ? <div className="muted" style={{ fontSize: 11 }}>{i.description}</div> : null}</td>
@@ -112,6 +123,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
                 <td><SourceBadge src={i.source} /></td>
                 <td className="right"><Kebab items={[
                   { label: "Open / expand", onClick: () => setSelected(i) },
+                  editableItem(i) ? { label: "Edit", onClick: () => openEdit(i) } : null,
                   editableItem(i) ? { label: i.active ? "Hide" : "Show", onClick: () => toggle(i) } : null,
                   editableItem(i) ? { label: "Delete", onClick: () => del(i), danger: true } : null,
                 ]} /></td>
@@ -123,13 +135,14 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
       </div>
 
       {showAdd && (
-        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+        <div className="modal-overlay" onClick={() => { setShowAdd(false); setEditId(null); }}>
           <div className="modal" style={{ maxWidth: 680, width: "94%" }} onClick={(e) => e.stopPropagation()}>
-            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>New menu item</h2><button className="secondary small" onClick={() => setShowAdd(false)}>Close</button></div>
+            <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>{editId ? "Edit menu item" : "New menu item"}</h2><button className="secondary small" onClick={() => { setShowAdd(false); setEditId(null); }}>Close</button></div>
             {msg && msg.kind === "err" && <div className="notice err" style={{ marginTop: 10 }}>{msg.text}</div>}
-            <form onSubmit={add} style={{ marginTop: 12 }}>
+            <form onSubmit={submit} style={{ marginTop: 12 }}>
               <div className="row">
-                <div><label>Week commencing</label><input type="date" value={f.weekOf} onChange={(e) => setF({ ...f, weekOf: e.target.value })} /></div>
+                <div><label>Frequency</label><select value={f.frequency} onChange={(e) => setF({ ...f, frequency: e.target.value })}>{FREQUENCIES.map((fr) => <option key={fr} value={fr}>{FREQ_LABEL[fr]}</option>)}</select></div>
+                <div><label>{f.frequency === "weekly" ? "Week commencing" : "Date (optional)"}</label><input type="date" value={f.weekOf} onChange={(e) => setF({ ...f, weekOf: e.target.value })} /></div>
                 <div><label>Day</label><select value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })}>{DAYS.map((d) => <option key={d}>{d}</option>)}</select></div>
                 <div><label>Class / year (blank = all)</label><input value={f.yearGroup} onChange={(e) => setF({ ...f, yearGroup: e.target.value })} placeholder="Year 4" /></div>
               </div>
@@ -149,7 +162,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
                 <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegetarian} onChange={(e) => setF({ ...f, vegetarian: e.target.checked })} /> Vegetarian option</label>
                 <label className="chip" style={{ margin: 0 }}><input type="checkbox" style={{ width: "auto" }} checked={f.vegan} onChange={(e) => setF({ ...f, vegan: e.target.checked })} /> Vegan option</label>
               </div>
-              <button type="submit" style={{ marginTop: 14 }}>Add item</button>
+              <button type="submit" style={{ marginTop: 14 }}>{editId ? "Save changes" : "Add item"}</button>
             </form>
           </div>
         </div>

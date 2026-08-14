@@ -27,6 +27,10 @@ export const createUserSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).optional(),
   role: z.enum(SCHOOL_ROLES as [string, ...string[]]),
+  // Staff mobile-app access: when granted, the admin sets a temporary password
+  // and the user must change it on first login.
+  appAccess: z.boolean().optional(),
+  mustChangePassword: z.boolean().optional(),
 });
 
 export const updateConfigSchema = z.object({

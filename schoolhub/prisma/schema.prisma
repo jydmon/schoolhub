@@ -169,6 +169,7 @@ model User {
   source        String  @default("manual") // manual | import | api — api rows are read-only
   passwordHash  String? // null for pure-SSO accounts
   mustChangePassword Boolean @default(false) // true when signed in with a temporary password
+  appAccess          Boolean @default(false) // staff granted access to the mobile application
   authProvider  String  @default("local") // local | google | microsoft | saml
   isPlatformAdmin Boolean @default(false)
   status        String  @default("active") // active | invited | suspended
@@ -2169,6 +2170,7 @@ model MenuItem {
   id          String   @id @default(cuid())
   schoolId    String
   day         String   @default("Mon")     // Mon|Tue|Wed|Thu|Fri (or a date label)
+  frequency   String   @default("weekly")  // one-off | weekly | monthly | yearly
   weekOf      String?  // week-commencing date (YYYY-MM-DD) — menus change weekly
   yearGroup   String?  // year/class this menu is for (blank = whole school)
   className   String?

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Avatar from "@/components/Avatar";
+import { downscaleToDataUrl } from "@/components/image";
 
 const CHANNELS: [string, string][] = [["inapp", "In-app"], ["push", "Push"], ["email", "Email"], ["sms", "SMS"], ["whatsapp", "WhatsApp"]];
 const CATEGORIES: [string, string][] = [
@@ -92,7 +94,15 @@ export default function AccountProfile() {
           </div>
           <div className="row">
             <div><label>Contact number</label><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+44…" /></div>
-            <div><label>Photo URL</label><input value={f.photoUrl} onChange={(e) => setF({ ...f, photoUrl: e.target.value })} placeholder="https://…" /></div>
+          </div>
+          <label>Profile photo</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+            <Avatar name={f.fullName || p.email} src={f.photoUrl} size={64} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <input type="file" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (file) setF({ ...f, photoUrl: await downscaleToDataUrl(file, 256) }); }} />
+              {f.photoUrl ? <button type="button" className="secondary small" style={{ alignSelf: "flex-start" }} onClick={() => setF({ ...f, photoUrl: "" })}>Remove photo</button> : null}
+              <span className="muted" style={{ fontSize: 11 }}>Shown across the portal, mobile app, messaging and directories. Square images look best; the image is resized automatically.</span>
+            </div>
           </div>
           {p.schools?.length ? <p className="muted" style={{ fontSize: 12 }}>School{p.schools.length > 1 ? "s" : ""}: {p.schools.join(", ")}</p> : null}
           <button type="submit" style={{ marginTop: 12 }}>Save profile</button>

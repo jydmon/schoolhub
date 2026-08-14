@@ -7,6 +7,7 @@ import { AUDIT } from "./constants";
 export const MENU_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 export const MENU_MEALS = ["breakfast", "lunch", "snack", "tea"] as const;
 export const MENU_COURSES = ["main", "vegetarian", "dessert", "side", "drink"] as const;
+export const MENU_FREQUENCIES = ["one-off", "weekly", "monthly", "yearly"] as const;
 
 const dayOrder: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 const mealOrder: Record<string, number> = { breakfast: 0, lunch: 1, snack: 2, tea: 3 };
@@ -21,16 +22,18 @@ export async function listMenuItems(schoolId: string) {
 }
 
 export async function createMenuItem(input: {
-  schoolId: string; day?: string; weekOf?: string; yearGroup?: string; className?: string;
+  schoolId: string; day?: string; frequency?: string; weekOf?: string; yearGroup?: string; className?: string;
   meal?: string; course?: string; name: string; description?: string; allergens?: string;
   vegetarian?: boolean; vegan?: boolean; price?: number; active?: boolean; source?: string; actorUserId?: string | null;
 }): Promise<{ id: string }> {
   const name = (input.name || "").trim();
   if (!name) throw new Error("name is required");
+  const freq = (MENU_FREQUENCIES as readonly string[]).includes(input.frequency || "") ? input.frequency! : "weekly";
   const item = await prisma.menuItem.create({
     data: {
       schoolId: input.schoolId,
       day: input.day?.trim() || "Mon",
+      frequency: freq,
       weekOf: input.weekOf?.trim() || null,
       yearGroup: input.yearGroup?.trim() || null,
       className: input.className?.trim() || null,
@@ -62,6 +65,7 @@ export async function updateMenuItem(schoolId: string, id: string, patch: any): 
   if (!item || item.schoolId !== schoolId) throw new Error("Menu item not found");
   if (((item as any).source ?? "manual") === "api") throw new Error("This menu is fed from an integration and is read-only.");
   const data: any = {};
+  if (typeof patch.frequency === "string" && (MENU_FREQUENCIES as readonly string[]).includes(patch.frequency)) data.frequency = patch.frequency;
   for (const k of ["day", "weekOf", "yearGroup", "className", "meal", "course", "name", "description", "allergens"] as const) {
     if (typeof patch[k] === "string") data[k] = patch[k].trim() || (k === "name" || k === "day" || k === "meal" || k === "course" ? item[k] : null);
   }

@@ -17,6 +17,25 @@ const NEXT: Record<string, { to: string; label: string; danger?: boolean }[]> = 
 };
 const BLANK = { title: "", category: "policy", summary: "", bodyHtml: "", ownerName: "", linkUrl: "", effectiveDate: "", reviewDate: "", publicTrust: true, toParents: false, toMobile: false, requireAck: false };
 
+// Coarse "Published location" derived from the publish flags: the public Trust
+// Site (publicTrust) and/or the signed-in Portal (parents / all users / mobile).
+const PUB_LOCATIONS = ["portal", "trust", "both"] as const;
+const PUB_LABEL: Record<string, string> = { portal: "Portal", trust: "Trust Site", both: "Portal + Trust Site", none: "Not published" };
+function pubLocation(d: any): string {
+  const portal = !!(d.toParents || d.toAll || d.toMobile);
+  const trust = !!d.publicTrust;
+  if (portal && trust) return "both";
+  if (trust) return "trust";
+  if (portal) return "portal";
+  return "none";
+}
+// Set the coarse location on the working document, mapping to the flags.
+function applyPubLocation(edit: any, loc: string): any {
+  if (loc === "portal") return { ...edit, publicTrust: false, toAll: true };
+  if (loc === "trust") return { ...edit, publicTrust: true, toAll: false, toParents: false, toMobile: false };
+  return { ...edit, publicTrust: true, toAll: true }; // both
+}
+
 const stripHtml = (s: string) => String(s || "").replace(/<[^>]+>/g, "").replace(/\r/g, "");
 // Line-level diff (LCS) so the version history shows exactly what changed.
 function lineDiff(oldText: string, newText: string): { t: "same" | "add" | "del"; v: string }[] {
@@ -112,13 +131,14 @@ export default function TrustCentreTab() {
           <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{rows.length} of {docs.length}</span>
         </div>
         <table>
-          <thead><tr><SortTh k="title" label="Document" sort={srt} /><SortTh k="category" label="Category" sort={srt} /><SortTh k="status" label="Status" sort={srt} /><th>Destinations</th><SortTh k="version" label="Ver." sort={srt} /><SortTh k="acks" label="Acks" sort={srt} /><th className="right">Actions</th></tr></thead>
+          <thead><tr><SortTh k="title" label="Document" sort={srt} /><SortTh k="category" label="Category" sort={srt} /><SortTh k="status" label="Status" sort={srt} /><SortTh k="location" label="Published location" sort={srt} /><th>Destinations</th><SortTh k="version" label="Ver." sort={srt} /><SortTh k="acks" label="Acks" sort={srt} /><th className="right">Actions</th></tr></thead>
           <tbody>
-            {srt.sort(rows, (d, k) => k === "title" ? String(d.title ?? "").toLowerCase() : k === "category" ? String(d.category ?? "") : k === "status" ? String(d.status ?? "") : k === "version" ? (d.version || 0) : k === "acks" ? (d.ackCount || 0) : "").map((d) => (
+            {srt.sort(rows, (d, k) => k === "title" ? String(d.title ?? "").toLowerCase() : k === "category" ? String(d.category ?? "") : k === "status" ? String(d.status ?? "") : k === "location" ? pubLocation(d) : k === "version" ? (d.version || 0) : k === "acks" ? (d.ackCount || 0) : "").map((d) => (
               <tr key={d.id}>
                 <td><button className="linklike" onClick={() => openEdit(d.id)}><strong>{d.title}</strong></button>{d.summary ? <div className="muted" style={{ fontSize: 11 }}>{d.summary}</div> : null}</td>
                 <td className="muted" style={{ textTransform: "capitalize" }}>{d.category}</td>
                 <td><span className={`badge ${STATUS_TONE[d.status] || "role"}`}>{d.status}</span></td>
+                <td>{pubLocation(d) === "none" ? <span className="muted" style={{ fontSize: 11 }}>Not published</span> : <span className={`badge ${pubLocation(d) === "both" ? "active" : "role"}`}>{PUB_LABEL[pubLocation(d)]}</span>}</td>
                 <td style={{ fontSize: 11 }}>{[d.publicTrust && "Public", d.toParents && "Parents", d.toMobile && "Mobile", d.requireAck && "Ack"].filter(Boolean).join(" · ") || <span className="muted">—</span>}</td>
                 <td>{d.version}</td>
                 <td>{d.ackCount || 0}</td>
@@ -130,7 +150,7 @@ export default function TrustCentreTab() {
                 ]} /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={7} className="muted">{docs.length ? "No documents match your filter." : "No documents yet — create the first one."}</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={8} className="muted">{docs.length ? "No documents match your filter." : "No documents yet — create the first one."}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -163,6 +183,12 @@ export default function TrustCentreTab() {
                 </div>
                 <label className="chip" style={{ margin: "8px 0 0" }}><input type="checkbox" style={{ width: "auto" }} checked={!!edit.reviewOnChange} onChange={(e) => setEdit({ ...edit, reviewOnChange: e.target.checked })} /> Flag for review whenever the policy is changed</label>
                 {edit.reviewDue ? <div className="notice info" style={{ marginTop: 8 }}>⏰ This policy is due for review.</div> : null}
+                <label style={{ marginTop: 10 }}>Published location</label>
+                <select value={pubLocation(edit) === "none" ? "" : pubLocation(edit)} onChange={(e) => e.target.value && setEdit(applyPubLocation(edit, e.target.value))} style={{ maxWidth: 260 }}>
+                  <option value="">— choose where to publish —</option>
+                  {PUB_LOCATIONS.map((l) => <option key={l} value={l}>{PUB_LABEL[l]}</option>)}
+                </select>
+                <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>Portal = signed-in users (parents / all users / mobile). Trust Site = the public Trust Centre. Fine-tune the exact destinations below.</p>
                 <label style={{ marginTop: 10 }}>Publish destinations</label>
                 <div className="chips">
                   {([["publicTrust", "Public Trust Centre"], ["toParents", "Parent portal"], ["toAll", "All portals (every signed-in user)"], ["toMobile", "Mobile app"], ["requireAck", "Require acknowledgement"]] as [string, string][]).map(([k, l]) => (

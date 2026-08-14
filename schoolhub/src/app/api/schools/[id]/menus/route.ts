@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: Params) {
     const b = await req.json().catch(() => ({}));
     const res = await createMenuItem({
       schoolId: params.id,
-      day: b.day, weekOf: b.weekOf, yearGroup: b.yearGroup, className: b.className,
+      day: b.day, frequency: b.frequency, weekOf: b.weekOf, yearGroup: b.yearGroup, className: b.className,
       meal: b.meal, course: b.course, name: String(b.name ?? ""),
       description: b.description, allergens: b.allergens,
       vegetarian: b.vegetarian === true, vegan: b.vegan === true,

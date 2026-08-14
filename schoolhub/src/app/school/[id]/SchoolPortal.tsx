@@ -29,6 +29,8 @@ import OpsTab from "./OpsTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAccessGate } from "@/lib/useAccessGate";
+import Avatar from "@/components/Avatar";
+import { downscaleToDataUrl } from "@/components/image";
 
 const SCHOOL_NAV: NavGroup[] = [
   { label: "Overview", items: [{ key: "ops", label: "Operations", icon: "📊" }] },
@@ -146,7 +148,7 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
   // is a no-op and the full portal shows exactly as before.
   const nav: NavGroup[] = canManage ? gate(SCHOOL_NAV) : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }, { key: "help", label: "Help & support", icon: "🆘" }] }];
   return (
-    <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
+    <AppShell brandSub={initial.school?.name || "School"} brandLogo={initial.school?.logoUrl} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}
       email={email} role={canManage ? "School Administrator" : "Member"}>
       {schoolCount > 1 && <div style={{ marginBottom: 10 }}><a className="linklike" href="/school?choose=1" style={{ fontSize: 13 }}>← Switch school</a></div>}
@@ -189,6 +191,7 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [form, setForm] = useState({
     name: initial.name ?? "",
+    logoUrl: initial.logoUrl ?? "",
     colorPrimary: initial.colorPrimary ?? "#2563eb",
     colorAccent: initial.colorAccent ?? "#0ea5e9",
     addressLine1: initial.addressLine1 ?? "",
@@ -236,7 +239,18 @@ function ConfigTab({ schoolId, initial }: { schoolId: string; initial: any }) {
       <form onSubmit={save}>
         <label>School name</label>
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <div className="row">
+        <label style={{ marginTop: 12 }}>School logo</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+          <div style={{ width: 72, height: 72, borderRadius: 12, border: "1px solid var(--line)", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            {form.logoUrl ? <img src={form.logoUrl} alt="School logo" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <span className="muted" style={{ fontSize: 11 }}>No logo</span>}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <input type="file" accept="image/*" onChange={async (e) => { const file = e.target.files?.[0]; if (file) { const url = await downscaleToDataUrl(file, 240, 0.9); setForm((prev) => ({ ...prev, logoUrl: url })); } }} />
+            {form.logoUrl ? <button type="button" className="secondary small" style={{ alignSelf: "flex-start" }} onClick={() => setForm({ ...form, logoUrl: "" })}>Remove logo</button> : null}
+            <span className="muted" style={{ fontSize: 11 }}>Shown in the portal sidebar and, where applicable, the mobile app. PNG with transparency works best.</span>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
           <div>
             <label>Primary colour</label>
             <input type="color" value={form.colorPrimary} onChange={(e) => setForm({ ...form, colorPrimary: e.target.value })} />
@@ -281,10 +295,19 @@ const ROLE_LABEL_MAP: Record<string, string> = {
   SchoolAdministrator: "School Administrator", SchoolLeader: "School Leader", Teacher: "Teacher",
   TransportManager: "Transport Manager", Driver: "Driver", Parent: "Parent / Guardian", SupportStaff: "Support Staff",
 };
+// A readable, reasonably strong temporary password (avoids ambiguous characters).
+function genTempPassword(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const arr = new Uint32Array(12);
+  (globalThis.crypto || (window as any).crypto).getRandomValues(arr);
+  let out = ""; for (let i = 0; i < 12; i++) out += chars[arr[i] % chars.length];
+  return out + "#" + (2 + (arr[0] % 8)); // guarantee a symbol + digit
+}
 function UsersTab({ schoolId }: { schoolId: string }) {
   const [users, setUsers] = useState<any[]>([]);
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
-  const [form, setForm] = useState({ fullName: "", email: "", role: "Teacher", password: "" });
+  const [form, setForm] = useState({ fullName: "", email: "", role: "Teacher", password: "", appAccess: false });
+  const [lastTemp, setLastTemp] = useState<{ email: string; password: string } | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [q, setQ] = useState("");
   const [fRole, setFRole] = useState("");
@@ -317,16 +340,22 @@ function UsersTab({ schoolId }: { schoolId: string }) {
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
-    setMsg(null);
+    setMsg(null); setLastTemp(null);
+    // Mobile app access → a temporary password the user must change on first
+    // login. If the admin left the field blank, generate a strong one.
+    let password = form.password;
+    if (form.appAccess && !password) password = genTempPassword();
+    const mustChange = !!(form.appAccess && password);
     const res = await fetch(`/api/schools/${schoolId}/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, password: form.password || undefined }),
+      body: JSON.stringify({ fullName: form.fullName, email: form.email, role: form.role, password: password || undefined, appAccess: form.appAccess, mustChangePassword: mustChange }),
     });
     const data = await res.json();
     if (!res.ok || data.error) { setMsg({ kind: "err", text: data.error || "Failed to add user" }); return; }
-    setMsg({ kind: "ok", text: form.password ? "User created." : "User invited (verification link sent)." });
-    setForm({ fullName: "", email: "", role: "Teacher", password: "" });
+    if (mustChange) { setLastTemp({ email: form.email, password }); setMsg({ kind: "ok", text: "Staff account created with mobile app access. Share the temporary password below — they'll be asked to change it on first sign-in." }); }
+    else setMsg({ kind: "ok", text: password ? "User created." : "User invited (verification link sent)." });
+    setForm({ fullName: "", email: "", role: "Teacher", password: "", appAccess: false });
     setShowAdd(false);
     load();
   }
@@ -366,8 +395,8 @@ function UsersTab({ schoolId }: { schoolId: string }) {
     setOpenMenu(null);
     setConfirm({ title: `Remove the ${u.roleLabel} role from ${u.user.fullName}?`, message: "This removes only this role at this school. If it's their only role they'll lose access here until re-invited, and they'll be signed out.", label: "Remove role", danger: true, run: () => { removeRole(u.membershipId); setConfirm(null); } });
   }
-  function duplicate(u: any) { setOpenMenu(null); setForm({ fullName: "", email: "", role: u.role, password: "" }); setShowAdd(true); setMsg({ kind: "ok", text: `New user form pre-filled with the ${u.roleLabel} role — add their name and email.` }); }
-  function openAdd() { setForm({ fullName: "", email: "", role: "Teacher", password: "" }); setShowAdd(true); setMsg(null); }
+  function duplicate(u: any) { setOpenMenu(null); setForm({ fullName: "", email: "", role: u.role, password: "", appAccess: false }); setShowAdd(true); setMsg({ kind: "ok", text: `New user form pre-filled with the ${u.roleLabel} role — add their name and email.` }); }
+  function openAdd() { setForm({ fullName: "", email: "", role: "Teacher", password: "", appAccess: false }); setShowAdd(true); setMsg(null); setLastTemp(null); }
   function askDeactivate(u: any) { setOpenMenu(null); setConfirm({ title: `Deactivate ${u.user.fullName}?`, message: "They will be signed out and blocked from signing in until reactivated.", label: "Deactivate", danger: true, run: () => { runAction(u.user.id, "disable", "User deactivated."); setConfirm(null); } }); }
   function askSuspend(u: any) { setOpenMenu(null); setConfirm({ title: `Suspend ${u.user.fullName}?`, message: "Access is blocked and live sessions end immediately. You can reactivate later.", label: "Suspend", danger: true, run: () => { runAction(u.user.id, "suspend", "User suspended."); setConfirm(null); } }); }
   function askRevoke(u: any) { setOpenMenu(null); setConfirm({ title: `Revoke access for ${u.user.fullName}?`, message: "This ends all their live sessions at this school immediately. They keep their account but lose access until re-invited.", label: "Revoke access", danger: true, run: () => { runAction(u.user.id, "revoke", "Access revoked."); setConfirm(null); } }); }
@@ -383,6 +412,14 @@ function UsersTab({ schoolId }: { schoolId: string }) {
           <button onClick={openAdd}>Add user</button>
         </div>
         {msg && <div className={`notice ${msg.kind}`} style={{ marginTop: 10 }}>{msg.text}</div>}
+        {lastTemp && (
+          <div className="notice info" style={{ marginTop: 10 }}>
+            <strong>Temporary password for {lastTemp.email}:</strong> <span className="mono" style={{ userSelect: "all", fontSize: 15 }}>{lastTemp.password}</span>
+            <button className="secondary small" style={{ marginLeft: 10 }} onClick={() => { try { navigator.clipboard?.writeText(lastTemp.password); } catch { /* ignore */ } }}>Copy</button>
+            <button className="secondary small" style={{ marginLeft: 6 }} onClick={() => setLastTemp(null)}>Dismiss</button>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>Share it securely — it isn&apos;t shown again. They&apos;ll be asked to change it on first sign-in (web or mobile app).</div>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
           <input placeholder="Search name, email…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
           <select value={fRole} onChange={(e) => setFRole(e.target.value)} style={{ width: "auto" }}><option value="">All roles</option>{ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}</select>
@@ -409,7 +446,7 @@ function UsersTab({ schoolId }: { schoolId: string }) {
             {rows.map((u) => (
               <tr key={u.membershipId}>
                 <td className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={!!sel[u.membershipId]} onChange={(e) => setSel({ ...sel, [u.membershipId]: e.target.checked })} aria-label={`Select ${u.user.fullName}`} /></td>
-                <td>{u.user.fullName}</td>
+                <td><span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Avatar name={u.user.fullName} src={u.user.photoUrl} size={26} />{u.user.fullName}{u.user.appAccess ? <span className="badge role" title="Has mobile app access">app</span> : null}</span></td>
                 <td className="mono">{u.user.email}</td>
                 <td>
                   {editing === u.membershipId ? (
@@ -454,7 +491,7 @@ function UsersTab({ schoolId }: { schoolId: string }) {
         <div className="modal-overlay" onClick={() => setShowAdd(false)}>
           <div className="modal" style={{ maxWidth: 560, width: "94%" }} onClick={(e) => e.stopPropagation()}>
             <div className="flex-between" style={{ alignItems: "flex-start" }}><h2 style={{ margin: 0 }}>Add a user</h2><button className="secondary small" onClick={() => setShowAdd(false)}>Close</button></div>
-            <p className="sub">Leave the password blank to send an email invite instead.</p>
+            <p className="sub">Assign a role. Leave the password blank to send an email invite, or grant mobile app access to create a temporary password. A person can hold more than one role — add them again with another role (parents can be given staff roles such as Support Staff).</p>
             <form onSubmit={add}>
               <div className="row">
                 <div><label>Full name</label><input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required /></div>
@@ -467,8 +504,17 @@ function UsersTab({ schoolId }: { schoolId: string }) {
                     {ASSIGNABLE_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL_MAP[r] || r}</option>)}
                   </select>
                 </div>
-                <div><label>Temporary password (optional)</label><input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+                <div><label>{form.appAccess ? "Temporary password" : "Temporary password (optional)"}</label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={form.appAccess ? "auto-generated if blank" : ""} />
+                    <button type="button" className="secondary small" onClick={() => setForm({ ...form, password: genTempPassword() })}>Generate</button>
+                  </div>
+                </div>
               </div>
+              <label className="chip" style={{ margin: "10px 0 0", display: "inline-flex" }}>
+                <input type="checkbox" style={{ width: "auto" }} checked={form.appAccess} onChange={(e) => setForm({ ...form, appAccess: e.target.checked })} /> Requires access to the mobile application
+              </label>
+              {form.appAccess && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>A temporary password will be created (shown once after saving) and the user will be required to change it on first sign-in.</p>}
               <button type="submit" style={{ marginTop: 16 }}>Add user</button>
             </form>
           </div>
