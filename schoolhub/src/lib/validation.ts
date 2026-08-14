@@ -444,7 +444,7 @@ export const generateJourneysSchema = z.object({ date: z.string().optional(), se
 
 export const boardingSchema = z.object({ studentId: z.string().min(1), status: z.enum(["boarded", "absent", "not_present", "dropped_off"]) });
 
-export const incidentSchema = z.object({ journeyId: z.string().optional(), tripId: z.string().optional(), type: z.string().min(1), notes: z.string().optional() });
+export const incidentSchema = z.object({ journeyId: z.string().optional(), tripId: z.string().optional(), type: z.string().min(1), notes: z.string().optional(), severity: z.enum(["low", "medium", "high"]).optional() });
 
 export const positionSchema = z.object({ lat: z.number().optional(), lng: z.number().optional(), advance: z.boolean().optional(), delayMinutes: z.number().int().optional() });
 

@@ -9,11 +9,11 @@ import ScopedSearch from "@/components/ScopedSearch";
 import { useAccessGate } from "@/lib/useAccessGate";
 import DriverApp from "./DriverApp";
 import DriverHome from "./DriverHome";
-import { DriverHistory, DriverChecks, DriverMessages } from "./DriverExtra";
+import { DriverHistory, DriverChecks, DriverMessages, DriverIncidents, DriverFleet } from "./DriverExtra";
 
 const TITLES: Record<string, string> = {
   home: "Driver home", journeys: "Today's journeys", checks: "Vehicle checks", history: "My journey log", messages: "Transport office",
-  profile: "My profile", dm: "Messages", help: "Help & support", search: "Search",
+  incidents: "Incident log", fleet: "Fleet", profile: "My profile", dm: "Messages", help: "Help & support", search: "Search",
 };
 
 export default function DriverShell({ email = "" }: { email?: string }) {
@@ -36,6 +36,8 @@ export default function DriverShell({ email = "" }: { email?: string }) {
       { key: "search", label: "Search", icon: "🔍" },
       { key: "journeys", label: "Today's journeys", icon: "🚌" },
       { key: "checks", label: "Vehicle checks", icon: "🛠️" },
+      { key: "incidents", label: "Incident log", icon: "⚠️" },
+      { key: "fleet", label: "Fleet", icon: "🚐" },
       { key: "history", label: "Journey log", icon: "🗂️" },
       { key: "messages", label: "Transport office", icon: "✉️", badge: unread },
     ] },
@@ -54,6 +56,8 @@ export default function DriverShell({ email = "" }: { email?: string }) {
       case "search": return <ScopedSearch endpoint="/api/driver/search" title="Search" blurb="Search across your assigned routes, passengers and journeys." onNavigate={(k) => nav(k === "roster" || k === "routes" || k === "journeys" ? "journeys" : k)} />;
       case "journeys": return <DriverApp />;
       case "checks": return <DriverChecks />;
+      case "incidents": return <DriverIncidents />;
+      case "fleet": return <DriverFleet />;
       case "history": return <DriverHistory />;
       case "messages": return <DriverMessages />;
       case "profile": return <AccountProfile />;

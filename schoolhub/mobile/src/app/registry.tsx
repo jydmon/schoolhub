@@ -30,6 +30,7 @@ export const SCREENS: Record<RoleKey, Record<string, React.FC>> = {
   driver: {
     ...driverScreens,
     messages: () => <DirectMessages />,
+    assistant: () => <Assistant roleKey="driver" />,
     account: () => <Account roleKey="driver" />,
   },
   admin: {

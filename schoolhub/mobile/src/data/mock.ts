@@ -37,8 +37,14 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
   driver: {
     title: "Driver", school: "Northwind Academy", who: "Dan Cole", av: "DC", em: "🚌",
     tabs: [
-      { key: "journeys", label: "Journeys", icon: "🚌" },
+      { key: "journeys", label: "Today", icon: "🚌" },
+      { key: "search", label: "Search", icon: "🔍" },
+      { key: "routes", label: "Routes", icon: "🗺️" },
+      { key: "incident", label: "Incident", icon: "⚠️" },
       { key: "messages", label: "Messages", icon: "💬" },
+      { key: "journeylog", label: "Journey log", icon: "🗂️" },
+      { key: "assistant", label: "Assistant", icon: "✨" },
+      { key: "help", label: "Help", icon: "🆘" },
       { key: "account", label: "Account", icon: "⚙️" },
     ],
   },

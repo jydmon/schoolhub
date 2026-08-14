@@ -180,12 +180,14 @@ export default function Onboarding() {
     );
   }
 
-  // 2c) Account activation gate (blocking). After Terms + profile, the admin
-  // uploads an invoice / proof of payment; then the account waits for an Account
-  // Manager / Super Admin to activate it. All users of a pending school are gated.
-  if (st.activation && st.activation.status !== "activated") {
+  // 2c) Account activation gate (blocking) — TENANT ADMINISTRATOR ONLY. After
+  // Terms + profile, the school administrator uploads an invoice / proof of
+  // payment, then waits for an Account Manager / Super Admin to activate the
+  // account. Other users are NOT gated here — they proceed to policies and the
+  // tour (they only ever see Terms, policies and the tour).
+  if (st.activation && st.activation.status !== "activated" && st.activation.isAdmin) {
     const a = st.activation;
-    const canUpload = a.isAdmin && (!a.paymentSubmitted || a.paymentStatus === "rejected");
+    const canUpload = !a.paymentSubmitted || a.paymentStatus === "rejected";
     if (canUpload) {
       return (
         <Overlay wide>
@@ -207,9 +209,7 @@ export default function Onboarding() {
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 40 }}>⏳</div>
           <h2 style={{ margin: "6px 0" }}>Account Pending Activation</h2>
-          <p className="sub">{a.isAdmin
-            ? "Thank you — your invoice has been submitted. Your account is pending activation by an Account Manager. You'll receive an email as soon as it's active."
-            : `${a.schoolName || "Your school"} is being set up and is pending activation. You'll be able to access the platform once it has been activated.`}</p>
+          <p className="sub">Thank you — your invoice has been submitted. Your account is pending activation by an Account Manager. You&apos;ll receive an email as soon as it&apos;s active.</p>
         </div>
       </Overlay>
     );

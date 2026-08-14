@@ -28,7 +28,7 @@ export function DriverHistory() {
           <tbody>
             {rows.map((j) => (
               <tr key={j.id}>
-                <td className="mono muted">{j.date}</td><td>{j.routeName}</td><td>{j.session.toUpperCase()}</td>
+                <td className="mono muted">{j.date}</td><td>{j.routeName}</td><td>{String(j.session ?? "").toUpperCase() || "—"}</td>
                 <td>{j.vehicle || "—"}</td><td className="mono muted">{hm(j.startedAt)}</td><td className="mono muted">{hm(j.completedAt)}</td>
                 <td>{j.boarded}{j.total ? `/${j.total}` : ""}</td><td>{j.delayMinutes ? `+${j.delayMinutes}m` : "—"}</td>
                 <td><span className={`badge ${j.status === "completed" ? "active" : "archived"}`}>{j.status}</span></td>
@@ -87,7 +87,7 @@ export function DriverChecks() {
           <div style={{ marginBottom: 10 }}><label>Journey / vehicle (optional)</label>
             <select value={journeyId} onChange={(e) => setJourneyId(e.target.value)} style={{ width: "auto" }}>
               <option value="">— not linked to a journey —</option>
-              {journeys.map((j) => <option key={j.id} value={j.id}>{j.routeName} · {j.session.toUpperCase()}{j.vehicle ? ` · ${j.vehicle}` : ""}</option>)}
+              {journeys.map((j) => <option key={j.id} value={j.id}>{j.routeName} · {String(j.session ?? "").toUpperCase()}{j.vehicle ? ` · ${j.vehicle}` : ""}</option>)}
             </select>
           </div>
         )}
@@ -153,6 +153,98 @@ export function DriverMessages() {
         <div style={{ flex: 4 }}><input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Message the transport office…" /></div>
         <div style={{ display: "flex", alignItems: "flex-end" }}><button onClick={send}>Send</button></div>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------- Incident log (raise) ------------------------- */
+const INCIDENT_TYPES: [string, string][] = [
+  ["breakdown", "Vehicle breakdown"], ["accident", "Accident / collision"], ["vehicle_defect", "Vehicle defect"],
+  ["road", "Road / traffic problem"], ["behaviour", "Pupil behaviour"], ["medical", "Medical / welfare"],
+  ["delay", "Significant delay"], ["weather", "Weather / hazard"], ["other", "Other"],
+];
+export function DriverIncidents() {
+  const [journeys, setJourneys] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [f, setF] = useState({ type: "breakdown", severity: "medium", notes: "", journeyId: "" });
+  const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
+  const load = useCallback(async () => {
+    setJourneys((await fetch(`/api/driver/journeys`).then((r) => r.json())).journeys ?? []);
+    setIncidents((await fetch(`/api/driver/incident`).then((r) => r.json())).incidents ?? []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  async function submit() {
+    setMsg(null);
+    if (!f.notes.trim()) { setMsg({ kind: "err", text: "Please describe what happened." }); return; }
+    const res = await fetch(`/api/driver/incident`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: f.type, severity: f.severity, notes: f.notes.trim(), journeyId: f.journeyId || undefined }) });
+    const d = await res.json();
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; }
+    setMsg({ kind: "ok", text: "Incident reported — the transport office has been notified." });
+    setF({ type: "breakdown", severity: "medium", notes: "", journeyId: "" }); load();
+  }
+  const sev = (s: string) => (s === "high" ? "suspended" : s === "medium" ? "trial" : "role");
+  return (
+    <>
+      <div className="panel">
+        <h2 style={{ margin: 0 }}>Report an incident</h2>
+        <p className="sub">Raise a transport incident. High-severity incidents alert the office immediately. Attach a journey if it happened on a run.</p>
+        {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+        <div className="row">
+          <div><label>Type</label><select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>{INCIDENT_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+          <div><label>Severity</label><select value={f.severity} onChange={(e) => setF({ ...f, severity: e.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
+          <div><label>Journey (optional)</label><select value={f.journeyId} onChange={(e) => setF({ ...f, journeyId: e.target.value })}><option value="">— not on a journey —</option>{journeys.map((j) => <option key={j.id} value={j.id}>{j.routeName} · {String(j.session ?? "").toUpperCase()}</option>)}</select></div>
+        </div>
+        <label style={{ marginTop: 8 }}>What happened?</label>
+        <textarea rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Describe the incident…" style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontSize: 13 }} />
+        <div style={{ marginTop: 12 }}><button className={f.severity === "high" ? "danger" : ""} onClick={submit}>Report incident</button></div>
+      </div>
+      <div className="panel">
+        <h2 style={{ fontSize: 16, margin: 0 }}>My reported incidents</h2>
+        <table>
+          <thead><tr><th>When</th><th>Type</th><th>Severity</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody>
+            {incidents.map((i) => (
+              <tr key={i.id}>
+                <td className="mono muted">{dt(i.at)}</td>
+                <td>{(INCIDENT_TYPES.find(([k]) => k === i.type)?.[1]) || i.type}</td>
+                <td><span className={`badge ${sev(i.severity)}`}>{i.severity}</span></td>
+                <td><span className={`badge ${i.status === "resolved" ? "active" : i.status === "acknowledged" ? "role" : "suspended"}`}>{i.status}</span></td>
+                <td className="muted">{i.notes || "—"}{i.resolutionNote ? ` · Resolution: ${i.resolutionNote}` : ""}</td>
+              </tr>
+            ))}
+            {incidents.length === 0 && <tr><td colSpan={5} className="muted">No incidents reported.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ----------------------------- Fleet / vehicles -------------------------- */
+export function DriverFleet() {
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  useEffect(() => { fetch(`/api/driver/vehicles`).then((r) => r.json()).then((d) => setVehicles(d.vehicles ?? [])).catch(() => {}); }, []);
+  const statusBadge = (s: string) => s === "available" ? "active" : s === "out_of_service" ? "suspended" : "trial";
+  const statusLabel = (s: string) => ({ available: "Available", due_soon: "Compliance due", attention: "Needs attention", out_of_service: "Out of service" } as Record<string, string>)[s] || s;
+  const cflag = (v: string) => v === "overdue" ? <span className="badge suspended">overdue</span> : v === "due" ? <span className="badge trial">due</span> : v === "ok" ? <span className="badge active">ok</span> : <span className="muted">—</span>;
+  return (
+    <div className="panel">
+      <h2 style={{ margin: 0 }}>Fleet</h2>
+      <p className="sub">Vehicles at your school and their current status. Compliance flags show MOT, insurance, service and tax.</p>
+      <table>
+        <thead><tr><th>Vehicle</th><th>Type</th><th>Seats</th><th>Status</th><th>MOT</th><th>Insurance</th><th>Service</th><th>Tax</th></tr></thead>
+        <tbody>
+          {vehicles.map((v) => (
+            <tr key={v.id}>
+              <td><strong>{v.reference}</strong>{v.label ? <div className="mono muted" style={{ fontSize: 11 }}>{v.label}</div> : null}</td>
+              <td>{v.type}</td><td>{v.capacity}</td>
+              <td><span className={`badge ${statusBadge(v.status)}`}>{statusLabel(v.status)}</span></td>
+              <td>{cflag(v.compliance.mot)}</td><td>{cflag(v.compliance.insurance)}</td><td>{cflag(v.compliance.service)}</td><td>{cflag(v.compliance.tax)}</td>
+            </tr>
+          ))}
+          {vehicles.length === 0 && <tr><td colSpan={8} className="muted">No vehicles found for your school.</td></tr>}
+        </tbody>
+      </table>
     </div>
   );
 }
