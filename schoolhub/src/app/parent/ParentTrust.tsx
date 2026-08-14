@@ -52,6 +52,7 @@ export default function ParentTrust() {
               </div>
               <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                 {d.requireAck ? (d.acknowledged ? <span className="badge active">acknowledged</span> : <span className="badge suspended">action needed</span>) : <span className="badge role">info</span>}
+                {d.acknowledged && d.ackedAt ? <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>Accepted {new Date(d.ackedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</div> : null}
               </div>
             </div>
             {isOpen && (

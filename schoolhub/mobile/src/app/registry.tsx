@@ -18,6 +18,7 @@ export const SCREENS: Record<RoleKey, Record<string, React.FC>> = {
     clubs: () => <ParentClubsScreen />,
     assistant: () => <Assistant roleKey="parent" />,
     alerts: () => <Inbox />,
+    account: () => <Account roleKey="parent" />,
   },
   teacher: {
     ...teacherScreens,

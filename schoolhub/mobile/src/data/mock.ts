@@ -10,15 +10,18 @@ export type TabDef = { key: string; label: string; icon: string };
 export const APPS: Record<RoleKey, { title: string; school: string; who: string; av: string; em: string; tabs: TabDef[] }> = {
   parent: {
     title: "Parent", school: "Northwind Academy", who: "Sarah Blake", av: "SB", em: "👪",
+    // Primary bar: Dashboard, AI Assistant, Calendar, Messages, Profile.
+    // Everything else (clubs, transport, reports, alerts) lives under "More".
     tabs: [
+      { key: "home", label: "Dashboard", icon: "🏠" },
       { key: "assistant", label: "Assistant", icon: "✨" },
-      { key: "home", label: "Home", icon: "🏠" },
       { key: "calendar", label: "Calendar", icon: "📅" },
+      { key: "messaging", label: "Messages", icon: "💬" },
+      { key: "account", label: "Profile", icon: "👤" },
       { key: "clubs", label: "Clubs", icon: "⚽" },
       { key: "transport", label: "Transport", icon: "🚌" },
       { key: "reports", label: "Reports", icon: "📄" },
       { key: "alerts", label: "Alerts", icon: "🔔" },
-      { key: "messaging", label: "Messages", icon: "💬" },
     ],
   },
   teacher: {

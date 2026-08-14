@@ -187,10 +187,12 @@ export async function trustDocumentsForUser(userId: string) {
     : [];
   const currentAck = new Set(acks.map((a) => `${a.documentId}:${a.version}`));
   const anyAck = new Set(acks.map((a) => a.documentId));
+  const ackAt = new Map(acks.map((a) => [`${a.documentId}:${a.version}`, a.ackedAt]));
   return docs.map((d) => ({
     id: d.id, slug: d.slug, title: d.title, category: d.category, summary: d.summary, version: d.version,
     bodyHtml: d.bodyHtml, linkUrl: d.linkUrl, effectiveDate: d.effectiveDate, requireAck: d.requireAck,
     acknowledged: currentAck.has(`${d.id}:${d.version}`),
+    ackedAt: ackAt.get(`${d.id}:${d.version}`) || null,
     updatedSinceAck: !currentAck.has(`${d.id}:${d.version}`) && anyAck.has(d.id),
   }));
 }

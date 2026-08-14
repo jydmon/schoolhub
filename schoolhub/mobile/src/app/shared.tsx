@@ -230,6 +230,7 @@ function TrustPolicies() {
               {d.requireAck ? <Badge tone={d.acknowledged ? "ok" : "warn"}>{d.acknowledged ? "done" : "action"}</Badge> : <Badge tone="mut">info</Badge>}
             </View>
             {d.summary ? <Text style={{ fontSize: 11, color: T.muted, marginTop: 3 }}>{d.summary}</Text> : null}
+            {d.acknowledged && d.ackedAt ? <Text style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>Accepted {new Date(d.ackedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</Text> : null}
           </Pressable>
           {openId === d.id ? (
             <View style={{ marginTop: 6 }}>
