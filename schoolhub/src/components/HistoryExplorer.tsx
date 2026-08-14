@@ -9,6 +9,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 type Entry = {
   id: string; action: string; actorEmail: string | null; targetType: string | null; targetId: string | null;
   ip: string | null; metadata: string; createdAt: string; school?: { name: string } | null; schoolId?: string | null;
+  impersonatedBy?: string | null; impersonatedByEmail?: string | null;
 };
 
 const dt = (v: string) => new Date(v).toLocaleString();
@@ -101,17 +102,18 @@ export default function HistoryExplorer({ baseUrl, platform, title, subtitle }: 
                 <tr>
                   <td className="mono muted" style={{ whiteSpace: "nowrap", fontSize: 12 }}>{dt(e.createdAt)}</td>
                   <td><span className="badge role">{e.action}</span></td>
-                  <td>{e.actorEmail || <span className="muted">system</span>}</td>
+                  <td>{e.actorEmail || <span className="muted">system</span>}{e.impersonatedByEmail ? <span className="badge" title={`Performed via support access by ${e.impersonatedByEmail}`} style={{ marginLeft: 6, background: "#fff4e5", color: "#9a5b00", fontSize: 10.5 }}>via support</span> : null}</td>
                   <td>{e.targetType ? <span>{e.targetType}{e.targetId ? <span className="muted mono" style={{ fontSize: 11 }}> · {e.targetId.slice(0, 10)}</span> : null}</span> : <span className="muted">—</span>}</td>
                   {platform && <td>{e.school?.name || <span className="muted">platform</span>}</td>}
-                  <td className="right">{(meta.length > 0 || e.ip) && <button className="linklike" style={{ fontSize: 12 }} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))}>{isOpen ? "Hide" : "Details"}</button>}</td>
+                  <td className="right">{(meta.length > 0 || e.ip || e.impersonatedByEmail) && <button className="linklike" style={{ fontSize: 12 }} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))}>{isOpen ? "Hide" : "Details"}</button>}</td>
                 </tr>
                 {isOpen && (
                   <tr>
                     <td colSpan={platform ? 6 : 5} style={{ background: "#fafbfe" }}>
                       <div style={{ fontSize: 12.5, padding: "2px 2px 6px" }}>
+                        {e.impersonatedByEmail && <div><strong>Support access</strong> · <span>performed while impersonating <span className="mono">{e.actorEmail || "user"}</span> by admin <span className="mono">{e.impersonatedByEmail}</span></span></div>}
                         {e.ip && <div><strong>IP</strong> · <span className="mono">{e.ip}</span></div>}
-                        {meta.length === 0 ? <div className="muted">No further detail recorded.</div> : meta.map(([k, v], i) => <div key={i}><strong>{k || "detail"}</strong> · <span className="mono" style={{ wordBreak: "break-word" }}>{v}</span></div>)}
+                        {meta.length === 0 ? (!e.ip && !e.impersonatedByEmail ? <div className="muted">No further detail recorded.</div> : null) : meta.map(([k, v], i) => <div key={i}><strong>{k || "detail"}</strong> · <span className="mono" style={{ wordBreak: "break-word" }}>{v}</span></div>)}
                       </div>
                     </td>
                   </tr>

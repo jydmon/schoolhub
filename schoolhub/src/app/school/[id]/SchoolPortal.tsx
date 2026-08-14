@@ -28,6 +28,7 @@ import AdminReportsTab from "./AdminReportsTab";
 import OpsTab from "./OpsTab";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useAccessGate } from "@/lib/useAccessGate";
 
 const SCHOOL_NAV: NavGroup[] = [
   { label: "Overview", items: [{ key: "ops", label: "Operations", icon: "📊" }] },
@@ -102,6 +103,7 @@ type Props = {
 
 export default function SchoolPortal({ schoolId, roles, initial, email = "", schoolCount = 1 }: Props) {
   const canManage = roles.includes("SchoolAdministrator");
+  const { gate } = useAccessGate(schoolId);
   const [focusStudentId, setFocusStudentId] = useState<string | null>(null);
   // Remember this as the user's current school so future logins land here.
   useEffect(() => { try { document.cookie = `siplat_last_school=${schoolId}; path=/; max-age=${60 * 60 * 24 * 180}; SameSite=Lax`; } catch { /* ignore */ } }, [schoolId]);
@@ -139,7 +141,10 @@ export default function SchoolPortal({ schoolId, roles, initial, email = "", sch
     ["dm", "Messages"],
   ];
 
-  const nav: NavGroup[] = canManage ? SCHOOL_NAV : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }, { key: "help", label: "Help & support", icon: "🆘" }] }];
+  // Item 12: gate the admin nav when this admin's role has been customized to
+  // remove pages. A built-in SchoolAdministrator is not "customized", so gate()
+  // is a no-op and the full portal shows exactly as before.
+  const nav: NavGroup[] = canManage ? gate(SCHOOL_NAV) : [{ label: "Account", items: [{ key: "notifications", label: "Notifications", icon: "🔔" }, { key: "profile", label: "My profile", icon: "🙂" }, { key: "security", label: "My security", icon: "🔐" }, { key: "help", label: "Help & support", icon: "🆘" }] }];
   return (
     <AppShell brandSub={initial.school?.name || "School"} nav={nav} active={tab}
       onNavigate={(k) => setTab(k as Tab)} title={SCHOOL_TITLES[tab] || (initial.school?.name || "School")}

@@ -511,6 +511,7 @@ model AuditLog {
   school     School? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
   actorUserId String?
   actorEmail String?
+  impersonatedBy String? // set when the action was taken inside a support-access session (item 13)
   action     String  // e.g. USER_LOGIN, TENANT_SUSPENDED, DATA_CHANGE, AI_QUERY
   targetType String?
   targetId   String?

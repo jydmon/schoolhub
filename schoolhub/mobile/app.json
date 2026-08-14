@@ -54,6 +54,13 @@
           "icon": "./assets/notification-icon.png",
           "color": "#4F46E5"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Attach photos from your library to support requests, trips and reports.",
+          "cameraPermission": "Take a photo to attach to a support request."
+        }
       ]
     ],
     "runtimeVersion": { "policy": "appVersion" },

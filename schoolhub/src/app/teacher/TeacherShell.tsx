@@ -5,12 +5,14 @@ import AppShell, { NavGroup } from "@/components/AppShell";
 import AccountProfile from "@/components/AccountProfile";
 import HelpSupport from "@/components/HelpSupport";
 import Messaging from "@/components/Messaging";
+import ScopedSearch from "@/components/ScopedSearch";
+import { useAccessGate } from "@/lib/useAccessGate";
 import { TDashboard, TTimetable, TCalendar, TStudents, TAttendance, TBehaviour, TReports, TTrips, TNotifications, THistory, TProfile, TAssistant } from "./TeacherPages";
 
 const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", dashboard: "Dashboard", students: "My pupils", attendance: "Attendance",
   behaviour: "Behaviour", reports: "Pupil reports", timetable: "Timetable", calendar: "Calendar",
-  trips: "My trips", notifications: "Notifications", history: "My history", profile: "My profile", dm: "Messages", help: "Help & support",
+  trips: "My trips", notifications: "Notifications", history: "My history", profile: "My profile", dm: "Messages", help: "Help & support", search: "Search",
 };
 
 export default function TeacherShell({ email = "" }: { email?: string }) {
@@ -18,6 +20,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
   const [schools, setSchools] = useState<{ id: string; name: string }[]>([]);
   const [schoolId, setSchoolId] = useState("");
   const [unread, setUnread] = useState(0);
+  const { gate } = useAccessGate(schoolId);
 
   useEffect(() => {
     fetch(`/api/teacher/context`).then((r) => r.json()).then((d) => {
@@ -36,6 +39,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
     { label: "Assistant", items: [{ key: "assistant", label: "Ask AI Assistant", icon: "🤖" }] },
     { label: "Teaching", items: [
       { key: "dashboard", label: "Dashboard", icon: "📊" },
+      { key: "search", label: "Search", icon: "🔍" },
       { key: "students", label: "My pupils", icon: "🎓" },
       { key: "attendance", label: "Attendance", icon: "✅" },
       { key: "behaviour", label: "Behaviour", icon: "⭐" },
@@ -58,11 +62,12 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
   ];
 
   function body() {
-    if (!schoolId && ["dashboard", "students", "attendance", "behaviour", "reports", "timetable", "calendar", "trips", "history", "assistant"].includes(active)) {
+    if (!schoolId && ["dashboard", "search", "students", "attendance", "behaviour", "reports", "timetable", "calendar", "trips", "history", "assistant"].includes(active)) {
       return schools.length === 0 ? <div className="panel"><p className="muted">You don&apos;t have a teacher role in any school yet. Ask your school administrator to assign you.</p></div> : <div className="panel">Loading…</div>;
     }
     switch (active) {
       case "assistant": return <TAssistant schoolId={schoolId} />;
+      case "search": return <ScopedSearch endpoint={`/api/teacher/search?school=${encodeURIComponent(schoolId)}`} title="Search" blurb="Search across your assigned pupils, classes, timetable, trips, reports and behaviour. Only pupils in your scope are searched." onNavigate={nav} />;
       case "dashboard": return <TDashboard schoolId={schoolId} onNavigate={nav} />;
       case "students": return <TStudents schoolId={schoolId} />;
       case "attendance": return <TAttendance schoolId={schoolId} />;
@@ -81,7 +86,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
   }
 
   return (
-    <AppShell brandSub="Teacher" nav={NAV} active={active} onNavigate={nav} title={TITLES[active] || "Teacher"} email={email} role="Teacher">
+    <AppShell brandSub="Teacher" nav={gate(NAV)} active={active} onNavigate={nav} title={TITLES[active] || "Teacher"} email={email} role="Teacher">
       {schools.length > 1 && (
         <div className="panel flex-between" style={{ alignItems: "center" }}>
           <div className="muted" style={{ fontSize: 13 }}>School</div>

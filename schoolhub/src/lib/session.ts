@@ -11,6 +11,7 @@ import {
 } from "./auth";
 import type { AuthContext } from "./rbac";
 import { resolveEffectivePermissions } from "./roles";
+import { markImpersonation } from "./request-context";
 
 // Item 12: preload tenant role customizations into permsBySchool. Guarded so a
 // missing TenantRole table (pre-migration) simply yields built-in defaults.
@@ -50,6 +51,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
           const admin = await prisma.user.findUnique({ where: { id: imp.by }, select: { isPlatformAdmin: true, status: true } });
           const tuser = await prisma.user.findUnique({ where: { id: imp.sub }, include: { memberships: true } });
           if (admin?.isPlatformAdmin && admin.status !== "suspended" && tuser && tuser.status !== "suspended") {
+            markImpersonation(imp.by); // attribute this request's audit entries to the admin
             return {
               userId: tuser.id, email: tuser.email, fullName: tuser.fullName, isPlatformAdmin: tuser.isPlatformAdmin,
               memberships: tuser.memberships.map((m) => ({ schoolId: m.schoolId, role: m.role })),

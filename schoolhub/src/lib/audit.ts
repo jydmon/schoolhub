@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { currentImpersonatorId } from "./request-context";
 
 export type AuditInput = {
   action: string;
@@ -9,6 +10,7 @@ export type AuditInput = {
   targetId?: string | null;
   ip?: string | null;
   metadata?: Record<string, unknown>;
+  impersonatedBy?: string | null;
 };
 
 /**
@@ -26,6 +28,8 @@ export async function recordAudit(input: AuditInput): Promise<void> {
         targetType: input.targetType ?? null,
         targetId: input.targetId ?? null,
         ip: input.ip ?? null,
+        // Attribute to the impersonating admin when inside a support session.
+        impersonatedBy: input.impersonatedBy ?? currentImpersonatorId() ?? null,
         metadata: JSON.stringify(input.metadata ?? {}),
       },
     });

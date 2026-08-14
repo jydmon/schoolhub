@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { getChildren } from "./parent";
 import { studentMatchesEvent } from "./calendar";
+import { teacherScope } from "./teacher";
 
 // Enterprise search — role-scoped, tenant-isolated search across the record
 // types each role can see. Every entity query is wrapped so that a model which
@@ -107,6 +108,74 @@ export async function searchParent(userId: string, q: string): Promise<SearchGro
     { type: "reports", label: "Reports", tab: "reports", items: (reports as any[]).map((r) => ({ id: r.id, title: `${r.student.firstName} — ${r.title}`, subtitle: r.term || "report" })) },
     { type: "documents", label: "Documents", tab: "trust", items: (docs as any[]).map((d) => ({ id: d.id, title: d.title, subtitle: d.category })) },
     { type: "trust", label: "Trust & policies", tab: "trust", items: (trust as any[]).map((d) => ({ id: d.id, title: d.title, subtitle: d.category })) },
+  ];
+  return groups.filter((g) => g.items.length > 0);
+}
+
+/** Teacher-portal search — strictly scoped to the teacher's assigned classes,
+ *  subjects, trips and the students within them. Never returns a pupil outside
+ *  the teacher's scope. */
+export async function searchTeacher(userId: string, q: string, schoolIdParam?: string): Promise<SearchGroup[]> {
+  const scope = await teacherScope(userId, schoolIdParam);
+  if (!scope) return [];
+  const { schoolId, studentIds, classIds, yearGroups, tripIds } = scope;
+  const T = 10;
+  const idFilter = studentIds.length ? { id: { in: studentIds } } : { id: "__none__" };
+  // Homework relevant to the teacher: their classes/years, or whole-school items.
+  const hwScope: any[] = [{ classId: null, yearGroup: null }];
+  if (classIds.length) hwScope.push({ classId: { in: classIds } });
+  if (yearGroups.length) hwScope.push({ yearGroup: { in: yearGroups } });
+
+  const [students, events, trips, timetable, reports, homework, behaviour] = await Promise.all([
+    safe(() => prisma.student.findMany({ where: { schoolId, AND: [idFilter, { OR: [{ firstName: ci(q) }, { lastName: ci(q) }, { reference: ci(q) }] }] }, take: T, select: { id: true, firstName: true, lastName: true, reference: true, yearGroup: true, status: true } })),
+    safe(() => prisma.calendarEvent.findMany({ where: { schoolId, OR: [{ title: ci(q) }, { location: ci(q) }, { description: ci(q) }] }, take: T, orderBy: { startsAt: "desc" }, select: { id: true, title: true, startsAt: true, category: true } })),
+    tripIds.length ? safe(() => prisma.trip.findMany({ where: { schoolId, id: { in: tripIds }, OR: [{ title: ci(q) }, { destination: ci(q) }, { venue: ci(q) }] }, take: T, select: { id: true, title: true, date: true, destination: true } })) : [],
+    safe(() => prisma.timetableEntry.findMany({ where: { schoolId, teacherUserId: userId, OR: [{ subject: ci(q) }, { className: ci(q) }, { room: ci(q) }, { yearGroup: ci(q) }] }, take: T, select: { id: true, subject: true, dayOfWeek: true, startTime: true, className: true, yearGroup: true } })),
+    studentIds.length ? safe(() => prisma.studentReport.findMany({ where: { schoolId, studentId: { in: studentIds }, OR: [{ title: ci(q) }, { summary: ci(q) }] }, take: T, include: { student: { select: { firstName: true, lastName: true } } } })) : [],
+    safe(() => prisma.homework.findMany({ where: { schoolId, AND: [{ OR: [{ title: ci(q) }, { subject: ci(q) }] }, { OR: hwScope }] }, take: T, orderBy: { dueAt: "desc" }, select: { id: true, title: true, subject: true, dueAt: true } })),
+    studentIds.length ? safe(() => prisma.rewardRecord.findMany({ where: { schoolId, studentId: { in: studentIds }, OR: [{ note: ci(q) }, { type: ci(q) }, { category: ci(q) }] }, take: T, orderBy: { at: "desc" }, include: { student: { select: { firstName: true, lastName: true } } } })) : [],
+  ]);
+
+  const groups: SearchGroup[] = [
+    { type: "students", label: "My pupils", tab: "students", items: (students as any[]).map((s) => ({ id: s.id, title: `${s.firstName} ${s.lastName}`, subtitle: `${s.reference}${s.yearGroup ? ` · ${s.yearGroup}` : ""} · ${s.status}` })) },
+    { type: "timetable", label: "My timetable", tab: "timetable", items: (timetable as any[]).map((t) => ({ id: t.id, title: `${t.subject}`, subtitle: `${DAY[t.dayOfWeek] || ""} ${t.startTime || ""}${t.className ? ` · ${t.className}` : t.yearGroup ? ` · ${t.yearGroup}` : ""}` })) },
+    { type: "events", label: "Calendar", tab: "calendar", items: (events as any[]).map((e) => ({ id: e.id, title: e.title, subtitle: `${e.category} · ${new Date(e.startsAt).toLocaleDateString("en-GB")}` })) },
+    { type: "trips", label: "My trips", tab: "trips", items: (trips as any[]).map((t) => ({ id: t.id, title: t.title, subtitle: `${t.destination || ""}${t.date ? ` · ${t.date}` : ""}` })) },
+    { type: "reports", label: "Pupil reports", tab: "reports", items: (reports as any[]).map((r) => ({ id: r.id, title: `${r.student.firstName} ${r.student.lastName} — ${r.title}`, subtitle: r.status })) },
+    { type: "homework", label: "Homework", tab: "assistant", items: (homework as any[]).map((h) => ({ id: h.id, title: h.title, subtitle: `${h.subject || "Homework"}${h.dueAt ? ` · due ${new Date(h.dueAt).toLocaleDateString("en-GB")}` : ""}` })) },
+    { type: "behaviour", label: "Behaviour", tab: "behaviour", items: (behaviour as any[]).map((b) => ({ id: b.id, title: `${b.student.firstName} ${b.student.lastName} — ${b.type || b.category || "note"}`, subtitle: (b.note || b.teacherName || "").slice(0, 80) })) },
+  ];
+  return groups.filter((g) => g.items.length > 0);
+}
+
+/** Driver / transport-portal search — scoped to the routes the driver is
+ *  assigned to (Route.driverUserId, RouteDriver, or Journey.driverUserId) and
+ *  the pupils travelling on those routes. */
+export async function searchDriver(userId: string, q: string): Promise<SearchGroup[]> {
+  const T = 12;
+  // Resolve the routes this driver is responsible for.
+  const [directRoutes, routeDrivers, journeyRoutes] = await Promise.all([
+    safe(() => prisma.route.findMany({ where: { driverUserId: userId }, select: { id: true, schoolId: true } })),
+    safe(() => prisma.routeDriver.findMany({ where: { driverUserId: userId }, select: { routeId: true } })),
+    safe(() => prisma.journey.findMany({ where: { driverUserId: userId }, select: { routeId: true }, distinct: ["routeId"] })),
+  ]);
+  const routeIds = Array.from(new Set([
+    ...(directRoutes as any[]).map((r) => r.id),
+    ...(routeDrivers as any[]).map((r) => r.routeId),
+    ...(journeyRoutes as any[]).map((r) => r.routeId),
+  ].filter(Boolean)));
+  if (!routeIds.length) return [];
+
+  const [routes, profiles, journeys] = await Promise.all([
+    safe(() => prisma.route.findMany({ where: { id: { in: routeIds }, OR: [{ name: ci(q) }] }, take: T, select: { id: true, name: true, type: true, active: true } })),
+    safe(() => prisma.studentTransportProfile.findMany({ where: { routeId: { in: routeIds }, student: { OR: [{ firstName: ci(q) }, { lastName: ci(q) }, { reference: ci(q) }] } }, take: T, include: { student: { select: { id: true, firstName: true, lastName: true, reference: true, yearGroup: true } } } })),
+    safe(() => prisma.journey.findMany({ where: { routeId: { in: routeIds }, OR: [{ date: ci(q) }, { session: ci(q) }, { status: ci(q) }] }, take: T, orderBy: { date: "desc" }, include: { route: { select: { name: true } } } })),
+  ]);
+
+  const groups: SearchGroup[] = [
+    { type: "routes", label: "My routes", tab: "routes", items: (routes as any[]).map((r) => ({ id: r.id, title: r.name, subtitle: `${r.type}${r.active ? "" : " · inactive"}` })) },
+    { type: "passengers", label: "Passengers", tab: "roster", items: (profiles as any[]).map((p) => ({ id: p.student.id, title: `${p.student.firstName} ${p.student.lastName}`, subtitle: `${p.student.reference || ""}${p.student.yearGroup ? ` · ${p.student.yearGroup}` : ""}` })) },
+    { type: "journeys", label: "Journeys", tab: "journeys", items: (journeys as any[]).map((j) => ({ id: j.id, title: `${j.route?.name || "Journey"} · ${j.session?.toUpperCase?.() || ""}`, subtitle: `${j.date} · ${j.status}` })) },
   ];
   return groups.filter((g) => g.items.length > 0);
 }

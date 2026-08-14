@@ -131,13 +131,26 @@ export function resolveEffectivePermissions(roleKeys: string[], rows: { key: str
   return Array.from(set);
 }
 
-/** Effective permissions + pages for a user (for /api/me/access). */
+/** Effective permissions + pages for a user (for /api/me/access).
+ *  `customized` is true only when at least one of the user's roles in this
+ *  school is backed by a stored TenantRole (an overridden built-in or a custom
+ *  role). Clients MUST only gate navigation when `customized` is true — an
+ *  untouched school falls back to platform defaults and nothing is hidden.
+ *  `catalogPages` is the set of page keys that are eligible for gating; any nav
+ *  key outside it (dashboard, help, profile, notifications, …) is never hidden. */
 export async function effectiveForUser(schoolId: string, roleKeys: string[]) {
   const roles = await listRoles(schoolId);
   const byKey = new Map(roles.map((r) => [r.key, r]));
   const perms = new Set<string>(); const pages = new Set<string>();
-  for (const rk of roleKeys) { const c = byKey.get(rk); if (!c || !c.enabled) continue; c.permissions.forEach((p) => perms.add(p)); c.pages.forEach((p) => pages.add(p)); }
-  return { permissions: Array.from(perms), pages: Array.from(pages) };
+  let customized = false;
+  for (const rk of roleKeys) {
+    const c = byKey.get(rk);
+    if (!c || !c.enabled) continue;
+    if (c.overridden || c.isCustom) customized = true;
+    c.permissions.forEach((p) => perms.add(p));
+    c.pages.forEach((p) => pages.add(p));
+  }
+  return { permissions: Array.from(perms), pages: Array.from(pages), customized, catalogPages: ALL_PAGES };
 }
 
 const slug = (s: string) => "custom_" + (s || "role").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) + Math.random().toString(36).slice(2, 5);

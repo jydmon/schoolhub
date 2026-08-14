@@ -5,6 +5,7 @@ import AppShell, { NavGroup } from "@/components/AppShell";
 import AccountProfile from "@/components/AccountProfile";
 import HelpSupport from "@/components/HelpSupport";
 import Messaging from "@/components/Messaging";
+import { useAccessGate } from "@/lib/useAccessGate";
 import { Control, Routes, Profiles, Fees, Requests, Enquiries } from "../school/[id]/TransportTab";
 import { TMDashboard, TMFleet, TMDrivers, TMIncidents, TMMessages, TMTravelLogs, TMDriverLogs } from "./TransportPages";
 
@@ -20,6 +21,7 @@ export default function TransportShell({ email = "" }: { email?: string }) {
   const [schoolId, setSchoolId] = useState<string>("");
   const [openIncidents, setOpenIncidents] = useState(0);
   const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const { gate } = useAccessGate(schoolId);
 
   useEffect(() => {
     fetch(`/api/transport/context`).then((r) => r.json()).then((d) => {
@@ -93,7 +95,7 @@ export default function TransportShell({ email = "" }: { email?: string }) {
   }
 
   return (
-    <AppShell brandSub="Transport" nav={NAV} active={active} onNavigate={nav} title={TITLES[active] || "Transport"} email={email} role="Transport Manager">
+    <AppShell brandSub="Transport" nav={gate(NAV)} active={active} onNavigate={nav} title={TITLES[active] || "Transport"} email={email} role="Transport Manager">
       {schools.length > 1 && (
         <div className="panel flex-between" style={{ alignItems: "center" }}>
           <div className="muted" style={{ fontSize: 13 }}>Managing transport for</div>

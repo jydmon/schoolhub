@@ -54,12 +54,30 @@ function buildWhere(query: HistoryQuery) {
 export async function searchHistory(query: HistoryQuery) {
   const where = buildWhere(query);
   const take = Math.min(Math.max(query.take ?? 300, 1), 500);
-  const entries = await prisma.auditLog.findMany({
+  const rows = await prisma.auditLog.findMany({
     where,
     orderBy: { createdAt: "desc" },
     take,
     include: query.platform ? { school: { select: { name: true } } } : undefined,
   });
+
+  // Item 13: resolve the impersonating admin's email for any entry that was
+  // recorded inside a support-access session, so the trail reads "acted as X
+  // (via admin@…)" instead of an opaque user id. Guarded: a missing column or
+  // failed lookup just leaves impersonatedByEmail undefined.
+  let byEmail = new Map<string, string>();
+  try {
+    const ids = Array.from(new Set(rows.map((r: any) => r.impersonatedBy).filter(Boolean))) as string[];
+    if (ids.length) {
+      const admins = await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, email: true } });
+      byEmail = new Map(admins.map((a) => [a.id, a.email]));
+    }
+  } catch { /* ignore — impersonatedBy simply won't be annotated */ }
+
+  const entries = rows.map((r: any) => ({
+    ...r,
+    impersonatedByEmail: r.impersonatedBy ? (byEmail.get(r.impersonatedBy) ?? r.impersonatedBy) : null,
+  }));
   return { entries, count: entries.length, truncated: entries.length === take };
 }
 
