@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSel, Kebab } from "../school/[id]/EntityKit";
 import ModuleImportCard from "../school/[id]/ModuleImportCard";
+import { stampCsv } from "@/lib/download-client";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
 function dueState(dateStr?: string | null) {
@@ -445,11 +446,12 @@ export function TMTravelLogs({ schoolId }: { schoolId: string }) {
   }, [schoolId, from, to, route, driver]);
   useEffect(() => { load(); }, [load]);
 
-  function exportCsv() {
+  async function exportCsv() {
     const rows: any[] = data?.rows ?? [];
     const head = ["date", "session", "route", "vehicle", "driver", "status", "boarded", "absent", "total", "delayMinutes", "durationMin"];
     const csv = [head.join(","), ...rows.map((r) => head.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const stamped = await stampCsv({ section: "Transport", reportName: `Travel logs (${from} to ${to})`, csv, schoolId });
+    const blob = new Blob([stamped], { type: "text/csv" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
     a.href = url; a.download = `travel-logs-${from}_to_${to}.csv`; a.click(); URL.revokeObjectURL(url);
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { stampCsv } from "@/lib/download-client";
 
 // Shared activity-history explorer. Drives both the tenant School-Administrator
 // history tab and the platform super-admin audit trail — same search UX, the
@@ -58,7 +59,7 @@ export default function HistoryExplorer({ baseUrl, platform, title, subtitle }: 
   const clear = () => { setQ(""); setAction(""); setActor(""); setFrom(""); setTo(""); };
   const hasFilters = q || action || actor || from || to;
 
-  function exportCsv() {
+  async function exportCsv() {
     const cols = ["time", "action", "actor", "target", ...(platform ? ["tenant"] : []), "ip", "metadata"];
     const rows = entries.map((e) => [
       dt(e.createdAt), e.action, e.actorEmail || "system",
@@ -68,7 +69,9 @@ export default function HistoryExplorer({ baseUrl, platform, title, subtitle }: 
     ]);
     const esc = (s: string) => `"${String(s).replace(/"/g, '""')}"`;
     const csv = [cols, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const schoolId = baseUrl.match(/\/schools\/([^/]+)\//)?.[1] || null;
+    const stamped = await stampCsv({ section: platform ? "Audit trail" : "Activity history", reportName: title || "Activity history", csv, schoolId });
+    const url = URL.createObjectURL(new Blob([stamped], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url; a.download = "history.csv"; a.click(); URL.revokeObjectURL(url);
   }

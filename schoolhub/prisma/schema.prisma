@@ -586,6 +586,27 @@ model ActivationEvent {
   @@index([schoolId])
 }
 
+/// Download governance: one row per PDF/Excel/CSV export, carrying the metadata
+/// stamped onto the file (who/when/where/what) plus a system audit reference.
+model DownloadAudit {
+  id         String  @id @default(cuid())
+  reference  String  @unique // e.g. DL-2026-0042
+  schoolId   String?
+  userId     String?
+  userEmail  String?
+  userName   String?
+  userRole   String?
+  schoolName String?
+  trustName  String?
+  section    String  // module the report came from
+  reportName String
+  format     String  // pdf | xls | csv
+  createdAt  DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([userId])
+}
+
 // ----------------------------------------------------------------------------
 // Audit trail
 // ----------------------------------------------------------------------------

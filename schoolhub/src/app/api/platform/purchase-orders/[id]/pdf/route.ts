@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { assertStaffArea } from "@/lib/platform-staff";
 import { poPdfParagraphs } from "@/lib/commerce";
-import { textPdf } from "@/lib/pdf";
+import { recordDownload, brandedPdf } from "@/lib/download";
 import { recordAudit } from "@/lib/audit";
 import { AUDIT } from "@/lib/constants";
 import { handleError } from "@/lib/http";
@@ -24,7 +24,8 @@ export async function GET(_req: Request, { params }: Params) {
       trustName = s?.group?.name ?? null;
     }
     const paragraphs = poPdfParagraphs(po, { generatedBy: ctx.email, trustName, generatedAt: new Date().toLocaleString("en-GB") });
-    const pdf = textPdf(`Purchase Order — ${po.schoolName}`, paragraphs);
+    const dmeta = await recordDownload(ctx, { section: "Subscriptions", reportName: `Purchase Order ${po.reference}`, format: "pdf", schoolId: po.schoolId ?? null });
+    const pdf = brandedPdf(dmeta, `Purchase Order ${po.reference}`, paragraphs);
 
     await recordAudit({ action: AUDIT.PO_DOWNLOADED, actorUserId: ctx.userId, actorEmail: ctx.email, schoolId: po.schoolId ?? undefined, targetType: "PurchaseOrder", targetId: po.id, metadata: { reference: po.reference } });
 

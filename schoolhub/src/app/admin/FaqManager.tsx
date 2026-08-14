@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Kebab, useSort, SortTh } from "@/components/TableKit";
+import { recordClientDownload } from "@/lib/download-client";
 
 // Super-Administrator FAQ management for the platform console. Self-contained
 // (own fetch helpers) so it drops into AdminPortal with a single import. Uses
@@ -100,6 +101,7 @@ export default function FaqManager() {
       ["Where can I see the school calendar?", "Open the Calendar tab in your portal.", "Parents", "published"],
     ];
     const csv = rows.map((r) => r.map((c) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join(",")).join("\r\n");
+    void recordClientDownload({ section: "FAQs", reportName: "FAQ import template" });
     const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a"); a.href = url; a.download = "faq-import-template.csv"; a.click(); URL.revokeObjectURL(url);
   }

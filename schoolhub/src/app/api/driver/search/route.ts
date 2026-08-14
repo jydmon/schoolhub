@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/session";
 import { searchDriver, groupsToCsv } from "@/lib/search";
+import { recordDownload, csvWithMetadata } from "@/lib/download";
 import { handleError, ok } from "@/lib/http";
 
 // Driver / transport search — scoped to the routes the driver is assigned to and
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
     const groups = await searchDriver(ctx.userId, q);
     const total = groups.reduce((n, g) => n + g.items.length, 0);
     if (format === "csv") {
-      return new Response(groupsToCsv(groups, q), {
+      const meta = await recordDownload(ctx, { section: "Search", reportName: `Search results — ${q}`, format: "csv" });
+      return new Response(csvWithMetadata(meta, groupsToCsv(groups, q)), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="search-${q.replace(/[^a-z0-9]+/gi, "-").slice(0, 30)}.csv"`,

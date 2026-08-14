@@ -33,6 +33,21 @@ export default function AppShell({
     fetch("/api/me/profile").then((r) => r.json()).then((d) => { if (!cancelled) setMe(d.profile || null); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Refresh persistence: keep the active page in the URL hash so a browser
+  // refresh returns to the same page instead of the default/dashboard. Restored
+  // once on mount (if the hash is a valid nav key); kept in sync thereafter.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const h = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+    const keys = new Set(nav.flatMap((g) => g.items.map((i) => i.key)));
+    if (h && h !== active && keys.has(h)) onNavigate(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined" || !active) return;
+    try { window.history.replaceState(null, "", `#${encodeURIComponent(active)}`); } catch { /* ignore */ }
+  }, [active]);
   return (
     <div className="shell">
       <aside className="sidebar">

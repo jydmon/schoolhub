@@ -10,6 +10,8 @@ import FaqManager from "./FaqManager";
 import SupportAccessTab from "./SupportAccessTab";
 import PoliciesTab from "./PoliciesTab";
 import { PLATFORM_AREAS, AREA_LABELS, managerCoversSchool, describeScope } from "@/lib/platform-staff-logic";
+import { recordClientDownload } from "@/lib/download-client";
+import { usePersistentState } from "@/lib/use-persistent-state";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
 const DirtyCtx = createContext<{ setDirty: (v: boolean) => void }>({ setDirty: () => {} });
@@ -230,7 +232,7 @@ function Tenants() {
   // manager covers each school). Silently empty if the viewer lacks team access.
   const staffQ = useJson<any>("/api/platform/staff");
   const managers: any[] = (staffQ.data?.staff ?? []).filter((s: any) => s.roleKey === "account_manager" && s.status === "active");
-  const [mgrF, setMgrF] = useState("all");
+  const [mgrF, setMgrF] = usePersistentState("tenants.mgr", "all");
   const coveringManagers = (s: School) => managers.filter((m) => managerCoversSchool({ counties: m.scopeCounties || [], countries: m.scopeCountries || [] }, s));
   const defaultPlanKey = () => planList.find((p) => p.key === "trial")?.key ?? planList[0]?.key ?? "";
   const dirty = !!(form.schoolName || form.slug || form.adminName || form.adminEmail || form.adminPassword);
@@ -704,7 +706,7 @@ function firstArray(o: any): any[] { if (!o) return []; if (Array.isArray(o)) re
 function Subscriptions() {
   const { data, err, reload } = useJson<any>("/api/platform/subscriptions");
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
-  const [q, setQ] = useState(""); const [statusF, setStatusF] = useState("all"); const [typeF, setTypeF] = useState("all");
+  const [q, setQ] = usePersistentState("subs.q", ""); const [statusF, setStatusF] = usePersistentState("subs.status", "all"); const [typeF, setTypeF] = usePersistentState("subs.type", "all");
   const all = firstArray(data);
   const rows = all.filter((s: any) => {
     if (statusF !== "all" && s.status !== statusF) return false;
@@ -1073,6 +1075,7 @@ function Templates() {
     if (ok) setMsg({ k: "ok", t: `${ok} template${ok === 1 ? "" : "s"} deleted.` });
   }
   function downloadTemplate() {
+    void recordClientDownload({ section: "Templates", reportName: "Template library import template" });
     downloadCsv("template-library-import-template.csv", [
       ["kind", "name", "category", "subject", "body", "status", "sharedWithTenants"],
       ["email_campaign", "Welcome email", "Onboarding", "Welcome to {{school}}", "Hello {{name}}, welcome aboard.", "draft", "true"],

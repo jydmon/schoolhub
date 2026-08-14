@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/session";
 import { searchParent, groupsToCsv } from "@/lib/search";
+import { recordDownload, csvWithMetadata } from "@/lib/download";
 import { handleError, ok } from "@/lib/http";
 
 // Parent search — scoped strictly to the requesting parent's own children.
@@ -17,7 +18,8 @@ export async function GET(req: Request) {
     const groups = await searchParent(ctx.userId, q);
     const total = groups.reduce((n, g) => n + g.items.length, 0);
     if (format === "csv") {
-      return new Response(groupsToCsv(groups, q), {
+      const meta = await recordDownload(ctx, { section: "Search", reportName: `Search results — ${q}`, format: "csv" });
+      return new Response(csvWithMetadata(meta, groupsToCsv(groups, q)), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="search-${q.replace(/[^a-z0-9]+/gi, "-").slice(0, 30)}.csv"`,

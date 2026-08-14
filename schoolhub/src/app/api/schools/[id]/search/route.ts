@@ -3,6 +3,7 @@ import { assertTenantAccess } from "@/lib/tenant";
 import { assertCan } from "@/lib/rbac";
 import { PERMISSIONS } from "@/lib/constants";
 import { searchSchool, groupsToCsv } from "@/lib/search";
+import { recordDownload, csvWithMetadata } from "@/lib/download";
 import { handleError, ok } from "@/lib/http";
 
 type Params = { params: { id: string } };
@@ -28,7 +29,8 @@ export async function GET(req: Request, { params }: Params) {
     const total = groups.reduce((n, g) => n + g.items.length, 0);
 
     if (format === "csv") {
-      return new Response(groupsToCsv(groups, q), {
+      const meta = await recordDownload(ctx, { section: "Search", reportName: `Search results — ${q}`, format: "csv", schoolId: params.id });
+      return new Response(csvWithMetadata(meta, groupsToCsv(groups, q)), {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename="search-${q.replace(/[^a-z0-9]+/gi, "-").slice(0, 30)}.csv"`,

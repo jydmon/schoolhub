@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { getChildren } from "@/lib/parent";
 import { parentReports } from "@/lib/reports-release";
-import { textPdf } from "@/lib/pdf";
+import { recordDownload, brandedPdf } from "@/lib/download";
 import { handleError, ok } from "@/lib/http";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -73,8 +73,7 @@ export async function GET(req: Request) {
 
     if (wantPdf) {
       const paras: string[] = [];
-      paras.push(`Family report · ${from} to ${to}`);
-      paras.push(`Generated ${now.toLocaleString()} for ${ctx.email}`);
+      paras.push(`Reporting period: ${from} to ${to}`);
       paras.push("");
       const dt = (v: any) => (v ? new Date(v).toLocaleDateString() : "—");
       for (const c of perChild) {
@@ -96,8 +95,9 @@ export async function GET(req: Request) {
         paras.push("");
       }
       if (perChild.length === 0) paras.push("No children match the selected filters.");
-      const pdf = textPdf("SchoolHub — Family report", paras);
-      return new Response(pdf, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="family-report-${from}_to_${to}.pdf"` } });
+      const dmeta = await recordDownload(ctx, { section: "Reports", reportName: `Family report (${from} to ${to})`, format: "pdf" });
+      const pdf = brandedPdf(dmeta, "Family report", paras);
+      return new Response(new Uint8Array(pdf), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="family-report-${from}_to_${to}.pdf"` } });
     }
 
     return ok({ meta, children: children.map((c) => ({ id: c.student.id, name: `${c.student.firstName} ${c.student.lastName}`.trim(), firstName: c.student.firstName, schoolId: c.school.id, schoolName: c.school.name })), report: perChild });

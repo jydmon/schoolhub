@@ -3,6 +3,7 @@ import { assertTenantAccess } from "@/lib/tenant";
 import { assertCan } from "@/lib/rbac";
 import { PERMISSIONS } from "@/lib/constants";
 import { schoolPolicyCompliance, remindPolicyUsers, complianceCsv } from "@/lib/policy-compliance-school";
+import { recordDownload, csvWithMetadata } from "@/lib/download";
 import { recordAudit } from "@/lib/audit";
 import { handleError, ok } from "@/lib/http";
 
@@ -18,7 +19,8 @@ export async function GET(req: Request, { params }: Params) {
     const data = await schoolPolicyCompliance(params.id);
     if (new URL(req.url).searchParams.get("format") === "csv") {
       await recordAudit({ action: "POLICY_COMPLIANCE_EXPORT", schoolId: params.id, actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "School", targetId: params.id });
-      return new Response(complianceCsv(data), {
+      const meta = await recordDownload(ctx, { section: "Policy compliance", reportName: "Policy compliance", format: "csv", schoolId: params.id });
+      return new Response(csvWithMetadata(meta, complianceCsv(data)), {
         headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="policy-compliance.csv"` },
       });
     }
