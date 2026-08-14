@@ -6,6 +6,7 @@ import { driverScreens } from "@/app/driver";
 import { adminScreens } from "@/app/admin";
 import { studentScreens } from "@/app/student";
 import { Assistant, Inbox, Account } from "@/app/shared";
+import { DirectMessages } from "@/app/dm";
 import ParentCalendarScreen from "@/app/calendar";
 import ParentClubsScreen from "@/app/clubs";
 
@@ -22,15 +23,18 @@ export const SCREENS: Record<RoleKey, Record<string, React.FC>> = {
   },
   teacher: {
     ...teacherScreens,
+    messages: () => <DirectMessages />,
     assistant: () => <Assistant roleKey="teacher" />,
     account: () => <Account roleKey="teacher" />,
   },
   driver: {
     ...driverScreens,
+    messages: () => <DirectMessages />,
     account: () => <Account roleKey="driver" />,
   },
   admin: {
     ...adminScreens,
+    messages: () => <DirectMessages />,
     assistant: () => <Assistant roleKey="admin" />,
     account: () => <Account roleKey="admin" />,
   },

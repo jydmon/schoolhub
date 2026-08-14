@@ -20,6 +20,10 @@ export type AuthContext = {
   // Item 12: effective permission keys per school, preloaded from tenant role
   // customizations. When present for a school, it overrides the built-in map.
   permsBySchool?: Record<string, string[]>;
+  // Account Manager portfolio: the ONLY school ids this platform admin may reach
+  // via tenant-access checks. Undefined = not geo-restricted (owners / other
+  // platform staff). Empty array = an account manager who covers no schools.
+  scopedSchoolIds?: string[];
 };
 
 /** Collect the permission set granted by a list of roles. */
@@ -80,7 +84,13 @@ export function assertCan(ctx: AuthContext, permission: Permission, schoolId?: s
 }
 
 export function isMemberOf(ctx: AuthContext, schoolId: string): boolean {
-  return ctx.isPlatformAdmin || ctx.memberships.some((m) => m.schoolId === schoolId);
+  if (ctx.memberships.some((m) => m.schoolId === schoolId)) return true;
+  if (ctx.isPlatformAdmin) {
+    // Account Managers are restricted to their geographic portfolio; other
+    // platform admins (owners, support, etc.) are not geo-restricted.
+    return ctx.scopedSchoolIds ? ctx.scopedSchoolIds.includes(schoolId) : true;
+  }
+  return false;
 }
 
 export { ROLES, PERMISSIONS };

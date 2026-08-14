@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { recordAudit } from "./audit";
 import { AUDIT } from "./constants";
-import { PLATFORM_ROLES, validateStaff, normalizeAreas, canAccessArea, normalizeScope } from "./platform-staff-logic";
+import { PLATFORM_ROLES, validateStaff, normalizeAreas, canAccessArea, normalizeScope, managerCoversSchool } from "./platform-staff-logic";
 
 // SIPlat internal staff & access management (platform plane, separate from tenant
 // RBAC). Seeds built-in platform roles, lists/creates/updates staff, and answers
@@ -112,6 +112,18 @@ export async function accountManagerScope(userId: string): Promise<{ counties: s
   const s = await prisma.platformStaff.findUnique({ where: { userId } });
   if (!s || s.status !== "active" || s.roleKey !== "account_manager") return null;
   return { counties: safeArr(s.scopeCountiesJson), countries: safeArr(s.scopeCountriesJson) };
+}
+
+/** The concrete set of school ids an Account Manager may access (their portfolio).
+ *  Returns undefined for anyone who is NOT an active account manager — i.e. "not
+ *  geo-restricted" (owners and other platform staff keep full access). An account
+ *  manager whose scope matches nothing gets [] (fail-closed). Loaded into the auth
+ *  context so tenant-access checks stay synchronous. */
+export async function accountManagerScopedSchoolIds(userId: string): Promise<string[] | undefined> {
+  const scope = await accountManagerScope(userId);
+  if (!scope) return undefined;
+  const schools = await prisma.school.findMany({ select: { id: true, county: true, country: true } });
+  return schools.filter((s) => managerCoversSchool(scope, s)).map((s) => s.id);
 }
 
 function safeArr(s?: string | null): string[] {

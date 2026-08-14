@@ -11,6 +11,7 @@ import {
 } from "./auth";
 import type { AuthContext } from "./rbac";
 import { resolveEffectivePermissions } from "./roles";
+import { accountManagerScopedSchoolIds } from "./platform-staff";
 import { markImpersonation } from "./request-context";
 
 // Item 12: preload tenant role customizations into permsBySchool. Guarded so a
@@ -82,6 +83,9 @@ export async function getAuthContext(): Promise<AuthContext | null> {
 
   const memberships = user.memberships.map((m) => ({ schoolId: m.schoolId, role: m.role }));
   const permsBySchool = await loadPermsBySchool(memberships);
+  // Account Managers are limited to their geographic portfolio; resolve the
+  // covered school ids once here so tenant-access checks stay synchronous.
+  const scopedSchoolIds = user.isPlatformAdmin ? await accountManagerScopedSchoolIds(user.id) : undefined;
   return {
     userId: user.id,
     email: user.email,
@@ -89,6 +93,7 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     isPlatformAdmin: user.isPlatformAdmin,
     memberships,
     ...(permsBySchool ? { permsBySchool } : {}),
+    ...(scopedSchoolIds ? { scopedSchoolIds } : {}),
   };
 }
 

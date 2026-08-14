@@ -30,6 +30,7 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
       { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "trips", label: "Trips", icon: "🧭" },
       { key: "reports", label: "Reports", icon: "📝" },
+      { key: "messages", label: "Messages", icon: "💬" },
       { key: "account", label: "Account", icon: "⚙️" },
     ],
   },
@@ -37,6 +38,7 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
     title: "Driver", school: "Northwind Academy", who: "Dan Cole", av: "DC", em: "🚌",
     tabs: [
       { key: "journeys", label: "Journeys", icon: "🚌" },
+      { key: "messages", label: "Messages", icon: "💬" },
       { key: "account", label: "Account", icon: "⚙️" },
     ],
   },
@@ -45,6 +47,7 @@ export const APPS: Record<RoleKey, { title: string; school: string; who: string;
     tabs: [
       { key: "assistant", label: "Assistant", icon: "✨" },
       { key: "operations", label: "Operations", icon: "📊" },
+      { key: "messages", label: "Messages", icon: "💬" },
       { key: "emergency", label: "Emergency", icon: "🚨" },
       { key: "integrations", label: "Links", icon: "🔌" },
       { key: "account", label: "Account", icon: "⚙️" },
