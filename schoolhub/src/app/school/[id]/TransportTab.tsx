@@ -3,22 +3,36 @@
 import { Fragment, useEffect, useState, useCallback } from "react";
 import { useSel, Kebab } from "./EntityKit";
 import ModuleImportCard from "./ModuleImportCard";
-import { TMDriverLogs } from "../../transport/TransportPages";
+import { TMDriverLogs, TMDashboard, TMTravelLogs, TMIncidents, TMDrivers, TMMessages } from "../../transport/TransportPages";
 
+// School Administrators get the full transport service — the same sections a
+// Transport Manager has — surfaced as sub-tabs inside the school portal.
+type TSub = "dashboard" | "control" | "travellogs" | "incidents" | "messages" | "routes" | "vehicles" | "drivers" | "driverlogs" | "profiles" | "fees" | "requests" | "enquiries";
 export default function TransportTab({ schoolId }: { schoolId: string }) {
-  const [sub, setSub] = useState<"control" | "routes" | "vehicles" | "profiles" | "fees" | "requests" | "enquiries" | "driverlogs">("control");
+  const [sub, setSub] = useState<TSub>("dashboard");
+  const go = (k: string) => setSub((k === "fleet" ? "vehicles" : k) as TSub);
+  const TABS: [TSub, string][] = [
+    ["dashboard", "Dashboard"], ["control", "Control centre"], ["travellogs", "Travel logs"], ["incidents", "Incidents"], ["messages", "Driver messages"],
+    ["routes", "Routes"], ["vehicles", "Vehicles"], ["drivers", "Drivers"], ["driverlogs", "Driver logs"], ["profiles", "Student profiles"],
+    ["fees", "Fees & cost"], ["requests", "Requests"], ["enquiries", "Enquiries"],
+  ];
   return (
     <>
       <div className="tabs">
-        {([["control", "Control centre"], ["routes", "Routes"], ["vehicles", "Vehicles"], ["profiles", "Student profiles"], ["driverlogs", "Driver logs"], ["fees", "Fees & cost"], ["requests", "Requests"], ["enquiries", "Enquiries"]] as [any, string][]).map(([k, l]) => (
+        {TABS.map(([k, l]) => (
           <button key={k} className={sub === k ? "active" : ""} onClick={() => setSub(k)}>{l}</button>
         ))}
       </div>
+      {sub === "dashboard" && <TMDashboard schoolId={schoolId} onNavigate={go} />}
       {sub === "control" && <Control schoolId={schoolId} />}
+      {sub === "travellogs" && <TMTravelLogs schoolId={schoolId} />}
+      {sub === "incidents" && <TMIncidents schoolId={schoolId} />}
+      {sub === "messages" && <TMMessages schoolId={schoolId} />}
       {sub === "routes" && <Routes schoolId={schoolId} />}
       {sub === "vehicles" && <><Vehicles schoolId={schoolId} /><ModuleImportCard schoolId={schoolId} type="vehicles" title="Import vehicles" hint="Bulk-add your fleet from a CSV — matched and updated by registration / fleet number." /></>}
-      {sub === "profiles" && <Profiles schoolId={schoolId} />}
+      {sub === "drivers" && <TMDrivers schoolId={schoolId} />}
       {sub === "driverlogs" && <TMDriverLogs schoolId={schoolId} />}
+      {sub === "profiles" && <Profiles schoolId={schoolId} />}
       {sub === "fees" && <Fees schoolId={schoolId} />}
       {sub === "requests" && <Requests schoolId={schoolId} />}
       {sub === "enquiries" && <Enquiries schoolId={schoolId} />}

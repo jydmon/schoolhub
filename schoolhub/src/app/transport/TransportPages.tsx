@@ -485,7 +485,7 @@ export function TMTravelLogs({ schoolId }: { schoolId: string }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td className="mono muted">{r.date}</td><td>{r.session.toUpperCase()}</td><td>{r.route}</td><td>{r.vehicle || "—"}</td><td>{r.driver || "—"}</td>
+                  <td className="mono muted">{r.date}</td><td>{String(r.session ?? "").toUpperCase() || "—"}</td><td>{r.route}</td><td>{r.vehicle || "—"}</td><td>{r.driver || "—"}</td>
                   <td><span className={`badge ${r.status === "completed" ? "active" : r.status === "cancelled" ? "suspended" : "trial"}`}>{r.status}</span></td>
                   <td>{r.boarded}/{r.total}</td><td>{r.absent}</td><td>{r.delayMinutes ? `+${r.delayMinutes}m` : "—"}</td><td>{r.durationMin != null ? `${r.durationMin}m` : "—"}</td>
                 </tr>
