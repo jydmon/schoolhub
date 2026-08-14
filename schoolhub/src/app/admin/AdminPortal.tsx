@@ -211,7 +211,7 @@ export default function AdminPortal({ email = "" }: { email?: string }) {
 }
 
 /* ============================ TENANTS ============================ */
-type School = { id: string; name: string; slug: string; status: string; county?: string | null; country?: string | null; group?: { name: string } | null; subscription?: { status: string; plan: { name: string; key: string } } | null; _count: { memberships: number; students: number; campuses: number } };
+type School = { id: string; name: string; slug: string; status: string; activationStatus?: string | null; accountManagerUserId?: string | null; county?: string | null; country?: string | null; group?: { name: string } | null; subscription?: { id?: string; status: string; approvalMode?: string; approvalStatus?: string; plan: { name: string; key: string } } | null; _count: { memberships: number; students: number; campuses: number } };
 type Group = { id: string; name: string; _count: { schools: number } };
 
 function Tenants() {
@@ -221,6 +221,8 @@ function Tenants() {
   const [form, setForm] = useState({ schoolName: "", slug: "", adminName: "", adminEmail: "", adminPassword: "", planKey: "", groupId: "" });
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; run: () => void }>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailFocus, setDetailFocus] = useState<string | undefined>(undefined);
   // Packages available on the create-tenant form come from the Packages list.
   const plansQ = useJson<any>("/api/plans");
   const planList: any[] = (plansQ.data?.plans ?? []).filter((p: any) => p.isActive !== false);
@@ -257,6 +259,8 @@ function Tenants() {
   async function bulk(status: string) { for (const id of selectedIds) await send(`/api/schools/${id}`, { status }, "PATCH"); load(); }
   function askSuspend(s: School) { setConfirm({ title: `Suspend "${s.name}"?`, message: "This immediately blocks all access for everyone at this school until you reactivate it.", label: "Suspend school", run: () => { setStatus(s.id, "suspended"); setConfirm(null); } }); }
   function askBulkSuspend() { setConfirm({ title: `Suspend ${selectedIds.length} school${selectedIds.length > 1 ? "s" : ""}?`, message: "This immediately blocks all access for everyone at the selected schools until you reactivate them.", label: "Suspend selected", run: () => { bulk("suspended"); setConfirm(null); } }); }
+  function openDetail(sid: string, f?: string) { setDetailId(sid); setDetailFocus(f); }
+  async function approveSub(s: School) { if (!s.subscription?.id) return; try { await send(`/api/platform/subscriptions?id=${encodeURIComponent(s.subscription.id)}`, { type: "school", action: "approve" }); setMsg({ k: "ok", t: "Subscription approved." }); load(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
   const active = schools.filter((s) => s.status === "active").length;
   const suspended = schools.filter((s) => s.status === "suspended").length;
   const shown = mgrF === "all" ? schools
@@ -272,6 +276,8 @@ function Tenants() {
         <div className="stat"><div className="n">{suspended}</div><div className="l">Suspended</div></div>
         <div className="stat"><div className="n">{students}</div><div className="l">Students</div></div>
       </div>
+      {detailId && <SchoolDetail id={detailId} focus={detailFocus} onClose={() => { setDetailId(null); setDetailFocus(undefined); }} onChange={load} />}
+      <PendingActivations schools={schools} onChange={load} />
       <div className="panel">
         <h2>Schools</h2>
         <p className="sub">Every school is an isolated tenant. Select rows to act on several at once. Suspend to block all access instantly.</p>
@@ -300,16 +306,23 @@ function Tenants() {
             {shown.map((s) => { const cov = coveringManagers(s); return (
               <tr key={s.id}>
                 <td className="checkbox-cell"><input type="checkbox" className="rowcheck" checked={!!sel[s.id]} onChange={(e) => setSel({ ...sel, [s.id]: e.target.checked })} aria-label={`Select ${s.name}`} /></td>
-                <td><strong>{s.name}</strong><div className="mono muted">/{s.slug}</div></td>
+                <td><button className="linklike" style={{ textAlign: "left", padding: 0 }} onClick={() => openDetail(s.id)}><strong>{s.name}</strong></button><div className="mono muted">/{s.slug}</div></td>
                 <td>{s.group?.name ?? <span className="muted">—</span>}</td>
                 <td>{s.subscription?.plan?.name ?? <span className="muted">—</span>}</td>
                 <td>{s._count?.memberships ?? 0}</td>
                 <td>{s.subscription?.plan?.key ? <span className="badge role">{s.subscription.plan.key}</span> : <span className="muted">—</span>}</td>
-                <td><span className={`badge ${s.status}`}>{s.status}</span></td>
+                <td><span className={`badge ${s.status}`}>{s.status}</span>{s.activationStatus === "pending" && <span className="badge suspended" style={{ marginLeft: 4 }}>pending activation</span>}</td>
                 <td className="muted">{s.county || <span className="muted">—</span>}</td>
                 <td className="muted">{s.country || <span className="muted">—</span>}</td>
                 {managers.length > 0 && <td className="muted">{cov.length ? cov.map((m) => m.name || m.email).join(", ") : <span className="muted">—</span>}</td>}
-                <td className="right">{s.status === "suspended" ? <button className="secondary small" onClick={() => setStatus(s.id, "active")}>Reactivate</button> : <button className="danger small" onClick={() => askSuspend(s)}>Suspend</button>}</td>
+                <td className="right"><Kebab items={[
+                  { label: "View", onClick: () => openDetail(s.id) },
+                  { label: "Edit", onClick: () => openDetail(s.id, "edit") },
+                  s.status === "suspended" ? { label: "Activate", onClick: () => setStatus(s.id, "active") } : { label: "Suspend", danger: true, onClick: () => askSuspend(s) },
+                  (s.subscription?.approvalMode === "manual" && s.subscription?.approvalStatus !== "approved" && s.subscription?.id) ? { label: "Approve Subscription Request", onClick: () => approveSub(s) } : null,
+                  { label: "Assign Account Manager", onClick: () => openDetail(s.id, "manager") },
+                  { label: "View Audit History", onClick: () => openDetail(s.id, "audit") },
+                ]} /></td>
               </tr>
             ); })}
             {shown.length === 0 && <Empty cols={managers.length > 0 ? 11 : 10} text={schools.length === 0 ? "No tenants yet — onboard one below." : "No schools match this filter."} />}
@@ -339,6 +352,192 @@ function Tenants() {
         </form>
       </div>
     </>
+  );
+}
+
+/* ==================== SCHOOL DETAIL (super-admin) ==================== */
+const PROFILE_KEYS: [string, string][] = [["name", "School name"], ["contactName", "Main contact"], ["contactEmail", "School email"], ["contactPhone", "School phone"], ["addressLine1", "Building"], ["addressLine2", "Street"], ["city", "Town / City"], ["county", "County / State"], ["postcode", "Postcode"], ["country", "Country"], ["headTeacher", "Head teacher"], ["headTeacherEmail", "Head teacher email"], ["headTeacherPhone", "Head teacher phone"]];
+function SchoolDetail({ id, focus, onClose, onChange }: { id: string; focus?: string; onClose: () => void; onChange: () => void }) {
+  const { data, err, reload } = useJson<any>(`/api/schools/${id}/overview`);
+  const [edit, setEdit] = useState<any | null>(null);
+  const [mgr, setMgr] = useState<string>("");
+  const [just, setJust] = useState("");
+  const [audit, setAudit] = useState<any[] | null>(null);
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const s = data?.school, sub = data?.subscription, stats = data?.stats, comp = data?.compliance;
+  const tickets: any[] = data?.tickets || [], managers: any[] = data?.managers || [], assigned = data?.assignedManager;
+
+  const loadAudit = useCallback(async () => { try { const d = await fetch(`/api/schools/${id}/audit`).then((r) => r.json()); setAudit(d.entries || []); } catch { setAudit([]); } }, [id]);
+  useEffect(() => {
+    if (!s) return;
+    setMgr(s.accountManagerUserId || "");
+    if (focus === "audit") loadAudit();
+    if (focus === "edit") setEdit(Object.fromEntries(PROFILE_KEYS.map(([k]) => [k, s[k] || ""])));
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function patch(body: any, okMsg: string) {
+    setMsg(null);
+    try { const r = await fetch(`/api/schools/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok || d.error) throw new Error(d.error || "Failed"); setMsg({ k: "ok", t: okMsg }); reload(); onChange(); return true; }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); return false; }
+  }
+  async function approveSub() { if (!sub?.id) return; setMsg(null); try { await send(`/api/platform/subscriptions?id=${encodeURIComponent(sub.id)}`, { type: "school", action: "approve" }); setMsg({ k: "ok", t: "Subscription approved." }); reload(); onChange(); } catch (e: any) { setMsg({ k: "err", t: e.message }); } }
+  async function manualActivate() {
+    if (just.trim().length < 5) return; setMsg(null);
+    try { const r = await fetch(`/api/schools/${id}/activation`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "manual_activate", justification: just.trim() }) }); const d = await r.json(); if (!r.ok || d.error) throw new Error(d.error || "Failed"); setMsg({ k: "ok", t: "Account activated." }); setJust(""); reload(); onChange(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+
+  return (
+    <div className="panel" style={{ borderColor: "#c7d2fe", borderWidth: 2 }}>
+      <div className="flex-between"><h2 style={{ margin: 0 }}>{s ? s.name : "School"}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
+      {err && <Notice msg={{ k: "err", t: err }} />}
+      {msg && <Notice msg={msg} />}
+      {!data ? <p className="muted">Loading…</p> : (
+        <>
+          <div className="mono muted" style={{ fontSize: 12 }}>/{s.slug} · created {new Date(s.createdAt).toLocaleDateString()}{s.trustName ? ` · Trust: ${s.trustName}` : ""}</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0" }}>
+            <span className={`badge ${s.status}`}>{s.status}</span>
+            <span className={`badge ${s.activationStatus === "pending" ? "suspended" : "active"}`}>{s.activationStatus === "pending" ? "pending activation" : "activated"}</span>
+            {sub && <span className="badge role">{sub.planName || sub.planKey}</span>}
+            {sub?.needsApproval && <span className="badge trial">subscription approval pending</span>}
+          </div>
+
+          <div className="stat-grid" style={{ margin: "10px 0" }}>
+            <div className="stat"><div className="n">{stats?.users ?? 0}</div><div className="l">Users</div></div>
+            <div className="stat"><div className="n">{stats?.students ?? 0}</div><div className="l">Students</div></div>
+            <div className="stat"><div className="n">{comp ? `${comp.avgReadRate}%` : "—"}</div><div className="l">Policy read rate</div></div>
+            <div className="stat"><div className="n">{comp?.usersWithOutstanding ?? 0}</div><div className="l">Policy outstanding</div></div>
+          </div>
+
+          {/* Account Manager assignment */}
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+            <h4 style={{ margin: "0 0 6px" }}>Account Manager</h4>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{assigned ? `${assigned.name} (${assigned.source === "assigned" ? "explicitly assigned" : "by geography"})` : "No Account Manager covers this school yet."}</div>
+            <div className="row">
+              <div style={{ flex: 2 }}><select value={mgr} onChange={(e) => setMgr(e.target.value)}><option value="">— unassigned (use geography) —</option>{managers.map((m) => <option key={m.userId} value={m.userId}>{m.name}</option>)}</select></div>
+              <div style={{ display: "flex", alignItems: "flex-end" }}><button className="secondary small" onClick={() => patch({ accountManagerUserId: mgr || null }, "Account Manager updated.")}>Assign</button></div>
+            </div>
+          </div>
+
+          {/* Subscription */}
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
+            <h4 style={{ margin: "0 0 6px" }}>Subscription &amp; package</h4>
+            {sub ? <div className="muted" style={{ fontSize: 13 }}>{sub.planName} ({sub.planKey}) · {sub.status} · renews {sub.renewalDate ? new Date(sub.renewalDate).toLocaleDateString() : "—"} · approval {sub.approvalMode}/{sub.approvalStatus}</div> : <p className="muted">No subscription.</p>}
+            {sub?.needsApproval && <button className="small" style={{ marginTop: 8 }} onClick={approveSub}>Approve subscription request</button>}
+          </div>
+
+          {/* Status / activation actions */}
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
+            <h4 style={{ margin: "0 0 6px" }}>Status &amp; activation</h4>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {s.status === "suspended" ? <button className="secondary small" onClick={() => patch({ status: "active" }, "Reactivated.")}>Activate (reactivate)</button> : <button className="danger small" onClick={() => patch({ status: "suspended" }, "Suspended.")}>Suspend</button>}
+            </div>
+            {s.activationStatus === "pending" && (
+              <div className="row" style={{ marginTop: 8 }}>
+                <div style={{ flex: 3 }}><input value={just} onChange={(e) => setJust(e.target.value)} placeholder="Business justification to activate without proof of payment" /></div>
+                <div style={{ display: "flex", alignItems: "flex-end" }}><button disabled={just.trim().length < 5} onClick={manualActivate}>Activate account</button></div>
+              </div>
+            )}
+          </div>
+
+          {/* Support tickets */}
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
+            <h4 style={{ margin: "0 0 6px" }}>Support tickets ({tickets.length})</h4>
+            {tickets.length === 0 ? <p className="muted" style={{ fontSize: 13 }}>No support tickets.</p> : (
+              <table><thead><tr><th>Ref</th><th>Subject</th><th>Priority</th><th>Status</th><th>Raised</th></tr></thead>
+                <tbody>{tickets.slice(0, 10).map((t) => <tr key={t.id}><td className="mono">{t.reference || "—"}</td><td>{t.subject}{t.escalated ? <span className="badge suspended" style={{ marginLeft: 4 }}>escalated</span> : null}</td><td>{t.priority}</td><td><span className="badge role">{t.status}</span></td><td className="muted">{new Date(t.createdAt).toLocaleDateString()}</td></tr>)}</tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Profile (view / edit) */}
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
+            <div className="flex-between"><h4 style={{ margin: 0 }}>School profile</h4>{!edit ? <button className="secondary small" onClick={() => setEdit(Object.fromEntries(PROFILE_KEYS.map(([k]) => [k, s[k] || ""])))}>Edit</button> : <button className="secondary small" onClick={() => setEdit(null)}>Cancel</button>}</div>
+            {!edit ? (
+              <table style={{ marginTop: 6 }}><tbody>{PROFILE_KEYS.map(([k, label]) => <tr key={k}><td className="muted" style={{ width: 160 }}>{label}</td><td>{s[k] || <span className="muted">—</span>}</td></tr>)}</tbody></table>
+            ) : (
+              <div style={{ marginTop: 6 }}>
+                {PROFILE_KEYS.map(([k, label]) => <div key={k} style={{ marginBottom: 6 }}><label style={{ fontSize: 12 }}>{label}</label><input value={edit[k] || ""} onChange={(e) => setEdit({ ...edit, [k]: e.target.value })} /></div>)}
+                <button style={{ marginTop: 8 }} onClick={async () => { if (await patch({ profile: edit }, "Profile updated.")) setEdit(null); }}>Save profile</button>
+              </div>
+            )}
+          </div>
+
+          {/* Audit history */}
+          <div style={{ borderTop: "1px solid var(--line)", paddingTop: 10, marginTop: 10 }}>
+            <div className="flex-between"><h4 style={{ margin: 0 }}>Audit history</h4>{audit === null ? <button className="secondary small" onClick={loadAudit}>View audit history</button> : null}</div>
+            {audit && (audit.length === 0 ? <p className="muted" style={{ fontSize: 13 }}>No audit entries.</p> : (
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12, maxHeight: 220, overflowY: "auto" }}>
+                {audit.map((a) => <li key={a.id} className="muted">{new Date(a.createdAt).toLocaleString()} — <strong>{a.action}</strong>{a.actorEmail ? ` by ${a.actorEmail}` : ""}{a.targetType ? ` (${a.targetType})` : ""}</li>)}
+              </ul>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ==================== PENDING ACTIVATIONS (commercial) ==================== */
+function PendingActivations({ schools, onChange }: { schools: School[]; onChange: () => void }) {
+  const pending = schools.filter((s) => s.activationStatus === "pending");
+  const [open, setOpen] = useState<string | null>(null);
+  const [detail, setDetail] = useState<any>(null);
+  const [just, setJust] = useState("");
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const load = useCallback(async (id: string) => { setDetail(null); try { setDetail(await fetch(`/api/schools/${id}/activation`).then((r) => r.json())); } catch { /* ignore */ } }, []);
+  function toggle(id: string) { if (open === id) { setOpen(null); setDetail(null); } else { setOpen(id); setJust(""); setMsg(null); load(id); } }
+  async function act(id: string, body: any) {
+    setMsg(null);
+    try { const r = await fetch(`/api/schools/${id}/activation`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!r.ok || d.error) throw new Error(d.error || "Failed"); setMsg({ k: "ok", t: "Done." }); load(id); onChange(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  if (pending.length === 0) return null;
+  return (
+    <div className="panel">
+      <h2>Pending activations <span className="badge suspended">{pending.length}</span></h2>
+      <p className="sub">Schools awaiting activation. Review the submitted invoice / proof of payment and approve to activate, or activate manually with a recorded business justification.</p>
+      {msg && <Notice msg={msg} />}
+      {pending.map((s) => (
+        <div key={s.id} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, marginTop: 10 }}>
+          <div className="flex-between">
+            <div><strong>{s.name}</strong> <span className="mono muted">/{s.slug}</span><div className="muted" style={{ fontSize: 12 }}>{s.subscription?.plan?.name || "—"} · {s._count?.memberships ?? 0} users</div></div>
+            <button className="secondary small" onClick={() => toggle(s.id)}>{open === s.id ? "Close" : "Review"}</button>
+          </div>
+          {open === s.id && (
+            <div style={{ marginTop: 10 }}>
+              {!detail ? <p className="muted">Loading…</p> : (
+                <>
+                  <h4 style={{ margin: "6px 0" }}>Submitted invoices / proof of payment</h4>
+                  {(detail.payments || []).length === 0 ? <p className="muted" style={{ fontSize: 13 }}>Nothing submitted yet — you can still activate manually below.</p> : (
+                    <table><thead><tr><th>File</th><th>Note</th><th>Status</th><th className="right">Actions</th></tr></thead>
+                      <tbody>{detail.payments.map((p: any) => (
+                        <tr key={p.id}>
+                          <td><a className="linklike" href={p.fileDataUrl} download={p.fileName}>📎 {p.fileName}</a></td>
+                          <td className="muted">{p.note || "—"}</td>
+                          <td><span className={`badge ${p.status === "approved" ? "active" : p.status === "rejected" ? "suspended" : "trial"}`}>{p.status}</span></td>
+                          <td className="right">{p.status === "submitted" ? <><button className="small" onClick={() => act(s.id, { action: "approve_payment", paymentId: p.id })}>Approve &amp; activate</button>{" "}<button className="danger small" onClick={() => act(s.id, { action: "reject_payment", paymentId: p.id })}>Reject</button></> : <span className="muted">—</span>}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  )}
+                  <h4 style={{ margin: "12px 0 6px" }}>Manual activation</h4>
+                  <p className="muted" style={{ fontSize: 12 }}>Activate without proof of payment. A business justification is required and recorded in the audit trail and activation history.</p>
+                  <div className="row">
+                    <div style={{ flex: 3 }}><input value={just} onChange={(e) => setJust(e.target.value)} placeholder="Business justification (required)" /></div>
+                    <div style={{ display: "flex", alignItems: "flex-end" }}><button disabled={just.trim().length < 5} onClick={() => act(s.id, { action: "manual_activate", justification: just.trim() })}>Activate manually</button></div>
+                  </div>
+                  {(detail.history || []).length > 0 && (
+                    <><h4 style={{ margin: "12px 0 6px" }}>Activation history</h4>
+                    <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>{detail.history.map((h: any) => <li key={h.id} className="muted">{new Date(h.createdAt).toLocaleString()} — {h.type} ({h.method}){h.actorEmail ? ` by ${h.actorEmail}` : ""}{h.justification ? ` · “${h.justification}”` : ""}</li>)}</ul></>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -519,6 +718,7 @@ function Subscriptions() {
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
   return (
+    <>
     <div className="panel">
       <h2>Subscriptions</h2>
       <p className="sub">School and parent subscriptions, renewal reminders, and manual-approval overrides for held renewals.</p>
@@ -552,6 +752,147 @@ function Subscriptions() {
         </tbody>
       </table>
     </div>
+    <PurchaseOrders />
+    </>
+  );
+}
+
+/* ============================ PURCHASE ORDERS ============================ */
+function poMoney(pence: number): string {
+  const v = (Math.round(pence || 0) / 100).toFixed(2);
+  const [int, dec] = v.split("."); return `£${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${dec}`;
+}
+function PurchaseOrders() {
+  const { data, reload } = useJson<any>("/api/platform/purchase-orders");
+  const plansQ = useJson<any>("/api/plans");
+  const plans: any[] = (plansQ.data?.plans ?? []).filter((p: any) => p.isActive !== false);
+  const orders: any[] = data?.orders ?? [];
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [form, setForm] = useState<any>({ schoolName: "", planKey: "", userQuantity: "", termYears: "1", discountPct: "0", notes: "" });
+  const [view, setView] = useState<any | null>(null);
+  const [edit, setEdit] = useState<any | null>(null);
+  const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; run: () => void }>(null);
+  useEffect(() => { if (plans.length && !plans.some((p) => p.key === form.planKey)) setForm((f: any) => ({ ...f, planKey: plans[0]?.key || "" })); }, [plansQ.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const plan = plans.find((p) => p.key === form.planKey);
+  const unit = plan?.pricePerSchool ?? 0;
+  const term = Math.max(1, parseInt(form.termYears || "1", 10) || 1);
+  const pct = Math.min(100, Math.max(0, parseFloat(form.discountPct || "0") || 0));
+  const gross = unit * term; const disc = Math.round(gross * (pct / 100)); const finalCost = Math.max(0, gross - disc);
+
+  async function generate(e: React.FormEvent) {
+    e.preventDefault(); setMsg(null);
+    if (!form.schoolName.trim() || !form.planKey) { setMsg({ k: "err", t: "School name and plan are required." }); return; }
+    try {
+      await send("/api/platform/purchase-orders", { schoolName: form.schoolName.trim(), planKey: form.planKey, userQuantity: parseInt(form.userQuantity || "0", 10) || 0, termYears: term, discountPct: pct, notes: form.notes.trim() || undefined });
+      setMsg({ k: "ok", t: "Purchase Order generated." }); setForm({ schoolName: "", planKey: plans[0]?.key || "", userQuantity: "", termYears: "1", discountPct: "0", notes: "" }); reload();
+    } catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+  async function act(po: any, action: string) {
+    setMsg(null);
+    try { await send(`/api/platform/purchase-orders/${po.id}`, { action }, "PATCH"); setMsg({ k: "ok", t: `PO ${action}.` }); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+    finally { setConfirm(null); }
+  }
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    try { await send(`/api/platform/purchase-orders/${edit.id}`, { schoolName: edit.schoolName, planKey: edit.planKey, userQuantity: parseInt(edit.userQuantity || "0", 10) || 0, termYears: Math.max(1, parseInt(edit.termYears || "1", 10) || 1), discountPct: Math.min(100, Math.max(0, parseFloat(edit.discountPct || "0") || 0)), notes: edit.notes || undefined }, "PATCH"); setMsg({ k: "ok", t: "PO updated." }); setEdit(null); reload(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); }
+  }
+
+  return (
+    <>
+      <ConfirmDialog open={!!confirm} title={confirm?.title || ""} message={confirm?.message || ""} confirmLabel={confirm?.label || "Confirm"} danger onConfirm={() => confirm?.run()} onCancel={() => setConfirm(null)} />
+      <div className="panel">
+        <h2>Purchase Orders</h2>
+        <p className="sub">Generate a Purchase Order from a subscription plan. Cost is the per-school annual price × term, less any approved discount. All actions are audited.</p>
+        <Notice msg={msg} />
+        <table>
+          <thead><tr><th>Reference</th><th>School</th><th>Plan</th><th>Term</th><th>Discount</th><th>Final cost</th><th>Status</th><th className="right">Actions</th></tr></thead>
+          <tbody>
+            {orders.map((o) => (
+              <tr key={o.id}>
+                <td className="mono">{o.reference}</td>
+                <td>{o.schoolName}</td>
+                <td>{o.planName}<div className="mono muted" style={{ fontSize: 11 }}>{o.packageType}</div></td>
+                <td>{o.termYears}y</td>
+                <td>{o.discountPct ? `${o.discountPct}%` : "—"}</td>
+                <td><strong>{poMoney(o.finalCost)}</strong></td>
+                <td><span className={`badge ${o.status === "cancelled" ? "suspended" : o.status === "sent" ? "role" : o.status === "accepted" ? "active" : "trial"}`}>{o.status}</span></td>
+                <td className="right"><Kebab items={[
+                  { label: "View", onClick: () => setView(o) },
+                  (o.status === "draft" || o.status === "sent") ? { label: "Edit", onClick: () => setEdit({ ...o, userQuantity: String(o.userQuantity), termYears: String(o.termYears), discountPct: String(o.discountPct) }) } : null,
+                  o.status === "draft" ? { label: "Send", onClick: () => act(o, "send") } : null,
+                  o.status === "sent" ? { label: "Resend", onClick: () => act(o, "resend") } : null,
+                  o.status !== "cancelled" ? { label: "Cancel", danger: true, onClick: () => setConfirm({ title: `Cancel ${o.reference}?`, message: "The Purchase Order will be marked cancelled.", label: "Cancel PO", run: () => act(o, "cancel") }) } : null,
+                  { label: "Download PDF", onClick: () => window.open(`/api/platform/purchase-orders/${o.id}/pdf`, "_blank") },
+                ]} /></td>
+              </tr>
+            ))}
+            {orders.length === 0 && <Empty cols={8} text="No Purchase Orders yet — generate one below." />}
+          </tbody>
+        </table>
+      </div>
+
+      {view && (
+        <div className="panel" style={{ background: "#f8fafc" }}>
+          <div className="flex-between"><h2 style={{ margin: 0 }}>PO {view.reference}</h2><button className="secondary small" onClick={() => setView(null)}>Close</button></div>
+          <table style={{ marginTop: 10 }}><tbody>
+            <tr><td className="muted">School / Tenant</td><td>{view.schoolName}</td></tr>
+            <tr><td className="muted">Plan</td><td>{view.planName} <span className="mono muted">({view.packageType})</span></td></tr>
+            <tr><td className="muted">User quantity</td><td>{view.userQuantity}</td></tr>
+            <tr><td className="muted">Term</td><td>{view.termYears} year(s)</td></tr>
+            <tr><td className="muted">Unit price (per school / yr)</td><td>{poMoney(view.unitPrice)}</td></tr>
+            <tr><td className="muted">Subtotal</td><td>{poMoney(view.unitPrice * view.termYears)}</td></tr>
+            <tr><td className="muted">Discount</td><td>{view.discountPct ? `${view.discountPct}% (−${poMoney(view.discountAmount)})` : "—"}</td></tr>
+            <tr><td className="muted">Final cost</td><td><strong>{poMoney(view.finalCost)}</strong></td></tr>
+            <tr><td className="muted">Status</td><td><span className="badge role">{view.status}</span></td></tr>
+            {view.notes ? <tr><td className="muted">Notes</td><td>{view.notes}</td></tr> : null}
+          </tbody></table>
+          <a href={`/api/platform/purchase-orders/${view.id}/pdf`} target="_blank" rel="noreferrer"><button className="secondary small" style={{ marginTop: 10 }}>Download PDF</button></a>
+        </div>
+      )}
+
+      {edit && (
+        <div className="panel" style={{ background: "#f8fafc" }}>
+          <div className="flex-between"><h2 style={{ margin: 0 }}>Edit {edit.reference}</h2><button className="secondary small" onClick={() => setEdit(null)}>Close</button></div>
+          <form onSubmit={saveEdit}>
+            <div className="row">
+              <div style={{ flex: 2 }}><label>School / Tenant name</label><input value={edit.schoolName} onChange={(e) => setEdit({ ...edit, schoolName: e.target.value })} required /></div>
+              <div><label>Plan</label><select value={edit.planKey} onChange={(e) => setEdit({ ...edit, planKey: e.target.value })}>{plans.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}</select></div>
+            </div>
+            <div className="row">
+              <div><label>User quantity</label><input type="number" min={0} value={edit.userQuantity} onChange={(e) => setEdit({ ...edit, userQuantity: e.target.value })} /></div>
+              <div><label>Term (years)</label><input type="number" min={1} max={20} value={edit.termYears} onChange={(e) => setEdit({ ...edit, termYears: e.target.value })} /></div>
+              <div><label>Discount %</label><input type="number" min={0} max={100} step="0.5" value={edit.discountPct} onChange={(e) => setEdit({ ...edit, discountPct: e.target.value })} /></div>
+            </div>
+            <div><label>Notes</label><input value={edit.notes || ""} onChange={(e) => setEdit({ ...edit, notes: e.target.value })} /></div>
+            <button type="submit" style={{ marginTop: 12 }}>Save changes</button>
+          </form>
+        </div>
+      )}
+
+      <div className="panel">
+        <h2>Generate a Purchase Order</h2>
+        <p className="sub">Discount is optional and recalculates the total live. Once generated you can send it to the tenant, download a PDF, or edit it.</p>
+        <form onSubmit={generate}>
+          <div className="row">
+            <div style={{ flex: 2 }}><label>School / Tenant name</label><input value={form.schoolName} onChange={(e) => setForm({ ...form, schoolName: e.target.value })} placeholder="e.g. Northwind Academy" required /></div>
+            <div><label>Plan (package)</label><select value={form.planKey} onChange={(e) => setForm({ ...form, planKey: e.target.value })} required>{plans.length === 0 && <option value="">— create a plan first —</option>}{plans.map((p) => <option key={p.key} value={p.key}>{p.name}{p.pricePerSchool ? ` — ${poMoney(p.pricePerSchool)}/yr` : ""}</option>)}</select></div>
+          </div>
+          <div className="row">
+            <div><label>User quantity</label><input type="number" min={0} value={form.userQuantity} onChange={(e) => setForm({ ...form, userQuantity: e.target.value })} placeholder="e.g. 250" /></div>
+            <div><label>Term (years)</label><input type="number" min={1} max={20} value={form.termYears} onChange={(e) => setForm({ ...form, termYears: e.target.value })} /></div>
+            <div><label>Discount %</label><input type="number" min={0} max={100} step="0.5" value={form.discountPct} onChange={(e) => setForm({ ...form, discountPct: e.target.value })} /></div>
+          </div>
+          <div><label>Notes (optional)</label><input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
+          <div className="notice info" style={{ marginTop: 10 }}>
+            Subtotal {poMoney(gross)} {pct > 0 ? <>· discount −{poMoney(disc)} ({pct}%)</> : null} · <strong>Final cost {poMoney(finalCost)}</strong>
+          </div>
+          <button type="submit" style={{ marginTop: 12 }} disabled={!plans.length}>Generate Purchase Order</button>
+        </form>
+      </div>
+    </>
   );
 }
 

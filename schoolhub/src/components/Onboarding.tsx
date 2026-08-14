@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { TERMS_TITLE, TERMS_BODY } from "@/lib/terms";
 import { downscaleToDataUrl } from "@/components/image";
 
-type St = { mustChangePassword: boolean; termsAccepted: boolean; tourDismissed: boolean; needsProfile?: boolean; profileSchoolId?: string | null; profile?: any } | null;
+type St = { mustChangePassword: boolean; termsAccepted: boolean; tourDismissed: boolean; needsProfile?: boolean; profileSchoolId?: string | null; profile?: any; activation?: any } | null;
 
 const PROFILE_REQUIRED = ["name", "contactEmail", "contactPhone", "contactName", "addressLine1", "addressLine2", "city", "county", "postcode", "country", "headTeacher", "headTeacherEmail", "headTeacherPhone"];
 
@@ -30,6 +30,8 @@ export default function Onboarding() {
   const [polsClosed, setPolsClosed] = useState(false); // reminder dismissed for this session
   const [viewId, setViewId] = useState<string | null>(null);
   const [prof, setProf] = useState<any>(null); // school-profile working copy
+  const [invFile, setInvFile] = useState<any>(null); // invoice / proof of payment
+  const [invNote, setInvNote] = useState("");
 
   // Seed the profile form from the loaded state when the step becomes relevant.
   useEffect(() => {
@@ -79,6 +81,17 @@ export default function Onboarding() {
   }
   async function acceptTerms() { if (await act("accept_terms")) refresh(); }
   async function dismissTour() { await act("dismiss_tour"); setSt((s) => (s ? { ...s, tourDismissed: true } : s)); }
+  async function pickInvoice(file: File) {
+    setMsg("");
+    try {
+      if (file.type.startsWith("image/")) { setInvFile({ name: file.name, type: file.type, dataUrl: await downscaleToDataUrl(file, 1600, 0.8) }); }
+      else { const url = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(file); }); setInvFile({ name: file.name, type: file.type || "application/octet-stream", dataUrl: url }); }
+    } catch { setMsg("Couldn't read that file."); }
+  }
+  async function submitPayment() {
+    if (!invFile || !st?.activation?.schoolId) { setMsg("Please attach your invoice or proof of payment."); return; }
+    if (await act("submit_payment", { schoolId: st.activation.schoolId, file: invFile, note: invNote.trim() || undefined })) { setInvFile(null); setInvNote(""); refresh(); }
+  }
 
   if (!loaded || !st) return null;
 
@@ -162,6 +175,41 @@ export default function Onboarding() {
         </div>
         <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
           <button disabled={busy} onClick={saveProfile}>{busy ? "Saving…" : "Save & continue"}</button>
+        </div>
+      </Overlay>
+    );
+  }
+
+  // 2c) Account activation gate (blocking). After Terms + profile, the admin
+  // uploads an invoice / proof of payment; then the account waits for an Account
+  // Manager / Super Admin to activate it. All users of a pending school are gated.
+  if (st.activation && st.activation.status !== "activated") {
+    const a = st.activation;
+    const canUpload = a.isAdmin && (!a.paymentSubmitted || a.paymentStatus === "rejected");
+    if (canUpload) {
+      return (
+        <Overlay wide>
+          <h2 style={{ margin: 0 }}>Upload your invoice or proof of payment</h2>
+          <p className="sub">Your Terms and school profile are complete. To activate your account, upload your invoice or proof of payment. An Account Manager will review it and activate your account.</p>
+          {a.paymentStatus === "rejected" && <div className="notice err">Your previous submission wasn&apos;t approved. Please re-upload your invoice or proof of payment.</div>}
+          {msg && <div className="notice err">{msg}</div>}
+          <label>Invoice / proof of payment (PDF or image)</label>
+          <input type="file" accept="image/*,.pdf" onChange={(e) => { const f = e.target.files?.[0]; if (f) pickInvoice(f); }} />
+          {invFile && <div className="notice ok" style={{ marginTop: 8 }}>📎 {invFile.name} — ready to submit</div>}
+          <label style={{ marginTop: 10 }}>Note (optional)</label>
+          <input value={invNote} onChange={(e) => setInvNote(e.target.value)} placeholder="e.g. payment reference or PO number" />
+          <button style={{ marginTop: 14 }} disabled={busy || !invFile} onClick={submitPayment}>{busy ? "Submitting…" : "Submit for review"}</button>
+        </Overlay>
+      );
+    }
+    return (
+      <Overlay>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 40 }}>⏳</div>
+          <h2 style={{ margin: "6px 0" }}>Account Pending Activation</h2>
+          <p className="sub">{a.isAdmin
+            ? "Thank you — your invoice has been submitted. Your account is pending activation by an Account Manager. You'll receive an email as soon as it's active."
+            : `${a.schoolName || "Your school"} is being set up and is pending activation. You'll be able to access the platform once it has been activated.`}</p>
         </div>
       </Overlay>
     );

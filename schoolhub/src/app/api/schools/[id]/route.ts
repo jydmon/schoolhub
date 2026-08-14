@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { requireAuth, requirePlatformAdmin } from "@/lib/session";
 import { getTenantSchool } from "@/lib/tenant";
-import { setTenantStatusSchema } from "@/lib/validation";
+import { adminSchoolPatchSchema } from "@/lib/validation";
 import { recordAudit } from "@/lib/audit";
 import { AUDIT } from "@/lib/constants";
 import { accountManagerScope } from "@/lib/platform-staff";
@@ -34,41 +34,29 @@ export async function GET(_req: Request, { params }: Params) {
 export async function PATCH(req: Request, { params }: Params) {
   try {
     const ctx = await requirePlatformAdmin();
-    const { status } = setTenantStatusSchema.parse(await req.json());
+    const b = adminSchoolPatchSchema.parse(await req.json());
     const before = await prisma.school.findUnique({ where: { id: params.id } });
     if (!before) return ok({ error: "Not found" }, 404);
     // An Account Manager can only act on schools inside their portfolio.
     const scope = await accountManagerScope(ctx.userId);
     if (scope && !managerCoversSchool(scope, before)) return ok({ error: "This school is outside your assigned area." }, 403);
 
-    const school = await prisma.school.update({
-      where: { id: params.id },
-      data: { status },
-    });
+    // Profile edit and/or Account Manager assignment.
+    const data: Record<string, unknown> = {};
+    if (b.profile) for (const [k, v] of Object.entries(b.profile)) if (v !== undefined) data[k] = String(v).trim() || null;
+    if (b.accountManagerUserId !== undefined) data.accountManagerUserId = b.accountManagerUserId || null;
+    if (b.status) data.status = b.status;
+    if (Object.keys(data).length === 0) return ok({ error: "Nothing to update" }, 400);
+
+    const school = await prisma.school.update({ where: { id: params.id }, data });
 
     // Keep the subscription in step when suspending/reactivating.
-    if (status === "suspended") {
-      await prisma.subscription.updateMany({
-        where: { schoolId: params.id },
-        data: { status: "suspended" },
-      });
-    } else if (status === "active") {
-      await prisma.subscription.updateMany({
-        where: { schoolId: params.id },
-        data: { status: "active" },
-      });
-    }
+    if (b.status === "suspended") await prisma.subscription.updateMany({ where: { schoolId: params.id }, data: { status: "suspended" } });
+    else if (b.status === "active") await prisma.subscription.updateMany({ where: { schoolId: params.id }, data: { status: "active" } });
 
-    await recordAudit({
-      action: status === "suspended" ? AUDIT.TENANT_SUSPENDED : AUDIT.TENANT_REACTIVATED,
-      schoolId: params.id,
-      actorUserId: ctx.userId,
-      actorEmail: ctx.email,
-      targetType: "School",
-      targetId: params.id,
-      ip: clientIp(req),
-      metadata: { from: before.status, to: status },
-    });
+    if (b.status) await recordAudit({ action: b.status === "suspended" ? AUDIT.TENANT_SUSPENDED : AUDIT.TENANT_REACTIVATED, schoolId: params.id, actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "School", targetId: params.id, ip: clientIp(req), metadata: { from: before.status, to: b.status } });
+    if (b.profile) await recordAudit({ action: AUDIT.DATA_CHANGE, schoolId: params.id, actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "School", targetId: params.id, metadata: { edited: Object.keys(b.profile) } });
+    if (b.accountManagerUserId !== undefined) await recordAudit({ action: AUDIT.STAFF_UPDATED, schoolId: params.id, actorUserId: ctx.userId, actorEmail: ctx.email, targetType: "School", targetId: params.id, metadata: { accountManagerUserId: b.accountManagerUserId || null, action: "assign_account_manager" } });
 
     return ok({ school });
   } catch (err) {

@@ -69,6 +69,15 @@ model School {
   headTeacherPhone String?
   // Onboarding: set once the School Administrator completes the mandatory profile.
   profileCompletedAt DateTime?
+  // Account activation gate (commercial onboarding). Defaults to "activated" so
+  // existing tenants are grandfathered; new tenants created via the PO/onboarding
+  // flow are set to "pending" and blocked until an AM/Super-Admin activates them.
+  activationStatus   String   @default("activated") // pending | activated
+  activatedAt        DateTime?
+  activatedByUserId  String?
+  // Explicit Account Manager assignment (overrides geographic coverage). Null =
+  // covered by geography only (county/country scope).
+  accountManagerUserId String?
 
   groupId String?
   group   SchoolGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
@@ -504,6 +513,77 @@ model Subscription {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ----------------------------------------------------------------------------
+// Commercial management — Purchase Orders, payment submissions, activation
+// (scalar-id + index pattern; schoolId may be null before the tenant exists)
+// ----------------------------------------------------------------------------
+
+/// A Purchase Order generated for a tenant from a subscription plan. Cost =
+/// unitPrice (per-school annual) × termYears − discount.
+model PurchaseOrder {
+  id            String  @id @default(cuid())
+  reference     String  @unique // system-generated, e.g. PO-2026-0007
+  schoolId      String?
+  schoolName    String
+  planId        String?
+  planKey       String
+  planName      String
+  packageType   String
+  userQuantity  Int     @default(0)
+  termYears     Int     @default(1)
+  unitPrice     Int     @default(0) // per-school annual price (pence)
+  discountPct   Float   @default(0) // optional discount, 0–100
+  discountAmount Int    @default(0) // computed discount (pence)
+  finalCost     Int     @default(0) // computed total (pence)
+  currency      String  @default("GBP")
+  status        String  @default("draft") // draft | sent | cancelled | accepted
+  notes         String?
+  createdById   String?
+  sentAt        DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// An invoice / proof-of-payment uploaded by a Tenant Administrator, reviewed by
+/// an Account Manager or Super Administrator.
+model PaymentSubmission {
+  id              String  @id @default(cuid())
+  schoolId        String
+  purchaseOrderId String?
+  fileName        String
+  fileType        String
+  fileDataUrl     String  // inline data URL (invoice PDF/image)
+  amount          Int?    // claimed amount (pence)
+  note            String?
+  status          String  @default("submitted") // submitted | approved | rejected
+  submittedById   String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  reviewNote      String?
+  createdAt       DateTime @default(now())
+
+  @@index([schoolId])
+  @@index([status])
+}
+
+/// Activation history for a tenant (payment-based or manual). Manual activations
+/// capture a business justification.
+model ActivationEvent {
+  id            String  @id @default(cuid())
+  schoolId      String
+  type          String  // payment_approved | manual | reactivated
+  method        String  // invoice | manual
+  justification String?
+  actorUserId   String?
+  actorEmail    String?
+  createdAt     DateTime @default(now())
+
+  @@index([schoolId])
 }
 
 // ----------------------------------------------------------------------------

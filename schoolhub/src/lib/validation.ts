@@ -869,6 +869,47 @@ export const dmThreadManageSchema = z.object({
   memberIds: z.array(z.string().min(1)).max(50).optional(),
 });
 
+// ---- Commercial: Purchase Orders ----
+export const poCreateSchema = z.object({
+  schoolId: z.string().min(1).optional(),
+  schoolName: z.string().min(1).max(200),
+  planKey: z.string().min(1),
+  userQuantity: z.number().int().min(0).max(1_000_000).optional(),
+  termYears: z.number().int().min(1).max(20).optional(),
+  discountPct: z.number().min(0).max(100).optional(),
+  notes: z.string().max(2000).optional(),
+});
+// Super-Admin / Account Manager edit of a tenant (status, profile, AM assignment).
+export const adminSchoolPatchSchema = z.object({
+  status: z.enum(["active", "suspended", "trial", "archived"]).optional(),
+  accountManagerUserId: z.string().nullable().optional(),
+  profile: z.object({
+    name: z.string().min(1).max(200).optional(),
+    contactName: z.string().max(200).optional(),
+    contactEmail: z.string().email().or(z.literal("")).optional(),
+    contactPhone: z.string().max(40).optional(),
+    addressLine1: z.string().max(200).optional(),
+    addressLine2: z.string().max(200).optional(),
+    city: z.string().max(120).optional(),
+    county: z.string().max(120).optional(),
+    postcode: z.string().max(20).optional(),
+    country: z.string().max(120).optional(),
+    headTeacher: z.string().max(200).optional(),
+    headTeacherEmail: z.string().email().or(z.literal("")).optional(),
+    headTeacherPhone: z.string().max(40).optional(),
+  }).optional(),
+});
+
+export const poUpdateSchema = z.object({
+  action: z.enum(["send", "resend", "cancel"]).optional(),
+  schoolName: z.string().min(1).max(200).optional(),
+  planKey: z.string().min(1).optional(),
+  userQuantity: z.number().int().min(0).max(1_000_000).optional(),
+  termYears: z.number().int().min(1).max(20).optional(),
+  discountPct: z.number().min(0).max(100).optional(),
+  notes: z.string().max(2000).optional(),
+});
+
 // Extend campaign actions with duplicate + preview (superset of the earlier enum).
 export const campaignActionSchema2 = z.object({
   action: z.enum(["send", "schedule", "cancel", "test", "duplicate"]),

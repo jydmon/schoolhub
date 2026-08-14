@@ -53,6 +53,9 @@ export async function POST(req: Request) {
           name: input.schoolName,
           slug: input.slug,
           status: input.planKey === "trial" ? "trial" : "active",
+          // New tenants start pending: the admin must accept Terms, complete the
+          // profile and submit payment, then an AM/Super-Admin activates them.
+          activationStatus: "pending",
           groupId: input.groupId ?? null,
           config: {
             create: {

@@ -122,8 +122,10 @@ export async function accountManagerScope(userId: string): Promise<{ counties: s
 export async function accountManagerScopedSchoolIds(userId: string): Promise<string[] | undefined> {
   const scope = await accountManagerScope(userId);
   if (!scope) return undefined;
-  const schools = await prisma.school.findMany({ select: { id: true, county: true, country: true } });
-  return schools.filter((s) => managerCoversSchool(scope, s)).map((s) => s.id);
+  const schools = await prisma.school.findMany({ select: { id: true, county: true, country: true, accountManagerUserId: true } });
+  // A school is in the portfolio if it's geographically covered OR explicitly
+  // assigned to this account manager.
+  return schools.filter((s) => s.accountManagerUserId === userId || managerCoversSchool(scope, s)).map((s) => s.id);
 }
 
 function safeArr(s?: string | null): string[] {
