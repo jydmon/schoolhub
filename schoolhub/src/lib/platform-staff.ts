@@ -106,6 +106,14 @@ export async function assertStaffArea(userId: string, isPlatformAdmin: boolean, 
   if (!canAccessArea(areas, area)) throw new Error(`No access to '${area}'`);
 }
 
+/** If this user is an active Account Manager, return their geographic portfolio
+ *  scope; otherwise null (owners and other roles are not geo-restricted). */
+export async function accountManagerScope(userId: string): Promise<{ counties: string[]; countries: string[] } | null> {
+  const s = await prisma.platformStaff.findUnique({ where: { userId } });
+  if (!s || s.status !== "active" || s.roleKey !== "account_manager") return null;
+  return { counties: safeArr(s.scopeCountiesJson), countries: safeArr(s.scopeCountriesJson) };
+}
+
 function safeArr(s?: string | null): string[] {
   if (!s) return [];
   try { const v = JSON.parse(s); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }

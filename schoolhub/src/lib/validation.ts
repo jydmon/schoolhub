@@ -841,6 +841,25 @@ export const subApprovalSchema = z.object({
   mode: z.enum(["auto", "manual"]).optional(),
 });
 
+// ---- Direct messaging (Teams-style DM) ----
+const dmAttachment = z.object({
+  name: z.string().max(200),
+  type: z.string().max(120),
+  size: z.number().nonnegative().optional(),
+  dataUrl: z.string().min(1),
+});
+export const dmSendSchema = z.object({
+  threadId: z.string().min(1).optional(),
+  toUserId: z.string().min(1).optional(),
+  body: z.string().max(20000).optional(),
+  bodyHtml: z.string().max(40000).optional(),
+  attachments: z.array(dmAttachment).max(6).optional(),
+});
+export const dmReactSchema = z.object({
+  messageId: z.string().min(1),
+  emoji: z.string().min(1).max(16),
+});
+
 // Extend campaign actions with duplicate + preview (superset of the earlier enum).
 export const campaignActionSchema2 = z.object({
   action: z.enum(["send", "schedule", "cancel", "test", "duplicate"]),

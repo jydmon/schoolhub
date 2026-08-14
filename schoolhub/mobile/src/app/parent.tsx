@@ -4,6 +4,7 @@ import { Screen, Card, CardTitle, Badge, Button, Kpis, Kpi, LineItem, Loading, E
 import { useApi } from "@/data/useApi";
 import { api } from "@/api/client";
 import { SupportTickets } from "@/app/tickets";
+import { DirectMessages } from "@/app/dm";
 
 /* ---------------- Search across the parent's own children (live) ---------------- */
 function HomeSearch() {
@@ -199,23 +200,4 @@ function Reports() {
   );
 }
 
-function Messaging() {
-  const { data, loading } = useApi<any>("/api/messages");
-  const threads: any[] = data?.threads || data?.items || (Array.isArray(data) ? data : []);
-  if (loading && !data) return <Screen><Loading /></Screen>;
-  return (
-    <Screen>
-      <Card>
-        <CardTitle>Messages</CardTitle>
-        {threads.length === 0 ? <Text style={{ color: T.muted, fontSize: 13, paddingVertical: 6 }}>No conversations yet. Your school can start a secure thread with you here.</Text> :
-          threads.map((th, idx) => (
-            <LineItem key={th.id || idx} first={idx === 0} t={th.title || th.name || th.withName || "Conversation"} m={th.lastMessage || th.preview || th.subject || ""}
-              right={th.unread ? <Badge tone="warn">{th.unread}</Badge> : null} />
-          ))}
-      </Card>
-      <Note>Secure in-app messaging with your school, same-tenant only.</Note>
-    </Screen>
-  );
-}
-
-export const parentScreens: Record<string, React.FC> = { home: Home, transport: Transport, reports: Reports, messaging: Messaging };
+export const parentScreens: Record<string, React.FC> = { home: Home, transport: Transport, reports: Reports, messaging: DirectMessages };

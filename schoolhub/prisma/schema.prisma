@@ -2452,10 +2452,28 @@ model DirectMessageItem {
   threadId     String
   thread       DirectThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   senderUserId String
-  body         String
+  body         String  // plain-text form (previews, notifications, search)
+  bodyHtml     String? // sanitised rich-text HTML (optional; falls back to body)
+  attachmentsJson String @default("[]") // [{name,type,size,dataUrl}] small inline files/images
+  editedAt     DateTime?
   createdAt    DateTime @default(now())
 
+  reactions    DirectMessageReaction[]
+
   @@index([threadId])
+}
+
+/// An emoji reaction on a direct message. One row per (message, user, emoji).
+model DirectMessageReaction {
+  id        String @id @default(cuid())
+  messageId String
+  message   DirectMessageItem @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
 }
 
 // ============================================================================

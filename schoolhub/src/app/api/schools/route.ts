@@ -5,13 +5,16 @@ import { onboardSchoolSchema } from "@/lib/validation";
 import { recordAudit } from "@/lib/audit";
 import { AUDIT, ROLES } from "@/lib/constants";
 import { sendEmail } from "@/lib/email";
+import { accountManagerScope } from "@/lib/platform-staff";
+import { managerCoversSchool } from "@/lib/platform-staff-logic";
 import { handleError, clientIp, ok } from "@/lib/http";
 
-// List all tenants (platform admin only).
+// List tenants. Platform admins see all; an Account Manager sees only the
+// schools in their geographic portfolio (by county/state and/or country).
 export async function GET() {
   try {
-    await requirePlatformAdmin();
-    const schools = await prisma.school.findMany({
+    const ctx = await requirePlatformAdmin();
+    const all = await prisma.school.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         group: true,
@@ -19,6 +22,8 @@ export async function GET() {
         _count: { select: { memberships: true, students: true, campuses: true } },
       },
     });
+    const scope = await accountManagerScope(ctx.userId);
+    const schools = scope ? all.filter((s) => managerCoversSchool(scope, s)) : all;
     return ok({ schools });
   } catch (err) {
     return handleError(err);
