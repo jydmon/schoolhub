@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Kebab, useSort, SortTh } from "@/components/TableKit";
 
 // Item 12 — Access Management (School Administrator). View system + custom roles,
 // create/clone, edit page/feature/CRUD permissions, enable/disable, restore
@@ -24,6 +25,8 @@ export default function AccessManagementTab({ schoolId }: { schoolId: string }) 
   const [newName, setNewName] = useState("");
   const [history, setHistory] = useState<any[]>([]);
   const [assignUser, setAssignUser] = useState(""); const [assignRoleKey, setAssignRoleKey] = useState("");
+  const [roleQ, setRoleQ] = useState(""); const [roleType, setRoleType] = useState("all");
+  const srt = useSort("name");
 
   const load = useCallback(async () => {
     try { setData(await api(`/api/schools/${schoolId}/roles`)); } catch (e: any) { setMsg({ k: "err", t: e.message }); }
@@ -89,22 +92,31 @@ export default function AccessManagementTab({ schoolId }: { schoolId: string }) 
             </div>
           </div>
           <div className="panel">
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+              <input placeholder="Search roles…" value={roleQ} onChange={(e) => setRoleQ(e.target.value)} style={{ maxWidth: 240 }} />
+              <select value={roleType} onChange={(e) => setRoleType(e.target.value)} style={{ width: "auto" }}>
+                <option value="all">All types</option><option value="builtin">Built-in</option><option value="custom">Custom</option>
+              </select>
+              {(() => { const shown = roles.filter((r) => (roleType === "all" || (roleType === "builtin" ? r.builtin : !r.builtin)) && (!roleQ.trim() || `${r.name} ${r.baseRole || ""}`.toLowerCase().includes(roleQ.trim().toLowerCase()))).length;
+                return <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{shown} of {roles.length}</span>; })()}
+            </div>
             <table>
-              <thead><tr><th>Role</th><th>Type</th><th>Permissions</th><th>Status</th><th className="right">Actions</th></tr></thead>
+              <thead><tr><SortTh k="name" label="Role" sort={srt} /><SortTh k="type" label="Type" sort={srt} /><th>Permissions</th><SortTh k="status" label="Status" sort={srt} /><th className="right">Actions</th></tr></thead>
               <tbody>
-                {roles.map((r) => (
+                {srt.sort(roles.filter((r) => (roleType === "all" || (roleType === "builtin" ? r.builtin : !r.builtin)) && (!roleQ.trim() || `${r.name} ${r.baseRole || ""}`.toLowerCase().includes(roleQ.trim().toLowerCase()))),
+                  (r, k) => k === "name" ? String(r.name ?? "").toLowerCase() : k === "type" ? (r.builtin ? "0-builtin" : "1-custom") : k === "status" ? (r.enabled ? "0" : "1") : "").map((r) => (
                   <tr key={r.key} style={{ opacity: r.enabled ? 1 : 0.55 }}>
                     <td><strong>{r.name}</strong>{r.baseRole ? <div className="muted" style={{ fontSize: 11 }}>inherits {r.baseRole}</div> : null}</td>
                     <td>{r.builtin ? <span className="badge role">built-in{r.overridden ? " · customised" : ""}</span> : <span className="badge trial">custom</span>}</td>
                     <td className="muted">{r.permissions.length} permission(s) · {r.pages.length} page(s)</td>
                     <td>{r.enabled ? <span className="badge active">enabled</span> : <span className="badge archived">disabled</span>}</td>
-                    <td className="right" style={{ whiteSpace: "nowrap" }}>
-                      <button className="small secondary" onClick={() => openEdit(r)}>Edit</button>{" "}
-                      <button className="small secondary" onClick={() => createRole(r.key)}>Clone</button>{" "}
-                      <button className="small secondary" onClick={() => act("enable", r.key, { enabled: !r.enabled })}>{r.enabled ? "Disable" : "Enable"}</button>{" "}
-                      {r.builtin && r.overridden && <button className="small secondary" onClick={() => act("restore", r.key)}>Restore default</button>}
-                      {!r.builtin && <button className="small secondary danger" onClick={() => act("delete", r.key)}>Delete</button>}
-                    </td>
+                    <td className="right"><Kebab items={[
+                      { label: "Edit", onClick: () => openEdit(r) },
+                      { label: "Clone", onClick: () => createRole(r.key) },
+                      { label: r.enabled ? "Disable" : "Enable", onClick: () => act("enable", r.key, { enabled: !r.enabled }) },
+                      r.builtin && r.overridden ? { label: "Restore default", onClick: () => act("restore", r.key) } : null,
+                      !r.builtin ? { label: "Delete", onClick: () => act("delete", r.key), danger: true } : null,
+                    ]} /></td>
                   </tr>
                 ))}
               </tbody>

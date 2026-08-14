@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Kebab, useSort, SortTh } from "@/components/TableKit";
 
 // Super-Administrator FAQ management for the platform console. Self-contained
 // (own fetch helpers) so it drops into AdminPortal with a single import. Uses
@@ -57,12 +58,14 @@ export default function FaqManager() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const srt = useSort("updated", -1);
   const rows = items.filter((it) => {
     if (statusF !== "all" && it.status !== statusF) return false;
     const s = q.trim().toLowerCase();
     if (s && ![it.question, it.answer, it.category].some((v) => String(v ?? "").toLowerCase().includes(s))) return false;
     return true;
   });
+  const view = srt.sort(rows, (it, k) => k === "question" ? String(it.question ?? "").toLowerCase() : k === "category" ? String(it.category ?? "").toLowerCase() : k === "status" ? String(it.status ?? "") : k === "updated" ? (it.updatedAt || "") : "");
   const categories = Array.from(new Set(items.map((i) => i.category).filter(Boolean)));
 
   async function save() {
@@ -132,23 +135,23 @@ export default function FaqManager() {
           <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{rows.length} of {items.length}</span>
         </div>
         <table style={{ marginTop: 10 }}>
-          <thead><tr><th>Question</th><th>Category</th><th>Status</th><th>Updated</th><th className="right">Actions</th></tr></thead>
+          <thead><tr><SortTh k="question" label="Question" sort={srt} /><SortTh k="category" label="Category" sort={srt} /><SortTh k="status" label="Status" sort={srt} /><SortTh k="updated" label="Updated" sort={srt} /><th className="right">Actions</th></tr></thead>
           <tbody>
-            {rows.map((it) => (
+            {view.map((it) => (
               <tr key={it.id}>
                 <td><strong>{it.question}</strong><div className="muted" style={{ fontSize: 12, maxWidth: 460, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.answer}</div></td>
                 <td className="muted">{it.category || "General"}</td>
                 <td><span className={`badge ${STATUS_BADGE[it.status] || "trial"}`}>{it.status}</span></td>
                 <td className="mono muted" style={{ fontSize: 12 }}>{dtShort(it.updatedAt)}</td>
-                <td className="right" style={{ whiteSpace: "nowrap" }}>
-                  <button className="small secondary" onClick={() => setF({ id: it.id, question: it.question, answer: it.answer, category: it.category || "", status: it.status })}>Edit</button>{" "}
-                  {it.status !== "published" ? <button className="small secondary" onClick={() => setStatus(it.id, "published")}>Publish</button> : <button className="small secondary" onClick={() => setStatus(it.id, "draft")}>Unpublish</button>}{" "}
-                  {it.status !== "archived" && <button className="small secondary" onClick={() => setStatus(it.id, "archived")}>Archive</button>}{" "}
-                  <button className="small secondary danger" onClick={() => del(it.id)}>Delete</button>
-                </td>
+                <td className="right"><Kebab items={[
+                  { label: "Edit", onClick: () => setF({ id: it.id, question: it.question, answer: it.answer, category: it.category || "", status: it.status }) },
+                  it.status !== "published" ? { label: "Publish", onClick: () => setStatus(it.id, "published") } : { label: "Unpublish", onClick: () => setStatus(it.id, "draft") },
+                  it.status !== "archived" ? { label: "Archive", onClick: () => setStatus(it.id, "archived") } : { label: "Restore to draft", onClick: () => setStatus(it.id, "draft") },
+                  { label: "Delete", onClick: () => del(it.id), danger: true },
+                ]} /></td>
               </tr>
             ))}
-            {rows.length === 0 && <tr><td colSpan={5} className="muted">{items.length ? "No FAQs match your filter." : "No FAQs yet — add one or bulk-import."}</td></tr>}
+            {view.length === 0 && <tr><td colSpan={5} className="muted">{items.length ? "No FAQs match your filter." : "No FAQs yet — add one or bulk-import."}</td></tr>}
           </tbody>
         </table>
       </div>

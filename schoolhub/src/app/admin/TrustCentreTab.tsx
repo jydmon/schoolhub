@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, Fragment } from "react";
+import { Kebab, useSort, SortTh } from "@/components/TableKit";
 
 // Super-Admin Document Management System + Trust Centre control. Self-contained
 // (own fetch helpers) so it slots into AdminPortal with a single import.
@@ -49,6 +50,7 @@ export default function TrustCentreTab() {
   const [diffFor, setDiffFor] = useState<string | null>(null);
   const [logOpen, setLogOpen] = useState(false);
   const [acks, setAcks] = useState<any[] | null>(null);
+  const srt = useSort("title");
 
   const load = useCallback(async () => {
     try { const d = await api(`/api/platform/trust`); setDocs(d.documents || []); }
@@ -110,9 +112,9 @@ export default function TrustCentreTab() {
           <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{rows.length} of {docs.length}</span>
         </div>
         <table>
-          <thead><tr><th>Document</th><th>Category</th><th>Status</th><th>Destinations</th><th>Ver.</th><th>Acks</th><th className="right">Actions</th></tr></thead>
+          <thead><tr><SortTh k="title" label="Document" sort={srt} /><SortTh k="category" label="Category" sort={srt} /><SortTh k="status" label="Status" sort={srt} /><th>Destinations</th><SortTh k="version" label="Ver." sort={srt} /><SortTh k="acks" label="Acks" sort={srt} /><th className="right">Actions</th></tr></thead>
           <tbody>
-            {rows.map((d) => (
+            {srt.sort(rows, (d, k) => k === "title" ? String(d.title ?? "").toLowerCase() : k === "category" ? String(d.category ?? "") : k === "status" ? String(d.status ?? "") : k === "version" ? (d.version || 0) : k === "acks" ? (d.ackCount || 0) : "").map((d) => (
               <tr key={d.id}>
                 <td><button className="linklike" onClick={() => openEdit(d.id)}><strong>{d.title}</strong></button>{d.summary ? <div className="muted" style={{ fontSize: 11 }}>{d.summary}</div> : null}</td>
                 <td className="muted" style={{ textTransform: "capitalize" }}>{d.category}</td>
@@ -120,10 +122,12 @@ export default function TrustCentreTab() {
                 <td style={{ fontSize: 11 }}>{[d.publicTrust && "Public", d.toParents && "Parents", d.toMobile && "Mobile", d.requireAck && "Ack"].filter(Boolean).join(" · ") || <span className="muted">—</span>}</td>
                 <td>{d.version}</td>
                 <td>{d.ackCount || 0}</td>
-                <td className="right">
-                  <button className="secondary small" onClick={() => openEdit(d.id)}>Edit</button>{" "}
-                  <button className="secondary small" onClick={() => setHistory(d)}>History</button>
-                </td>
+                <td className="right"><Kebab items={[
+                  { label: "Edit", onClick: () => openEdit(d.id) },
+                  { label: "Version history", onClick: () => setHistory(d) },
+                  ...((NEXT[d.status] || []).map((n) => ({ label: n.label, onClick: () => transition(d.id, n.to), danger: n.danger }))),
+                  { label: "Delete", onClick: () => del(d), danger: true },
+                ]} /></td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={7} className="muted">{docs.length ? "No documents match your filter." : "No documents yet — create the first one."}</td></tr>}

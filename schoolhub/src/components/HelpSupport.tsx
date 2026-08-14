@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Kebab, useSort, SortTh } from "@/components/TableKit";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
 const dtShort = (v: any) => (v ? new Date(v).toLocaleDateString() : "—");
@@ -60,6 +61,8 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [fStatus, setFStatus] = useState(""); const [fPriority, setFPriority] = useState(""); const [fq, setFq] = useState("");
+  const [mineQ, setMineQ] = useState("");
+  const srt = useSort("updated", -1);
   const [report, setReport] = useState<any>(null);
 
   // FAQs
@@ -74,7 +77,12 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
     const qs = new URLSearchParams({ scope });
     if (scope === "manage") { if (fStatus) qs.set("status", fStatus); if (fPriority) qs.set("priority", fPriority); if (fq.trim()) qs.set("q", fq.trim()); }
     const d = await fetch(`/api/support/tickets?${qs}`).then((r) => r.json());
-    setTickets(d.tickets ?? []); setCanManage(!!d.canManage);
+    setTickets(d.tickets ?? []);
+    // Only ever raise canManage — the "mine" scope response doesn't assert
+    // management rights, so it must not clear the Manage/Reports tabs once the
+    // "manage" scope has established the user can manage. (Fixes the tabs
+    // disappearing after opening "My tickets".)
+    setCanManage((prev) => prev || !!d.canManage);
   }, [fStatus, fPriority, fq]);
   const loadFaqs = useCallback(async () => {
     const d = await fetch(`/api/faqs`).then((r) => r.json()).catch(() => ({}));
@@ -231,6 +239,26 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
       {tab === "help" && (
         <>
           <div className="panel">
+            <h2 style={{ fontSize: 16, margin: 0 }}>Submit a support request</h2>
+            {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
+            <form onSubmit={submit} style={{ marginTop: 8 }}>
+              <div className="row">
+                <div><label>Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: "" })}><option value="question">Question</option><option value="issue">Issue</option><option value="bug">Report a bug</option><option value="account">Account</option><option value="billing">Billing</option><option value="other">Other</option></select></div>
+                {subs.length > 0 && <div><label>Subcategory</label><select value={form.subcategory} onChange={(e) => setForm({ ...form, subcategory: e.target.value })}><option value="">—</option>{subs.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>}
+                <div><label>Priority</label><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>{PRIORITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+                <div><label>Severity</label><select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>{SEVERITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+                <div style={{ flex: 3 }}><label>Subject</label><input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="Brief summary" /></div>
+              </div>
+              <label>Description</label>
+              <textarea rows={5} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontSize: 13 }} placeholder="Tell us what's happening, and any steps to reproduce…" />
+              <label style={{ marginTop: 8 }}>Attach screenshots / files (optional)</label>
+              <input type="file" multiple accept="image/*,.pdf,.txt,.csv" onChange={async (e) => setFormFiles(await filesToAttachments(e.target.files))} />
+              {formFiles.length ? <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>{formFiles.length} file(s) attached</span> : null}
+              <div><button type="submit" style={{ marginTop: 12 }}>Submit request</button></div>
+            </form>
+          </div>
+
+          <div className="panel">
             <h2 style={{ fontSize: 16, margin: 0 }}>Frequently asked questions</h2>
             {faqs.length === 0 && <p className="muted" style={{ marginTop: 8 }}>No FAQs published yet.</p>}
             {cats.map((cat) => (
@@ -290,25 +318,6 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
             </div>
           )}
 
-          <div className="panel">
-            <h2 style={{ fontSize: 16, margin: 0 }}>Submit a support request</h2>
-            {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
-            <form onSubmit={submit} style={{ marginTop: 8 }}>
-              <div className="row">
-                <div><label>Category</label><select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value, subcategory: "" })}><option value="question">Question</option><option value="issue">Issue</option><option value="bug">Report a bug</option><option value="account">Account</option><option value="billing">Billing</option><option value="other">Other</option></select></div>
-                {subs.length > 0 && <div><label>Subcategory</label><select value={form.subcategory} onChange={(e) => setForm({ ...form, subcategory: e.target.value })}><option value="">—</option>{subs.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>}
-                <div><label>Priority</label><select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>{PRIORITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
-                <div><label>Severity</label><select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })}>{SEVERITIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
-                <div style={{ flex: 3 }}><label>Subject</label><input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="Brief summary" /></div>
-              </div>
-              <label>Description</label>
-              <textarea rows={5} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} style={{ width: "100%", padding: 10, border: "1px solid var(--line)", borderRadius: 8, fontSize: 13 }} placeholder="Tell us what's happening, and any steps to reproduce…" />
-              <label style={{ marginTop: 8 }}>Attach screenshots / files (optional)</label>
-              <input type="file" multiple accept="image/*,.pdf,.txt,.csv" onChange={async (e) => setFormFiles(await filesToAttachments(e.target.files))} />
-              {formFiles.length ? <span className="muted" style={{ fontSize: 11, marginLeft: 8 }}>{formFiles.length} file(s) attached</span> : null}
-              <div><button type="submit" style={{ marginTop: 12 }}>Submit request</button></div>
-            </form>
-          </div>
         </>
       )}
 
@@ -323,10 +332,19 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
               <button className="secondary small" onClick={() => load("manage")}>Apply</button>
             </div>
           )}
+          {tab === "mine" && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "10px 0" }}>
+              <input placeholder="Search my tickets…" value={mineQ} onChange={(e) => setMineQ(e.target.value)} style={{ maxWidth: 240 }} />
+              <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{tickets.length} ticket(s)</span>
+            </div>
+          )}
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Ref</th><th>Subject</th><th>Priority</th>{tab === "manage" && <th>From</th>}<th>SLA</th><th>Status</th><th>Updated</th><th className="right"></th></tr></thead>
+            <thead><tr><SortTh k="ref" label="Ref" sort={srt} /><SortTh k="subject" label="Subject" sort={srt} /><SortTh k="priority" label="Priority" sort={srt} />{tab === "manage" && <th>From</th>}<th>SLA</th><SortTh k="status" label="Status" sort={srt} /><SortTh k="updated" label="Updated" sort={srt} /><th className="right">Actions</th></tr></thead>
             <tbody>
-              {tickets.map((t) => { const sla = slaBadge(t); return (
+              {srt.sort(
+                (tab === "mine" && mineQ.trim() ? tickets.filter((t) => [t.reference, t.subject, t.category, t.status].some((v) => String(v ?? "").toLowerCase().includes(mineQ.trim().toLowerCase()))) : tickets),
+                (t, k) => k === "ref" ? String(t.reference ?? "") : k === "subject" ? String(t.subject ?? "").toLowerCase() : k === "priority" ? ({ low: 0, medium: 1, high: 2, critical: 3 } as any)[t.priority] ?? 0 : k === "status" ? String(t.status ?? "") : k === "updated" ? (t.updatedAt || "") : ""
+              ).map((t) => { const sla = slaBadge(t); return (
                 <tr key={t.id}>
                   <td className="mono muted" style={{ fontSize: 12 }}>{t.reference}</td>
                   <td><strong>{t.subject}</strong>{t.escalated ? <span className="badge suspended" style={{ marginLeft: 6 }}>escalated</span> : null}<div className="muted" style={{ fontSize: 11 }}>{t.category}{t.subcategory ? ` / ${t.subcategory}` : ""}</div></td>
@@ -335,7 +353,10 @@ export default function HelpSupport({ contactHint }: { contactHint?: string }) {
                   <td>{sla ? <span className={`badge ${sla.tone}`}>{sla.label}</span> : <span className="muted">—</span>}</td>
                   <td><span className={`badge ${STATUS_BADGE[t.status] || "trial"}`}>{STATUS_LABEL[t.status] || t.status}</span></td>
                   <td className="mono muted" style={{ fontSize: 12 }}>{new Date(t.updatedAt).toLocaleDateString()}</td>
-                  <td className="right"><button className="small" onClick={() => setOpen(t.id)}>Open</button></td>
+                  <td className="right"><Kebab items={[
+                    { label: "Open", onClick: () => setOpen(t.id) },
+                    { label: "Copy reference", onClick: () => { try { navigator.clipboard?.writeText(t.reference || ""); } catch { /* ignore */ } } },
+                  ]} /></td>
                 </tr>
               ); })}
               {tickets.length === 0 && <tr><td colSpan={tab === "manage" ? 8 : 7} className="muted">No tickets{tab === "manage" ? " for your school" : " yet"}.</td></tr>}

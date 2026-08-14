@@ -260,15 +260,18 @@ td.nowrap .small { margin-bottom: 2px; }
 /* Quarter / Year mini-months — responsive auto-fill so each month keeps a
    readable minimum width and simply wraps to more rows; the Year view never
    compresses into unreadable slivers. Day cells are square and centred. */
-.cal-mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; align-items: start; }
-.cal-mini.year { grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); }
+.cal-mini { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; align-items: start; }
+.cal-mini.year { grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); }
 .cal-mini-card { border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 14px; background: #fff; box-shadow: var(--shadow-sm); }
 .cal-mini-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .cal-mini-card h4 { margin: 0; font-size: 14px; font-weight: 700; }
 .cal-mini-count { font-size: 10.5px; font-weight: 700; color: var(--brand-ink); background: #eef2ff; border-radius: 999px; padding: 1px 8px; }
 .cal-mini-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.cal-mini-d { display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; min-height: 26px; font-size: 12px; border-radius: 7px; color: var(--ink-soft); position: relative; }
-.cal-mini-d.head { aspect-ratio: auto; min-height: 0; font-size: 10.5px; }
+/* Fixed compact height (not aspect-ratio) so mini-month day cells never balloon
+   when a column goes full-width — the cause of the Year view feeling "compressed"
+   / unusable on narrow and single-column layouts. */
+.cal-mini-d { display: flex; align-items: center; justify-content: center; height: 28px; min-height: 0; font-size: 12px; border-radius: 7px; color: var(--ink-soft); position: relative; }
+.cal-mini-d.head { height: auto; min-height: 0; font-size: 10.5px; }
 .cal-mini-d.other { color: #cbd4e4; }
 .cal-mini-d.has { font-weight: 700; background: #eef2ff; color: var(--brand-ink); cursor: pointer; }
 .cal-mini-d.has:after { content: ""; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); width: 5px; height: 5px; border-radius: 999px; background: var(--brand-2); }
@@ -282,8 +285,11 @@ td.nowrap .small { margin-bottom: 2px; }
   .cal-mini, .cal-mini.year { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
 }
 @media (max-width: 460px) {
-  .cal-mini, .cal-mini.year { grid-template-columns: 1fr; }
-  .cal-mini-d { font-size: 13px; }
+  /* Keep two mini-months per row on phones rather than one full-width month
+     (which made each month huge and hard to scan). */
+  .cal-mini, .cal-mini.year { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .cal-mini-card { padding: 10px 8px 12px; }
+  .cal-mini-d { height: 26px; font-size: 12px; }
 }
 
 /* Chip-style buttons (e.g. Integration Hub section nav): keep readable text —

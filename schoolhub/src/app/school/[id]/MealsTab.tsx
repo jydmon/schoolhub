@@ -9,6 +9,13 @@ const MEALS = ["breakfast", "lunch", "snack", "tea"];
 const COURSES = ["main", "vegetarian", "dessert", "side", "drink"];
 const gbp = (pence: number) => (pence ? `£${(pence / 100).toFixed(2)}` : "—");
 const editableItem = (i: any) => (i.source ?? "manual") !== "api";
+// Menu items are surfaced to parents/guardians (portal + mobile). Hiding an item
+// removes it from that audience; scope it to a class/year where set.
+const audienceOf = (i: any) => i.className || i.yearGroup || "Whole school";
+const groupsSummary = (list: any[]) => {
+  const gs = Array.from(new Set(list.map(audienceOf)));
+  return gs.length ? gs.join(", ") : "Whole school";
+};
 
 export default function MealsTab({ schoolId }: { schoolId: string }) {
   const [items, setItems] = useState<any[]>([]);
@@ -45,18 +52,34 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
   }
   async function toggle(i: any) {
     setMsg(null);
-    const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: i.id, active: !i.active }) });
-    const d = await res.json().catch(() => ({})); if (!res.ok || d.error) setMsg({ kind: "err", text: d.error || "Failed" }); load();
+    const nowActive = !i.active;
+    const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: i.id, active: nowActive }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); }
+    else setMsg({ kind: "ok", text: nowActive
+      ? `“${i.name}” is now shown again to parents & guardians (${audienceOf(i)}).`
+      : `“${i.name}” is now hidden from parents & guardians (${audienceOf(i)}) in the parent portal and mobile app.` });
+    load();
   }
   async function del(i: any) {
     setMsg(null);
     const res = await fetch(`/api/schools/${schoolId}/menus?id=${i.id}`, { method: "DELETE" });
     const d = await res.json().catch(() => ({})); if (!res.ok || d.error) { setMsg({ kind: "err", text: d.error || "Failed" }); return; } setMsg({ kind: "ok", text: "Item removed." }); load();
   }
-  async function bulkArchive() {
-    setMsg(null); let n = 0, skip = 0;
-    for (const id of sel.ids) { const i = items.find((x) => x.id === id); if (!editableItem(i)) { skip++; continue; } const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, active: false }) }); if (res.ok) n++; }
-    sel.clear(); load(); setMsg({ kind: "ok", text: `Hid ${n} item(s)${skip ? ` · ${skip} API-fed skipped` : ""}.` });
+  async function bulkSetActive(active: boolean) {
+    setMsg(null); let skip = 0; const affected: any[] = [];
+    for (const id of sel.ids) {
+      const i = items.find((x) => x.id === id);
+      if (!editableItem(i)) { skip++; continue; }
+      const res = await fetch(`/api/schools/${schoolId}/menus`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, active }) });
+      if (res.ok) affected.push(i);
+    }
+    sel.clear(); load();
+    const who = affected.length ? ` (${groupsSummary(affected)})` : "";
+    const tail = skip ? ` · ${skip} API-fed item(s) skipped` : "";
+    setMsg({ kind: "ok", text: active
+      ? `Restored ${affected.length} item(s). They are shown again to parents & guardians${who} in the parent portal and mobile app.${tail}`
+      : `Hid ${affected.length} item(s). This content is now hidden from parents & guardians${who} in the parent portal and mobile app.${tail}` });
   }
 
   return (
@@ -69,7 +92,7 @@ export default function MealsTab({ schoolId }: { schoolId: string }) {
           <input placeholder="Filter menu…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
           <span className="muted" style={{ fontSize: 12 }}>{q ? `${rows.length} of ${items.length}` : `${items.length} item${items.length === 1 ? "" : "s"}`}</span>
         </div>
-        {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={bulkArchive}>Hide</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
+        {sel.ids.length > 0 && <div className="bulkbar"><span>{sel.ids.length} selected</span><button className="danger small" onClick={() => bulkSetActive(false)}>Hide rows</button><button className="secondary small" onClick={() => bulkSetActive(true)}>Unhide rows</button><button className="secondary small" onClick={() => sel.clear()}>Clear</button></div>}
         <table>
           <thead><tr>
             <th className="checkbox-cell"><input type="checkbox" checked={allOn} onChange={(e) => sel.setMany(view.map((i) => i.id), e.target.checked)} /></th>

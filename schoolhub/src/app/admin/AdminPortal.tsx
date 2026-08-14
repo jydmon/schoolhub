@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, createContext, useContext } from "react";
 import AppShell, { NavGroup } from "@/components/AppShell";
 import { ConfirmDialog, useBeforeUnload } from "@/components/ConfirmDialog";
+import { Kebab } from "@/components/TableKit";
 import HistoryExplorer from "@/components/HistoryExplorer";
 import TrustCentreTab from "./TrustCentreTab";
 import FaqManager from "./FaqManager";
@@ -461,7 +462,14 @@ function firstArray(o: any): any[] { if (!o) return []; if (Array.isArray(o)) re
 function Subscriptions() {
   const { data, err, reload } = useJson<any>("/api/platform/subscriptions");
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
-  const rows = firstArray(data);
+  const [q, setQ] = useState(""); const [statusF, setStatusF] = useState("all"); const [typeF, setTypeF] = useState("all");
+  const all = firstArray(data);
+  const rows = all.filter((s: any) => {
+    if (statusF !== "all" && s.status !== statusF) return false;
+    if (typeF !== "all" && s.type !== typeF) return false;
+    const t = q.trim().toLowerCase();
+    return !t || [s.who, s.plan, s.status, s.type].some((v) => String(v ?? "").toLowerCase().includes(t));
+  });
   async function act(row: any, action: string, mode?: string) {
     setMsg(null);
     try { await send(`/api/platform/subscriptions?id=${encodeURIComponent(row.id)}`, { type: row.type, action, mode }); setMsg({ k: "ok", t: "Updated." }); reload(); }
@@ -473,6 +481,12 @@ function Subscriptions() {
       <p className="sub">School and parent subscriptions, renewal reminders, and manual-approval overrides for held renewals.</p>
       {err && <Notice msg={{ k: "err", t: err }} />}
       <Notice msg={msg} />
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", margin: "10px 0" }}>
+        <input placeholder="Search subscriber or plan…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 240 }} />
+        <select value={typeF} onChange={(e) => setTypeF(e.target.value)} style={{ width: "auto" }}><option value="all">All types</option><option value="school">School</option><option value="parent">Parent</option></select>
+        <select value={statusF} onChange={(e) => setStatusF(e.target.value)} style={{ width: "auto" }}><option value="all">All statuses</option>{Array.from(new Set(all.map((s: any) => s.status).filter(Boolean))).map((s) => <option key={s as string} value={s as string}>{s as string}</option>)}</select>
+        <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{rows.length} of {all.length}</span>
+      </div>
       <table>
         <thead><tr><th>Subscriber</th><th>Type</th><th>Plan</th><th>Status</th><th>Renewal</th><th>Approval</th><th className="right">Actions</th></tr></thead>
         <tbody>
@@ -484,10 +498,11 @@ function Subscriptions() {
               <td><span className={`badge ${s.status}`}>{s.status}</span></td>
               <td className="muted">{s.renewalDate ? new Date(s.renewalDate).toLocaleDateString() : "—"}{typeof s.daysUntil === "number" ? ` (${s.daysUntil}d)` : ""}</td>
               <td className="muted">{s.approvalMode || "auto"}{s.approvalStatus ? ` · ${s.approvalStatus}` : ""}</td>
-              <td className="right">
-                {s.needsApproval && <><button className="small" onClick={() => act(s, "approve")}>Approve</button> <button className="danger small" onClick={() => act(s, "reject")}>Reject</button> </>}
-                <button className="secondary small" onClick={() => act(s, "set_mode", s.approvalMode === "manual" ? "auto" : "manual")}>{s.approvalMode === "manual" ? "Set auto" : "Set manual"}</button>
-              </td>
+              <td className="right"><Kebab items={[
+                s.needsApproval ? { label: "Approve renewal", onClick: () => act(s, "approve") } : null,
+                s.needsApproval ? { label: "Reject renewal", onClick: () => act(s, "reject"), danger: true } : null,
+                { label: s.approvalMode === "manual" ? "Set auto-renewal" : "Set manual approval", onClick: () => act(s, "set_mode", s.approvalMode === "manual" ? "auto" : "manual") },
+              ]} /></td>
             </tr>
           ))}
           {rows.length === 0 && <Empty cols={7} text="No subscriptions yet." />}
@@ -679,13 +694,13 @@ function Templates() {
                 <td className="muted">{t.category || "—"}</td>
                 <td><select className="small" value={t.status || "draft"} onChange={(e) => changeStatus(t, e.target.value)} title="Lifecycle status">{POLICY_STATUS_OPTS.map((s) => <option key={s} value={s}>{s}</option>)}</select></td>
                 <td>{t.sharedWithTenants ? <span className="badge active">shared</span> : <span className="muted">private</span>}</td>
-                <td className="right nowrap">
-                  <button className="secondary small" onClick={() => setView(t)}>View</button>{" "}
-                  <button className="secondary small" onClick={() => edit(t)}>Edit</button>{" "}
-                  <button className="secondary small" onClick={() => setHistory(t)}>History</button>{" "}
-                  <button className="secondary small" onClick={() => duplicate(t)}>Duplicate</button>{" "}
-                  <button className="danger small" onClick={() => setConfirm({ mode: "one", row: t })}>Delete</button>
-                </td>
+                <td className="right"><Kebab items={[
+                  { label: "View", onClick: () => setView(t) },
+                  { label: "Edit", onClick: () => edit(t) },
+                  { label: "History", onClick: () => setHistory(t) },
+                  { label: "Duplicate", onClick: () => duplicate(t) },
+                  { label: "Delete", onClick: () => setConfirm({ mode: "one", row: t }), danger: true },
+                ]} /></td>
               </tr>
             ))}
             {rows.length === 0 && <Empty cols={7} text={all.length ? "No templates match your filter." : "No templates yet — use “Load default content”."} />}
@@ -1079,13 +1094,13 @@ function Crm() {
               <td>{k.openCount ?? 0}</td>
               <td>{k.clickCount ?? 0}</td>
               <td className="mono muted">{dt(k.createdAt)}</td>
-              <td className="right nowrap">
-                {["draft", "scheduled"].includes(k.status) && <><button className="small" onClick={() => askSend(k)}>Send</button>{" "}</>}
-                <button className="secondary small" onClick={() => test(k)}>Test</button>{" "}
-                <button className="secondary small" onClick={() => setReport(k.id)}>Report</button>{" "}
-                <button className="secondary small" onClick={() => action(k.id, "duplicate", undefined, "Duplicated as draft.")}>Duplicate</button>
-                {["draft", "scheduled"].includes(k.status) && <>{" "}<button className="danger small" onClick={() => action(k.id, "cancel", undefined, "Cancelled.")}>Cancel</button></>}
-              </td>
+              <td className="right"><Kebab items={[
+                ["draft", "scheduled"].includes(k.status) ? { label: "Send", onClick: () => askSend(k) } : null,
+                { label: "Send test", onClick: () => test(k) },
+                { label: "Report", onClick: () => setReport(k.id) },
+                { label: "Duplicate", onClick: () => action(k.id, "duplicate", undefined, "Duplicated as draft.") },
+                ["draft", "scheduled"].includes(k.status) ? { label: "Cancel", onClick: () => action(k.id, "cancel", undefined, "Cancelled."), danger: true } : null,
+              ]} /></td>
             </tr>
           ))}{campList.length === 0 && <Empty cols={7} text="No campaigns yet — create one below." />}</tbody>
         </table>
@@ -1280,13 +1295,13 @@ function Videos() {
                 <td className="muted">{v.category || "—"}</td>
                 <td className="muted">{v.audience || "all"}</td>
                 <td>{v.published ? <span className="badge published">published</span> : <span className="badge draft">draft</span>}</td>
-                <td className="right nowrap">
-                  <button className="secondary small" onClick={() => setView(v)}>View</button>{" "}
-                  <button className="secondary small" onClick={() => edit(v)}>Edit</button>{" "}
-                  <button className="secondary small" onClick={() => togglePublish(v)}>{v.published ? "Unpublish" : "Publish"}</button>{" "}
-                  <button className="secondary small" onClick={() => duplicate(v)}>Duplicate</button>{" "}
-                  <button className="danger small" onClick={() => setConfirm({ mode: "one", row: v })}>Delete</button>
-                </td>
+                <td className="right"><Kebab items={[
+                  { label: "View", onClick: () => setView(v) },
+                  { label: "Edit", onClick: () => edit(v) },
+                  { label: v.published ? "Unpublish" : "Publish", onClick: () => togglePublish(v) },
+                  { label: "Duplicate", onClick: () => duplicate(v) },
+                  { label: "Delete", onClick: () => setConfirm({ mode: "one", row: v }), danger: true },
+                ]} /></td>
               </tr>
             ))}
             {rows.length === 0 && <Empty cols={6} text={all.length ? "No videos match your filter." : "No videos yet — use “Load default content”."} />}
@@ -1561,7 +1576,10 @@ function Packages() {
                 <td>{gbp(p.pricePerStudent)}</td><td>{gbp(p.pricePerSchool)}</td><td>{gbp(p.pricePerVehicle)}</td>
                 <td className="muted">{p.aiQueryLimit === -1 ? "Unlimited" : p.aiQueryLimit}</td>
                 <td>{p.isActive ? <span className="badge active">active</span> : <span className="badge archived">inactive</span>}</td>
-                <td className="right"><button className="secondary small" onClick={() => edit(p)}>Edit</button> <button className="secondary small" onClick={() => toggle(p.key, !p.isActive)}>{p.isActive ? "Deactivate" : "Activate"}</button></td>
+                <td className="right"><Kebab items={[
+                  { label: "Edit", onClick: () => edit(p) },
+                  { label: p.isActive ? "Deactivate" : "Activate", onClick: () => toggle(p.key, !p.isActive) },
+                ]} /></td>
               </tr>
             ))}
             {plans.length === 0 && <Empty cols={7} text="No packages yet — create one below or use “Load default content”." />}
