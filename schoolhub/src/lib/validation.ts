@@ -758,6 +758,14 @@ export const campaignCreateSchema = z.object({
   audience: audienceFilterSchema.optional(),
   scheduledFor: z.string().datetime().optional(),
 });
+// Editing a draft campaign from the CRM "View / edit" action. All fields are
+// optional (partial update); at least one must be present.
+export const campaignUpdateSchema = z.object({
+  name: z.string().min(2).max(160).optional(),
+  subject: z.string().min(1).max(200).optional(),
+  body: z.string().max(50000).optional(),
+  audience: audienceFilterSchema.optional(),
+}).refine((o) => Object.values(o).some((v) => v !== undefined), { message: "No changes provided" });
 export const campaignActionSchema = z.object({
   action: z.enum(["send", "schedule", "cancel", "test"]),
   scheduledFor: z.string().datetime().optional(),

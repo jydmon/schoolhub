@@ -90,7 +90,87 @@ export async function runImport(opts: {
   // spreadsheet (header = line 1).
   const seen = new Set<string>();
 
-  for (let i = 0; i < rows.length; i++) {
+  // Attendance is the highest-volume import (a whole school, potentially every
+  // day), so it uses a batched path: resolve pupils and existing marks in two
+  // queries, then write with createMany / grouped updateMany. This replaces the
+  // previous per-row "find pupil → find record → create/update" loop, which
+  // fired ~3 sequential DB round-trips per row and made large files time out.
+  if (type === "attendance") {
+    const pending: { line: number; ref: string; date: string; session: string; status: string; note: string | null }[] = [];
+    const refs = new Set<string>();
+    for (let i = 0; i < rows.length; i++) {
+      const line = i + 2;
+      const row = rows[i];
+      try {
+        const ref = row.studentReference?.trim();
+        if (!ref) throw new Error("studentReference is required");
+        const date = (row.date || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("date must be YYYY-MM-DD");
+        const sRaw = (row.session || "").trim().toLowerCase();
+        const session = ["am", "pm", "day"].includes(sRaw) ? sRaw : "am";
+        const stRaw = (row.status || "").trim().toLowerCase();
+        const status = ["present", "late", "authorised", "unauthorised", "excused", "absent"].includes(stRaw) ? stRaw : "present";
+        const note = row.note?.trim() || null;
+        const dupKey = "att:" + ref.toLowerCase() + ":" + date + ":" + session;
+        if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "studentReference", message: `duplicate attendance for "${ref}" ${date} ${session} in file`, fatal: false }); continue; }
+        seen.add(dupKey);
+        refs.add(ref);
+        pending.push({ line, ref, date, session, status, note });
+      } catch (err) {
+        errors.push({ row: line, message: (err as Error).message, fatal: true });
+      }
+    }
+
+    // 1 query: resolve every referenced pupil.
+    const students = refs.size
+      ? await prisma.student.findMany({ where: { schoolId, reference: { in: Array.from(refs) } }, select: { id: true, reference: true } })
+      : [];
+    const idByRef = new Map(students.map((s) => [s.reference, s.id] as const));
+    const wants: { line: number; studentId: string; date: string; session: string; status: string; note: string | null }[] = [];
+    for (const p of pending) {
+      const studentId = idByRef.get(p.ref);
+      if (!studentId) { errors.push({ row: p.line, field: "studentReference", message: `student "${p.ref}" not found`, fatal: true }); continue; }
+      wants.push({ line: p.line, studentId, date: p.date, session: p.session, status: p.status, note: p.note });
+    }
+
+    // 1 query: load existing marks for the affected pupils + dates.
+    const studentIds = Array.from(new Set(wants.map((w) => w.studentId)));
+    const dates = Array.from(new Set(wants.map((w) => w.date)));
+    const existingRows = studentIds.length
+      ? await prisma.attendanceRecord.findMany({ where: { studentId: { in: studentIds }, date: { in: dates } }, select: { id: true, studentId: true, date: true, session: true, status: true, note: true } })
+      : [];
+    const existing = new Map(existingRows.map((e) => [`${e.studentId}|${e.date}|${e.session}`, e] as const));
+
+    const toCreate: { schoolId: string; studentId: string; date: string; session: string; status: string; note: string | null; source: string }[] = [];
+    const updateGroups = new Map<string, { ids: string[]; status: string; note: string | null }>();
+    for (const w of wants) {
+      const ex = existing.get(`${w.studentId}|${w.date}|${w.session}`);
+      if (!ex) {
+        toCreate.push({ schoolId, studentId: w.studentId, date: w.date, session: w.session, status: w.status, note: w.note, source: "import" });
+        created++;
+      } else {
+        updated++;
+        if (ex.status === w.status && (ex.note ?? null) === (w.note ?? null)) continue; // unchanged — no write
+        const gk = `${w.status}|${w.note ?? ""}`;
+        const g = updateGroups.get(gk) || { ids: [], status: w.status, note: w.note };
+        g.ids.push(ex.id);
+        updateGroups.set(gk, g);
+      }
+    }
+
+    // Bulk writes: a handful of queries regardless of file size.
+    const CHUNK = 500;
+    for (let i = 0; i < toCreate.length; i += CHUNK) {
+      await prisma.attendanceRecord.createMany({ data: toCreate.slice(i, i + CHUNK), skipDuplicates: true });
+    }
+    for (const g of updateGroups.values()) {
+      for (let i = 0; i < g.ids.length; i += CHUNK) {
+        await prisma.attendanceRecord.updateMany({ where: { id: { in: g.ids.slice(i, i + CHUNK) } }, data: { status: g.status, note: g.note, source: "import" } });
+      }
+    }
+  }
+
+  for (let i = 0; type !== "attendance" && i < rows.length; i++) {
     const line = i + 2; // header is line 1
     const row = rows[i];
     try {
@@ -509,22 +589,6 @@ export async function runImport(opts: {
         const existing = await prisma.trip.findFirst({ where: { schoolId, title, date } });
         if (existing) { await prisma.trip.update({ where: { id: existing.id }, data }); updated++; }
         else { await prisma.trip.create({ data: { schoolId, title, ...data } }); created++; }
-      } else if (type === "attendance") {
-        const ref = row.studentReference?.trim();
-        if (!ref) throw new Error("studentReference is required");
-        const date = (row.date || "").trim();
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("date must be YYYY-MM-DD");
-        const student = await prisma.student.findUnique({ where: { schoolId_reference: { schoolId, reference: ref } } });
-        if (!student) throw new Error(`student "${ref}" not found`);
-        const session = ["am", "pm", "day"].includes((row.session || "").trim().toLowerCase()) ? row.session.trim().toLowerCase() : "am";
-        const status = ["present", "late", "authorised", "unauthorised", "excused", "absent"].includes((row.status || "").trim().toLowerCase()) ? row.status.trim().toLowerCase() : "present";
-        const dupKey = "att:" + student.id + ":" + date + ":" + session;
-        if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "studentReference", message: `duplicate attendance for "${ref}" ${date} ${session} in file`, fatal: false }); continue; }
-        seen.add(dupKey);
-        const data = { status, note: row.note?.trim() || null, source: "import" };
-        const existing = await prisma.attendanceRecord.findUnique({ where: { studentId_date_session: { studentId: student.id, date, session } } });
-        if (existing) { await prisma.attendanceRecord.update({ where: { id: existing.id }, data }); updated++; }
-        else { await prisma.attendanceRecord.create({ data: { schoolId, studentId: student.id, date, session, ...data } }); created++; }
       }
     } catch (err) {
       errors.push({ row: line, message: (err as Error).message, fatal: true });

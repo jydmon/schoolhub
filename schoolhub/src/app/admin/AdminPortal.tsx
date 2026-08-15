@@ -11,6 +11,7 @@ import SupportAccessTab from "./SupportAccessTab";
 import PoliciesTab from "./PoliciesTab";
 import { PLATFORM_AREAS, AREA_LABELS, managerCoversSchool, describeScope } from "@/lib/platform-staff-logic";
 import { recordClientDownload } from "@/lib/download-client";
+import { runGuarded } from "@/lib/busy";
 import { usePersistentState } from "@/lib/use-persistent-state";
 
 // Shared "unsaved changes" flag so forms can warn before navigating away.
@@ -1043,6 +1044,7 @@ function Templates() {
   const rows = sort.apply(all.filter((t) => matchQ(q, t.name, t.kind, t.category, t.subject)));
   const dirty = !!editId || f.name.trim().length > 0 || f.body.trim().length > 0;
   useDirty(dirty);
+  const [importing, setImporting] = useState(false);
   const allOn = rows.length > 0 && rows.every((t) => sel.on(t.id));
   function reset() { setF({ ...BLANK_TPL }); setEditId(null); }
   async function submit(e: React.FormEvent) {
@@ -1089,10 +1091,17 @@ function Templates() {
     if (!parsed.length) { setMsg({ k: "err", t: "No rows found in that file." }); return; }
     if (!("name" in parsed[0]) || !("kind" in parsed[0])) { setMsg({ k: "err", t: "This file doesn't match the template — it must include at least ‘kind’ and ‘name’ columns. Use Download template to see the format." }); return; }
     let created = 0, failed = 0;
-    for (const r of parsed) {
-      if (!r.name?.trim()) { failed++; continue; }
-      try { await send("/api/platform/templates", { kind: r.kind || "email_campaign", name: r.name, category: r.category || undefined, subject: r.subject || undefined, body: r.body || undefined, sharedWithTenants: /^(1|true|yes|y)$/i.test(r.sharedwithtenants || ""), status: r.status || "draft" }); created++; } catch { failed++; }
-    }
+    setImporting(true);
+    // Guard against navigating away / refreshing mid-import (each row is a
+    // separate request; leaving would leave the import half-applied).
+    try {
+      await runGuarded(async () => {
+        for (const r of parsed) {
+          if (!r.name?.trim()) { failed++; continue; }
+          try { await send("/api/platform/templates", { kind: r.kind || "email_campaign", name: r.name, category: r.category || undefined, subject: r.subject || undefined, body: r.body || undefined, sharedWithTenants: /^(1|true|yes|y)$/i.test(r.sharedwithtenants || ""), status: r.status || "draft" }); created++; } catch { failed++; }
+        }
+      });
+    } finally { setImporting(false); }
     setMsg({ k: created ? "ok" : "err", t: `Imported ${created} template(s)${failed ? `, ${failed} skipped` : ""}.` }); reload();
   }
   return (
@@ -1106,7 +1115,8 @@ function Templates() {
         {err && <Notice msg={{ k: "err", t: err }} />}
         <TableTools q={q} setQ={setQ} count={rows.length} total={all.length}>
           <button className="secondary small" onClick={downloadTemplate}>Download template</button>
-          <label className="secondary small" style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}>Import<input type="file" accept=".csv,.txt,text/csv" style={{ display: "none" }} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImportFile(file); e.currentTarget.value = ""; }} /></label>
+          <label className="secondary small" style={{ cursor: importing ? "not-allowed" : "pointer", display: "inline-flex", alignItems: "center", opacity: importing ? 0.6 : 1 }}>{importing ? "Importing…" : "Import"}<input type="file" accept=".csv,.txt,text/csv" style={{ display: "none" }} disabled={importing} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImportFile(file); e.currentTarget.value = ""; }} /></label>
+          {importing && <span className="muted" style={{ fontSize: 12 }}>Please don’t close or refresh this tab until it finishes.</span>}
           {sel.ids.length > 0 && <button className="danger small" onClick={() => setConfirm({ mode: "bulk" })}>Delete selected ({sel.ids.length})</button>}
         </TableTools>
         <table>
@@ -1460,6 +1470,71 @@ function CampaignReport({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+// View / edit a campaign from the Action column. Draft campaigns are fully
+// editable (name, subject, audience, body → PATCH); non-drafts are read-only.
+function CampaignEditor({ id, onClose, onSaved }: { id: string; onClose: () => void; onSaved: () => void }) {
+  const { data, err } = useJson<any>(`/api/crm/campaigns/${id}`);
+  const camp = data?.campaign;
+  const editable = camp?.status === "draft";
+  const [f, setF] = useState<{ name: string; subject: string; body: string; audiences: Record<string, boolean> } | null>(null);
+  const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!camp || f) return;
+    let auds: string[] = [];
+    try { auds = (JSON.parse(camp.audienceJson || "{}").audiences || []) as string[]; } catch { /* ignore */ }
+    setF({ name: camp.name || "", subject: camp.subject || "", body: camp.body || "", audiences: Object.fromEntries(auds.map((a) => [a, true])) });
+  }, [camp, f]);
+  async function save() {
+    if (!f) return;
+    if (!f.name.trim() || !f.subject.trim()) { setMsg({ k: "err", t: "Name and subject are required." }); return; }
+    const audiences = Object.keys(f.audiences).filter((a) => f.audiences[a]);
+    if (!audiences.length) { setMsg({ k: "err", t: "Choose at least one audience." }); return; }
+    setSaving(true); setMsg(null);
+    try { await send(`/api/crm/campaigns/${id}`, { name: f.name, subject: f.subject, body: f.body, audience: { audiences } }, "PATCH"); onSaved(); }
+    catch (e: any) { setMsg({ k: "err", t: e.message }); setSaving(false); }
+  }
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex-between"><h2 style={{ margin: 0 }}>{editable ? "View / edit draft campaign" : "View campaign"}</h2><button className="secondary small" onClick={onClose}>Close</button></div>
+        {err && <Notice msg={{ k: "err", t: err }} />}
+        <Notice msg={msg} />
+        {!f ? <p className="sub">Loading…</p> : !editable ? (
+          <>
+            <p className="sub">This campaign is <strong>{camp?.status}</strong> and can no longer be edited. Open <em>Report</em> for delivery detail.</p>
+            <div><label>Name</label><input value={f.name} readOnly /></div>
+            <div style={{ marginTop: 8 }}><label>Subject</label><input value={f.subject} readOnly /></div>
+            <label style={{ marginTop: 8 }}>Body</label>
+            <div className="rte-area" style={{ opacity: 0.75 }} dangerouslySetInnerHTML={{ __html: f.body || "<em>(empty)</em>" }} />
+          </>
+        ) : (
+          <>
+            <div className="row">
+              <div><label>Campaign name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
+              <div><label>Subject</label><input value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} /></div>
+            </div>
+            <label style={{ marginTop: 8 }}>Audience</label>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+              {AUDIENCE_KEYS.map((a) => (
+                <label key={a} className="consent" style={{ display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
+                  <input type="checkbox" checked={!!f.audiences[a]} onChange={(e) => setF({ ...f, audiences: { ...f.audiences, [a]: e.target.checked } })} /> {a}
+                </label>
+              ))}
+            </div>
+            <label style={{ marginTop: 10 }}>Email body</label>
+            <RichText value={f.body} onChange={(html) => setF((p) => (p ? { ...p, body: html } : p))} />
+            <div className="flex-between" style={{ marginTop: 14 }}>
+              <button className="secondary small" onClick={onClose}>Cancel</button>
+              <button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save draft"}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Crm() {
   const contacts = useJson<any>("/api/crm/contacts");
   const campaigns = useJson<any>("/api/crm/campaigns");
@@ -1468,6 +1543,7 @@ function Crm() {
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   const [confirm, setConfirm] = useState<null | { title: string; message: string; label: string; danger?: boolean; run: () => void }>(null);
   const [report, setReport] = useState<string | null>(null);
+  const [editCamp, setEditCamp] = useState<string | null>(null);
   const list: any[] = contacts.data?.contacts ?? [];
   const campList: any[] = campaigns.data?.campaigns ?? [];
   const dirty = !!(camp.name || camp.subject || camp.body);
@@ -1497,6 +1573,7 @@ function Crm() {
   return (
     <>
       {report && <CampaignReport id={report} onClose={() => setReport(null)} />}
+      {editCamp && <CampaignEditor id={editCamp} onClose={() => setEditCamp(null)} onSaved={() => { setEditCamp(null); campaigns.reload(); setMsg({ k: "ok", t: "Draft campaign updated." }); }} />}
       <ConfirmDialog open={!!confirm} title={confirm?.title || ""} message={confirm?.message || ""} confirmLabel={confirm?.label || "Confirm"} danger={confirm?.danger} onConfirm={() => confirm?.run()} onCancel={() => setConfirm(null)} />
       <div className="panel">
         <h2>CRM — contacts</h2>
@@ -1529,6 +1606,7 @@ function Crm() {
               <td>{k.clickCount ?? 0}</td>
               <td className="mono muted">{dt(k.createdAt)}</td>
               <td className="right"><Kebab items={[
+                k.status === "draft" ? { label: "View / edit", onClick: () => setEditCamp(k.id) } : null,
                 ["draft", "scheduled"].includes(k.status) ? { label: "Send", onClick: () => askSend(k) } : null,
                 { label: "Send test", onClick: () => test(k) },
                 { label: "Report", onClick: () => setReport(k.id) },

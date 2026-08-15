@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { runGuarded } from "@/lib/busy";
 
 /**
  * Compact, embeddable CSV importer for a single module type. Drop into any
@@ -21,17 +22,31 @@ export default function ModuleImportCard({
     const f = e.target.files?.[0];
     if (!f) return;
     setFilename(f.name);
+    setResult(null);
+    // Excel workbooks are binary (zip) — reading them as text produces garbage,
+    // which is what made large ".xlsx" uploads appear to "not work". Guide the
+    // user to export a CSV, which also imports far faster.
+    if (/\.(xlsx|xlsm|xlsb|xls)$/i.test(f.name)) {
+      setCsvText("");
+      setResult({ error: "Excel files can’t be read directly yet. In Excel choose File → Save As → “CSV UTF-8 (.csv)”, then upload that file. Tip: match the ‘Download template’ columns." });
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => setCsvText(String(reader.result || ""));
     reader.readAsText(f);
   }
   async function run() {
     setBusy(true); setResult(null);
-    const res = await fetch(`/api/schools/${schoolId}/import`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, csvText, filename: filename || undefined }),
-    });
-    setResult(await res.json().catch(() => ({ error: "Import failed" }))); setBusy(false);
+    try {
+      // Guard against navigating away / refreshing while the import runs.
+      const res = await runGuarded(() => fetch(`/api/schools/${schoolId}/import`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, csvText, filename: filename || undefined }),
+      }));
+      setResult(await res.json().catch(() => ({ error: "Import failed" })));
+    } catch {
+      setResult({ error: "Import failed — please check your connection and try again." });
+    } finally { setBusy(false); }
   }
 
   return (
@@ -50,7 +65,7 @@ export default function ModuleImportCard({
               <a href={`/api/schools/${schoolId}/import/template?type=${type}`}><button type="button" className="secondary">Download template</button></a>
             </div>
             <div style={{ display: "flex", alignItems: "flex-end" }}>
-              <input type="file" accept=".csv,text/csv" onChange={onFile} />
+              <input type="file" accept=".csv,text/csv,.xlsx,.xls" onChange={onFile} />
             </div>
           </div>
           <label style={{ marginTop: 12 }}>…or paste CSV content</label>
