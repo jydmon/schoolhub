@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSel, useSort, SortTh, Kebab, SourceBadge, DetailModal } from "./EntityKit";
+import ModuleImportCard from "./ModuleImportCard";
 
 const TYPES: [string, string][] = [
   ["merit", "Merit point"], ["house_point", "House point"], ["badge", "Achievement badge"], ["praise", "Teacher praise"],
@@ -93,6 +94,7 @@ export default function BehaviourTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="behaviour" title="Import behaviour records" hint="No behaviour system connected? Bulk-add merits & incidents from a CSV (match pupils by reference; type merit/incident/…, points, date)." />
       <div className="panel">
         <div className="flex-between">
           <div><h2>Rewards &amp; behaviour</h2><p className="sub" style={{ marginBottom: 0 }}>Records normally arrive from the connected behaviour system (source of truth) and are read-only here. You can also add one manually.</p></div>

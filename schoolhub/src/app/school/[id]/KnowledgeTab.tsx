@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 const CATEGORIES = ["policy", "parent_handbook", "student_handbook", "uniform", "behaviour", "attendance", "safeguarding", "transport", "trip", "menu", "term_dates", "newsletter", "emergency", "faq"];
 const CAT_LABEL: Record<string, string> = {
@@ -63,6 +64,7 @@ export default function KnowledgeTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="knowledge_base" title="Import knowledge base" hint="Bulk-add documents from a CSV (matched by title). Imported items arrive as drafts unless status is set — publish to make them searchable by parents." />
       <div className="panel">
         <div className="flex-between">
           <div><h2>Knowledge Hub</h2><p className="sub" style={{ marginBottom: 0 }}>{docs.length} document(s) · only <strong>published</strong> items are searchable by parents</p></div>

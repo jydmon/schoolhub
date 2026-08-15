@@ -170,7 +170,174 @@ export async function runImport(opts: {
     }
   }
 
-  for (let i = 0; type !== "attendance" && i < rows.length; i++) {
+  // Clubs & activities — one row per club, matched by name (per school).
+  if (type === "clubs_activities") {
+    const items: { line: number; name: string; data: { category: string; description: string | null; location: string | null; cadence: string; dayOfWeek: string | null; startTime: string | null; endTime: string | null; yearGroup: string | null; capacity: number | null; cost: number; staffLead: string | null; status: string; source: string } }[] = [];
+    const namesSeen = new Set<string>();
+    for (let i = 0; i < rows.length; i++) {
+      const line = i + 2;
+      const row = rows[i];
+      try {
+        const name = row.name?.trim();
+        if (!name) throw new Error("name is required");
+        if (namesSeen.has(name.toLowerCase())) { skipped++; errors.push({ row: line, field: "name", message: `duplicate club "${name}" in file`, fatal: false }); continue; }
+        namesSeen.add(name.toLowerCase());
+        const capRaw = (row.capacity || "").trim();
+        const capacity = capRaw ? parseInt(capRaw, 10) : null;
+        if (capacity !== null && (isNaN(capacity) || capacity < 0)) throw new Error("capacity must be a whole number");
+        const costRaw = (row.cost || "").replace(/[£,\s]/g, "").trim();
+        const cost = costRaw ? Math.round(parseFloat(costRaw) * 100) : 0;
+        if (costRaw && (isNaN(cost) || cost < 0)) throw new Error("cost must be a number in pounds, e.g. 2.50");
+        items.push({ line, name, data: {
+          category: (row.category?.trim() || "general").toLowerCase(),
+          description: row.description?.trim() || null,
+          location: row.location?.trim() || null,
+          cadence: (row.cadence?.trim() || "weekly").toLowerCase(),
+          dayOfWeek: row.dayOfWeek?.trim() || null,
+          startTime: row.startTime?.trim() || null,
+          endTime: row.endTime?.trim() || null,
+          yearGroup: row.yearGroup?.trim() || null,
+          capacity, cost,
+          staffLead: row.staffLead?.trim() || null,
+          status: (row.status?.trim() || "active").toLowerCase(),
+          source: "import",
+        } });
+      } catch (err) { errors.push({ row: line, message: (err as Error).message, fatal: true }); }
+    }
+    const existingClubs = await prisma.club.findMany({ where: { schoolId }, select: { id: true, name: true } });
+    const clubByName = new Map(existingClubs.map((c) => [c.name.toLowerCase(), c.id] as const));
+    const create: { schoolId: string; name: string; category: string; description: string | null; location: string | null; cadence: string; dayOfWeek: string | null; startTime: string | null; endTime: string | null; yearGroup: string | null; capacity: number | null; cost: number; staffLead: string | null; status: string; source: string }[] = [];
+    for (const it of items) {
+      const id = clubByName.get(it.name.toLowerCase());
+      if (id) { await prisma.club.update({ where: { id }, data: it.data }); updated++; }
+      else { create.push({ schoolId, name: it.name, ...it.data }); created++; }
+    }
+    for (let i = 0; i < create.length; i += 500) await prisma.club.createMany({ data: create.slice(i, i + 500) });
+  }
+
+  // Class timetables — matched by (day, start time, class, subject).
+  if (type === "timetables") {
+    const DOW: Record<string, number> = { mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, weds: 3, wednesday: 3, thu: 4, thur: 4, thurs: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6, sun: 7, sunday: 7 };
+    const HHMM = /^([01]?\d|2[0-3]):[0-5]\d$/;
+    const emails = new Set<string>();
+    const items: { line: number; key: string; dayOfWeek: number; period: string | null; startTime: string; endTime: string; subject: string; yearGroup: string | null; className: string | null; room: string | null; teacherEmail: string | null }[] = [];
+    const seenKeys = new Set<string>();
+    for (let i = 0; i < rows.length; i++) {
+      const line = i + 2;
+      const row = rows[i];
+      try {
+        const dRaw = (row.dayOfWeek || "").trim().toLowerCase();
+        const dayOfWeek = /^[1-7]$/.test(dRaw) ? parseInt(dRaw, 10) : DOW[dRaw];
+        if (!dayOfWeek) throw new Error("dayOfWeek must be Mon–Sun or 1–7");
+        const startTime = (row.startTime || "").trim();
+        const endTime = (row.endTime || "").trim();
+        if (!HHMM.test(startTime)) throw new Error("startTime must be HH:MM");
+        if (!HHMM.test(endTime)) throw new Error("endTime must be HH:MM");
+        const subject = row.subject?.trim();
+        if (!subject) throw new Error("subject is required");
+        const className = row.className?.trim() || null;
+        const teacherEmail = row.teacherEmail?.trim().toLowerCase() || null;
+        if (teacherEmail) emails.add(teacherEmail);
+        const key = `${dayOfWeek}|${startTime}|${(className || "").toLowerCase()}|${subject.toLowerCase()}`;
+        if (seenKeys.has(key)) { skipped++; errors.push({ row: line, field: "subject", message: `duplicate timetable slot for "${subject}" in file`, fatal: false }); continue; }
+        seenKeys.add(key);
+        items.push({ line, key, dayOfWeek, period: row.period?.trim() || null, startTime, endTime, subject, yearGroup: row.yearGroup?.trim() || null, className, room: row.room?.trim() || null, teacherEmail });
+      } catch (err) { errors.push({ row: line, message: (err as Error).message, fatal: true }); }
+    }
+    const teachers = emails.size ? await prisma.user.findMany({ where: { email: { in: Array.from(emails) } }, select: { id: true, email: true } }) : [];
+    const teacherByEmail = new Map(teachers.map((t) => [t.email.toLowerCase(), t.id] as const));
+    const existingTt = await prisma.timetableEntry.findMany({ where: { schoolId }, select: { id: true, dayOfWeek: true, startTime: true, className: true, subject: true } });
+    const ttByKey = new Map(existingTt.map((e) => [`${e.dayOfWeek}|${e.startTime}|${(e.className || "").toLowerCase()}|${e.subject.toLowerCase()}`, e.id] as const));
+    const create: { schoolId: string; dayOfWeek: number; period: string | null; startTime: string; endTime: string; subject: string; yearGroup: string | null; className: string | null; room: string | null; teacherUserId: string | null; source: string }[] = [];
+    for (const it of items) {
+      const teacherUserId = it.teacherEmail ? (teacherByEmail.get(it.teacherEmail) ?? null) : null;
+      if (it.teacherEmail && !teacherUserId) errors.push({ row: it.line, field: "teacherEmail", message: `teacher "${it.teacherEmail}" not found — slot imported unassigned`, fatal: false });
+      const data = { period: it.period, endTime: it.endTime, subject: it.subject, yearGroup: it.yearGroup, room: it.room, teacherUserId, source: "import" };
+      const id = ttByKey.get(it.key);
+      if (id) { await prisma.timetableEntry.update({ where: { id }, data }); updated++; }
+      else { create.push({ schoolId, dayOfWeek: it.dayOfWeek, startTime: it.startTime, className: it.className, ...data }); created++; }
+    }
+    for (let i = 0; i < create.length; i += 500) await prisma.timetableEntry.createMany({ data: create.slice(i, i + 500) });
+  }
+
+  // Behaviour records — append one merit/incident per row (match pupil by ref).
+  if (type === "behaviour") {
+    const pending: { line: number; ref: string; type: string; points: number; category: string | null; note: string | null; teacherName: string | null; positive: boolean; at: Date }[] = [];
+    const refs = new Set<string>();
+    const seenKeys = new Set<string>();
+    for (let i = 0; i < rows.length; i++) {
+      const line = i + 2;
+      const row = rows[i];
+      try {
+        const ref = row.studentReference?.trim();
+        if (!ref) throw new Error("studentReference is required");
+        const bt = (row.type?.trim() || "merit").toLowerCase();
+        const pointsRaw = (row.points || "").trim();
+        const points = pointsRaw ? parseInt(pointsRaw, 10) : 0;
+        if (pointsRaw && isNaN(points)) throw new Error("points must be a whole number");
+        const posRaw = (row.positive || "").trim();
+        const positive = posRaw ? /^(1|true|yes|y|positive)$/i.test(posRaw) : !["incident", "detention", "sanction"].includes(bt);
+        const atRaw = (row.at || row.date || "").trim();
+        let at = new Date();
+        if (atRaw) { if (!/^\d{4}-\d{2}-\d{2}$/.test(atRaw)) throw new Error("at must be YYYY-MM-DD"); at = new Date(`${atRaw}T00:00:00.000Z`); }
+        const note = row.note?.trim() || null;
+        const dupKey = `${ref.toLowerCase()}|${bt}|${atRaw}|${note || ""}`;
+        if (seenKeys.has(dupKey)) { skipped++; errors.push({ row: line, field: "studentReference", message: `duplicate behaviour row for "${ref}" in file`, fatal: false }); continue; }
+        seenKeys.add(dupKey);
+        refs.add(ref);
+        pending.push({ line, ref, type: bt, points, category: row.category?.trim() || null, note, teacherName: row.teacherName?.trim() || null, positive, at });
+      } catch (err) { errors.push({ row: line, message: (err as Error).message, fatal: true }); }
+    }
+    const students = refs.size ? await prisma.student.findMany({ where: { schoolId, reference: { in: Array.from(refs) } }, select: { id: true, reference: true } }) : [];
+    const idByRef = new Map(students.map((s) => [s.reference, s.id] as const));
+    const create: { schoolId: string; studentId: string; type: string; points: number; category: string | null; note: string | null; teacherName: string | null; positive: boolean; at: Date; source: string }[] = [];
+    for (const p of pending) {
+      const studentId = idByRef.get(p.ref);
+      if (!studentId) { errors.push({ row: p.line, field: "studentReference", message: `student "${p.ref}" not found`, fatal: true }); continue; }
+      create.push({ schoolId, studentId, type: p.type, points: p.points, category: p.category, note: p.note, teacherName: p.teacherName, positive: p.positive, at: p.at, source: "import" });
+      created++;
+    }
+    for (let i = 0; i < create.length; i += 500) await prisma.rewardRecord.createMany({ data: create.slice(i, i + 500), skipDuplicates: true });
+  }
+
+  // Knowledge base — one row per document, matched by title (per school).
+  if (type === "knowledge_base") {
+    const DOC_STATUS = ["draft", "under_review", "approved", "published", "superseded", "archived"];
+    const items: { line: number; title: string; data: { description: string | null; category: string; sourceType: string; audienceRoles: string; bodyText: string; status: string; yearGroup: string | null } }[] = [];
+    const titlesSeen = new Set<string>();
+    for (let i = 0; i < rows.length; i++) {
+      const line = i + 2;
+      const row = rows[i];
+      try {
+        const title = row.title?.trim();
+        if (!title) throw new Error("title is required");
+        if (titlesSeen.has(title.toLowerCase())) { skipped++; errors.push({ row: line, field: "title", message: `duplicate document "${title}" in file`, fatal: false }); continue; }
+        titlesSeen.add(title.toLowerCase());
+        const status = (row.status?.trim() || "draft").toLowerCase();
+        items.push({ line, title, data: {
+          description: row.description?.trim() || null,
+          category: (row.category?.trim() || "faq").toLowerCase(),
+          sourceType: (row.sourceType?.trim() || "text").toLowerCase(),
+          audienceRoles: row.audienceRoles?.trim() || "parent,staff",
+          bodyText: row.bodyText?.trim() || "",
+          status: DOC_STATUS.includes(status) ? status : "draft",
+          yearGroup: row.yearGroup?.trim() || null,
+        } });
+      } catch (err) { errors.push({ row: line, message: (err as Error).message, fatal: true }); }
+    }
+    const existingDocs = await prisma.document.findMany({ where: { schoolId }, select: { id: true, title: true } });
+    const docByTitle = new Map(existingDocs.map((d) => [d.title.toLowerCase(), d.id] as const));
+    const create: { schoolId: string; title: string; description: string | null; category: string; sourceType: string; audienceRoles: string; bodyText: string; status: string; yearGroup: string | null }[] = [];
+    for (const it of items) {
+      const id = docByTitle.get(it.title.toLowerCase());
+      if (id) { await prisma.document.update({ where: { id }, data: it.data }); updated++; }
+      else { create.push({ schoolId, title: it.title, ...it.data }); created++; }
+    }
+    for (let i = 0; i < create.length; i += 500) await prisma.document.createMany({ data: create.slice(i, i + 500) });
+  }
+
+  const BATCHED_TYPES = ["attendance", "clubs_activities", "timetables", "behaviour", "knowledge_base"];
+  for (let i = 0; !BATCHED_TYPES.includes(type) && i < rows.length; i++) {
     const line = i + 2; // header is line 1
     const row = rows[i];
     try {

@@ -178,4 +178,32 @@ export const IMPORT_TEMPLATES: Record<
     headers: ["studentReference", "date", "session", "status", "note"],
     example: ["STU-1001", "2026-09-08", "am", "present", ""],
   },
+  clubs_activities: {
+    // Clubs & extracurricular activities, matched by name. category = sport|music|
+    // arts|drama|academic|stem|wellbeing|general. cadence = daily|weekly|monthly|
+    // annual|adhoc. dayOfWeek = Mon..Sun. cost is in pounds (0 = free).
+    headers: ["name", "category", "description", "location", "cadence", "dayOfWeek", "startTime", "endTime", "yearGroup", "capacity", "cost", "staffLead", "status"],
+    example: ["Chess Club", "academic", "Weekly chess for all abilities", "Room 12", "weekly", "Wed", "15:30", "16:30", "", "20", "0", "Mr Reed", "active"],
+  },
+  timetables: {
+    // Class timetable slots. dayOfWeek = Mon..Sun or 1..7. Times are HH:MM.
+    // Matched by day + start time + class + subject. teacherEmail is optional and
+    // links the slot to a staff member if the email is known.
+    headers: ["dayOfWeek", "period", "startTime", "endTime", "subject", "yearGroup", "className", "room", "teacherEmail"],
+    example: ["Mon", "P1", "09:00", "10:00", "Maths", "Year 4", "4B", "R12", "tom@northwind.test"],
+  },
+  behaviour: {
+    // Behaviour records (merits & incidents), appended per row. Match the pupil by
+    // reference. type = merit|house_point|badge|praise|incident|detention|sanction|
+    // comment|certificate. positive = yes/no (defaults from type). at = YYYY-MM-DD.
+    headers: ["studentReference", "type", "points", "category", "note", "teacherName", "positive", "at"],
+    example: ["STU-1001", "merit", "2", "Teamwork", "Great teamwork in science", "Mr Reed", "yes", "2026-09-10"],
+  },
+  knowledge_base: {
+    // Knowledge base / information documents, matched by title. category = policy|
+    // handbook|uniform|behaviour|attendance|safeguarding|transport|faq|... sourceType
+    // = text|link|pdf. status = draft|published (imported as draft unless set).
+    headers: ["title", "category", "sourceType", "audienceRoles", "description", "bodyText", "status"],
+    example: ["Uniform Policy", "uniform", "text", "parent,staff", "What pupils should wear", "Full school uniform is required every day.", "published"],
+  },
 };

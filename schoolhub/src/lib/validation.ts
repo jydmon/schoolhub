@@ -165,6 +165,7 @@ export const importSchema = z.object({
   type: z.enum([
     "students", "parents", "staff", "messaging_consent",
     "vehicles", "routes", "drivers", "calendar_events", "announcements", "pupil_reports", "menus", "trips", "attendance",
+    "clubs_activities", "timetables", "behaviour", "knowledge_base",
   ]),
   csvText: z.string().min(1),
   filename: z.string().optional(),

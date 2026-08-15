@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import ModuleImportCard from "./ModuleImportCard";
 
 const DAYS: [number, string][] = [[1, "Monday"], [2, "Tuesday"], [3, "Wednesday"], [4, "Thursday"], [5, "Friday"], [6, "Saturday"], [7, "Sunday"]];
 const DAY_LABEL: Record<number, string> = Object.fromEntries(DAYS) as any;
@@ -53,6 +54,7 @@ export default function TimetableTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="timetables" title="Import class timetables" hint="No timetable system? Bulk-add lessons from a CSV (dayOfWeek Mon–Sun or 1–7, times HH:MM; optional teacher email links the slot to staff)." />
       <div className="panel">
         <div className="flex-between">
           <div><h2>Timetable</h2><p className="sub" style={{ marginBottom: 0 }}>Weekly lessons linked to a class/year and a teacher. Lessons also appear on the Calendar. Filter by teacher or year to see a specific schedule.</p></div>
