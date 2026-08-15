@@ -10,7 +10,7 @@ import FaqManager from "./FaqManager";
 import SupportAccessTab from "./SupportAccessTab";
 import PoliciesTab from "./PoliciesTab";
 import { PLATFORM_AREAS, AREA_LABELS, managerCoversSchool, describeScope } from "@/lib/platform-staff-logic";
-import { recordClientDownload } from "@/lib/download-client";
+import { recordClientDownload, stampCsv } from "@/lib/download-client";
 import { runGuarded } from "@/lib/busy";
 import { usePersistentState } from "@/lib/use-persistent-state";
 
@@ -925,19 +925,109 @@ function ParentRevenue() {
 }
 
 /* ============================ USAGE ============================ */
+const USAGE_PERIODS: [number, string][] = [[7, "7 days"], [30, "30 days"], [90, "90 days"], [180, "6 months"], [365, "12 months"]];
 function Usage() {
-  const [view, setView] = useState<"system" | "users" | "roles">("system");
-  const { data, err } = useJson<any>(`/api/platform/usage?view=${view}&days=30`);
+  const [view, setView] = useState<"census" | "system" | "users" | "roles">("census");
+  const [schoolId, setSchoolId] = usePersistentState("analytics.school", "");
+  const [days, setDays] = usePersistentState<number>("analytics.days", 30);
+  const schoolsQ = useJson<any>("/api/schools");
+  const schoolList: any[] = schoolsQ.data?.schools ?? [];
+  const schoolName = schoolList.find((s) => s.id === schoolId)?.name || "";
+  const { data, err } = useJson<any>(`/api/platform/usage?view=${view}&days=${days}${schoolId ? `&school=${encodeURIComponent(schoolId)}` : ""}`);
   const sys = data?.system;
+  const census = data?.census;
   const users: any[] = data?.users ?? [];
   const roles: any[] = data?.roles ?? [];
+
+  async function exportCsv() {
+    let headers: string[] = [], rows: (string | number)[][] = [];
+    if (view === "census" && census) {
+      headers = ["Metric", "Value"];
+      rows = [
+        ["School", schoolName || "—"], ["Period (days)", census.days],
+        ["Total users", census.totalUsers], ["Active users", census.activeUsers], ["Inactive users", census.inactiveUsers],
+        ["Invited", census.invited], ["Suspended", census.suspended], ["Never logged in", census.neverLoggedIn],
+        ["Actions", census.actions], ["Logins", census.loginCount], ["Usage events", census.usageVolume],
+        ...Object.entries(census.byRole || {}).map(([r, n]) => [`Role: ${r}`, n as number] as [string, number]),
+        ...(census.topFeatures || []).map((f: any) => [`Feature: ${f.area}`, f.count] as [string, number]),
+      ];
+    } else if (view === "users") { headers = ["User", "Role", "Events", "Last active"]; rows = users.map((u: any) => [u.name || u.email || u.userId, u.role || "", u.events ?? u.count ?? "", u.lastAt || u.lastActiveAt || ""]); }
+    else if (view === "roles") { headers = ["Role", "Active", "Events"]; rows = roles.map((r: any) => [r.role, r.active ?? "", r.events ?? r.count ?? ""]); }
+    else if (sys) { headers = ["Area", "Events"]; rows = Object.entries(sys.byArea ?? {}).map(([a, n]: any) => [a, n]); }
+    if (!rows.length) return;
+    const csvBody = [headers, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const stamped = await stampCsv({ section: "analytics", reportName: `Analytics — ${view}${schoolName ? ` — ${schoolName}` : ""}`, csv: csvBody, schoolId: schoolId || null });
+    const blob = new Blob([stamped], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `analytics-${view}${schoolName ? "-" + schoolName.replace(/[^a-z0-9]+/gi, "-").toLowerCase() : ""}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  const trendMax = census?.trend?.length ? Math.max(...census.trend.map((t: any) => t.count)) : 0;
+
   return (
     <div className="panel">
-      <h2>Usage analytics <span className="sub" style={{ fontWeight: 400 }}>· last 30 days</span></h2>
+      <div className="flex-between" style={{ flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <h2 style={{ margin: 0 }}>School analytics</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={schoolId} onChange={(e) => setSchoolId(e.target.value)} style={{ width: "auto" }}>
+            <option value="">All schools (platform)</option>
+            {schoolList.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ width: "auto" }}>
+            {USAGE_PERIODS.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+          </select>
+          <button className="secondary small" onClick={exportCsv}>Export (CSV)</button>
+        </div>
+      </div>
+      <p className="sub" style={{ marginTop: 6 }}>{schoolName ? schoolName : "All schools"} · last {days} days</p>
       <div className="tabs" style={{ marginBottom: 12 }}>
-        {(["system", "users", "roles"] as const).map((v) => <button key={v} className={view === v ? "active" : ""} onClick={() => setView(v)}>{v}</button>)}
+        {(["census", "system", "users", "roles"] as const).map((v) => <button key={v} className={view === v ? "active" : ""} onClick={() => setView(v)}>{v === "census" ? "Overview" : v}</button>)}
       </div>
       {err && <Notice msg={{ k: "err", t: err }} />}
+
+      {view === "census" && !schoolId && <Empty cols={1} text="Choose a school above to see its user analytics, or use the System / Roles tabs for platform-wide figures." />}
+      {view === "census" && schoolId && census && (
+        <>
+          <div className="stat-grid">
+            <div className="stat"><div className="n">{census.totalUsers}</div><div className="l">Total users</div></div>
+            <div className="stat"><div className="n" style={{ color: "var(--ok, #16a34a)" }}>{census.activeUsers}</div><div className="l">Active ({days}d)</div></div>
+            <div className="stat"><div className="n" style={{ color: census.inactiveUsers ? "var(--danger)" : undefined }}>{census.inactiveUsers}</div><div className="l">Inactive</div></div>
+            <div className="stat"><div className="n">{census.loginCount}</div><div className="l">Logins</div></div>
+            <div className="stat"><div className="n">{census.actions}</div><div className="l">Actions</div></div>
+            <div className="stat"><div className="n">{census.usageVolume}</div><div className="l">Feature events</div></div>
+          </div>
+          <div className="row" style={{ marginTop: 16, gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <h3 style={{ fontSize: 14 }}>Users by role</h3>
+              <table><thead><tr><th>Role</th><th className="right">Users</th></tr></thead>
+                <tbody>{Object.entries(census.byRole || {}).sort((a: any, b: any) => b[1] - a[1]).map(([r, n]: any) => <tr key={r}><td>{r}</td><td className="right">{n}</td></tr>)}{Object.keys(census.byRole || {}).length === 0 && <Empty cols={2} text="No members." />}</tbody>
+              </table>
+              <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Invited: {census.invited} · Suspended: {census.suspended} · Never logged in: {census.neverLoggedIn}</p>
+            </div>
+            <div style={{ flex: 1, minWidth: 220 }}>
+              <h3 style={{ fontSize: 14 }}>Most-used features</h3>
+              <table><thead><tr><th>Area / action</th><th className="right">Events</th></tr></thead>
+                <tbody>{(census.topFeatures || []).map((f: any) => <tr key={f.area}><td>{f.area}</td><td className="right">{f.count}</td></tr>)}{(census.topFeatures || []).length === 0 && <Empty cols={2} text="No feature usage captured yet." />}</tbody>
+              </table>
+            </div>
+          </div>
+          {census.trend?.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ fontSize: 14 }}>Logins over time</h3>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 90, borderBottom: "1px solid var(--line)", paddingBottom: 2 }}>
+                {census.trend.map((t: any) => (
+                  <div key={t.date} title={`${t.date}: ${t.count}`} style={{ flex: 1, minWidth: 2, background: "var(--brand, #4F46E5)", height: `${trendMax ? Math.max(4, (t.count / trendMax) * 84) : 4}px`, borderRadius: "2px 2px 0 0" }} />
+                ))}
+              </div>
+              <p className="muted" style={{ fontSize: 11, marginTop: 4 }}>{census.trend[0]?.date} → {census.trend[census.trend.length - 1]?.date} · peak {trendMax}/day</p>
+            </div>
+          )}
+          <h3 style={{ fontSize: 14, marginTop: 16 }}>Last logins</h3>
+          <table><thead><tr><th>User</th><th>Roles</th><th>Status</th><th>Last login</th></tr></thead>
+            <tbody>{(census.lastLogins || []).slice(0, 50).map((u: any, i: number) => <tr key={u.email || i}><td>{u.name}<div className="mono muted" style={{ fontSize: 11 }}>{u.email}</div></td><td className="muted">{u.roles || "—"}</td><td><span className={`badge ${u.status === "active" ? "active" : u.status === "suspended" ? "suspended" : "trial"}`}>{u.status}</span></td><td className="mono muted">{u.lastLoginAt ? dt(u.lastLoginAt) : "never"}</td></tr>)}{(census.lastLogins || []).length === 0 && <Empty cols={4} text="No users." />}</tbody>
+          </table>
+        </>
+      )}
+
       {view === "system" && sys && (
         <>
           <div className="stat-grid">

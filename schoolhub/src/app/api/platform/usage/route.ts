@@ -1,9 +1,9 @@
 import { requireAuth } from "@/lib/session";
 import { assertStaffArea } from "@/lib/platform-staff";
-import { userAnalytics, roleAnalytics, systemUsage } from "@/lib/usage";
+import { userAnalytics, roleAnalytics, systemUsage, schoolCensus } from "@/lib/usage";
 import { handleError, ok } from "@/lib/http";
 
-// Usage analytics for the super-admin. ?view=users|roles|system
+// Usage analytics for the super-admin. ?view=users|roles|system|census
 export async function GET(req: Request) {
   try {
     const ctx = await requireAuth();
@@ -20,6 +20,9 @@ export async function GET(req: Request) {
     if (view === "roles") {
       return ok({ roles: await roleAnalytics(["Parent", "Teacher"], { schoolId, days }) });
     }
-    return ok({ system: await systemUsage(days) });
+    if (view === "census") {
+      return ok({ census: schoolId ? await schoolCensus(schoolId, days) : null });
+    }
+    return ok({ system: await systemUsage(days, schoolId) });
   } catch (err) { return handleError(err); }
 }

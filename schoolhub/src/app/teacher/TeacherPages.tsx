@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import ModuleImportCard from "@/app/school/[id]/ModuleImportCard";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
@@ -505,5 +506,51 @@ export function TAssistant({ schoolId }: { schoolId: string }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/* --------------------------------- Import -------------------------------- */
+// Scoped bulk import for teachers granted the import permission. The server
+// enforces the real rules (permitted types + own-pupils only); this screen
+// simply surfaces the three pupil-scoped importers and the teacher's own
+// import history. Visibility of the whole tab is decided in TeacherShell by
+// probing the import endpoint.
+export function TImport({ schoolId }: { schoolId: string }) {
+  const [batches, setBatches] = useState<any[]>([]);
+  const load = useCallback(() => {
+    if (!schoolId) return;
+    fetch(`/api/schools/${schoolId}/import`).then((r) => (r.ok ? r.json() : { batches: [] })).then((d) => setBatches(d.batches ?? [])).catch(() => {});
+  }, [schoolId]);
+  useEffect(() => { load(); }, [load]);
+  return (
+    <>
+      <div className="panel">
+        <h2>Import my pupils&apos; data</h2>
+        <p className="sub" style={{ marginBottom: 0 }}>Bulk-import attendance, behaviour and pupil reports for the pupils in your classes. Every file is validated, and you can only import data for your own pupils — rows for other pupils are rejected.</p>
+      </div>
+      <ModuleImportCard schoolId={schoolId} type="attendance" title="Import attendance" hint="Match pupils by reference; session am/pm/day; status present/late/absent…; date YYYY-MM-DD." defaultOpen />
+      <ModuleImportCard schoolId={schoolId} type="behaviour" title="Import behaviour records" hint="Merits & incidents for your pupils (type, points, category, note, date)." />
+      <ModuleImportCard schoolId={schoolId} type="pupil_reports" title="Import pupil reports" hint="Draft reports for your pupils (title, term, summary). Imported as drafts." />
+      <div className="panel">
+        <h2>My recent imports</h2>
+        {batches.length === 0 ? <p className="muted" style={{ marginBottom: 0 }}>No imports yet.</p> : (
+          <table>
+            <thead><tr><th>When</th><th>Type</th><th>File</th><th>Created</th><th>Updated</th><th>Skipped</th><th>Errors</th><th>Status</th></tr></thead>
+            <tbody>
+              {batches.map((b) => (
+                <tr key={b.id}>
+                  <td className="mono muted" style={{ fontSize: 12 }}>{dt(b.createdAt)}</td>
+                  <td>{b.type}</td>
+                  <td className="muted">{b.filename || "—"}</td>
+                  <td>{b.createdRows}</td><td>{b.updatedRows}</td><td>{b.skippedRows}</td>
+                  <td style={{ color: b.errorRows ? "var(--danger)" : undefined }}>{b.errorRows}</td>
+                  <td><span className={`badge ${b.status === "completed" ? "active" : b.status === "failed" ? "suspended" : "trial"}`}>{b.status}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
   );
 }

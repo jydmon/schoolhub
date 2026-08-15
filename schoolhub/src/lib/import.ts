@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { parseCsv } from "./csv";
 import { recordAudit } from "./audit";
+import { AppError } from "./http";
 import {
   AUDIT,
   ROLES,
@@ -78,6 +79,10 @@ export async function runImport(opts: {
   filename?: string;
   actorUserId?: string;
   actorEmail?: string;
+  // Role-scoped import (E2). When present, restricts the importer to the listed
+  // types and (for pupil-scoped imports) to the given pupil ids. Omitted for
+  // full admins, who are unrestricted.
+  scope?: { studentIds?: string[]; allowedTypes?: string[] };
 }): Promise<ImportResult> {
   const { schoolId, type, csvText } = opts;
   const { rows } = parseCsv(csvText);
@@ -89,6 +94,14 @@ export async function runImport(opts: {
   // Row numbers are 1-based over data rows; +1 in messages to align with the
   // spreadsheet (header = line 1).
   const seen = new Set<string>();
+
+  // Enforce role scope up front: reject an entire import of a type the actor
+  // isn't permitted to bring in. Pupil-level scoping is enforced per row below.
+  const scope = opts.scope;
+  if (scope?.allowedTypes && !scope.allowedTypes.includes(type)) {
+    throw new AppError(`You don't have permission to import "${type}". You can import: ${scope.allowedTypes.join(", ")}.`, 403);
+  }
+  const allowedStudentIds = scope?.studentIds ? new Set(scope.studentIds) : null;
 
   // Attendance is the highest-volume import (a whole school, potentially every
   // day), so it uses a batched path: resolve pupils and existing marks in two
@@ -130,6 +143,7 @@ export async function runImport(opts: {
     for (const p of pending) {
       const studentId = idByRef.get(p.ref);
       if (!studentId) { errors.push({ row: p.line, field: "studentReference", message: `student "${p.ref}" not found`, fatal: true }); continue; }
+      if (allowedStudentIds && !allowedStudentIds.has(studentId)) { errors.push({ row: p.line, field: "studentReference", message: `"${p.ref}" is not one of your pupils`, fatal: true }); continue; }
       wants.push({ line: p.line, studentId, date: p.date, session: p.session, status: p.status, note: p.note });
     }
 
@@ -294,6 +308,7 @@ export async function runImport(opts: {
     for (const p of pending) {
       const studentId = idByRef.get(p.ref);
       if (!studentId) { errors.push({ row: p.line, field: "studentReference", message: `student "${p.ref}" not found`, fatal: true }); continue; }
+      if (allowedStudentIds && !allowedStudentIds.has(studentId)) { errors.push({ row: p.line, field: "studentReference", message: `"${p.ref}" is not one of your pupils`, fatal: true }); continue; }
       create.push({ schoolId, studentId, type: p.type, points: p.points, category: p.category, note: p.note, teacherName: p.teacherName, positive: p.positive, at: p.at, source: "import" });
       created++;
     }
@@ -697,6 +712,7 @@ export async function runImport(opts: {
         if (!title) throw new Error("title is required");
         const student = await prisma.student.findUnique({ where: { schoolId_reference: { schoolId, reference: ref } } });
         if (!student) throw new Error(`student "${ref}" not found`);
+        if (allowedStudentIds && !allowedStudentIds.has(student.id)) throw new Error(`"${ref}" is not one of your pupils`);
         const term = row.term?.trim() || null;
         const dupKey = "pr:" + student.id + ":" + title.toLowerCase() + ":" + (term || "");
         if (seen.has(dupKey)) { skipped++; errors.push({ row: line, field: "title", message: `duplicate report "${title}" for this pupil in file`, fatal: false }); continue; }
@@ -807,4 +823,19 @@ export async function runImport(opts: {
     errorRows,
     errors,
   };
+}
+
+// E2 — resolve the import scope for a non-admin (e.g. a teacher granted the
+// IMPORT_DATA permission). Restricts them to pupil-scoped import types, and to
+// the pupils in the classes they teach. A teacher with no classes gets an empty
+// pupil set, so every pupil row is rejected as out-of-scope.
+export async function resolveImporterScope(schoolId: string, userId: string): Promise<{ studentIds: string[]; allowedTypes: string[] }> {
+  const allowedTypes = ["attendance", "behaviour", "pupil_reports"];
+  const profile = await prisma.staffProfile.findUnique({ where: { schoolId_userId: { schoolId, userId } }, select: { id: true } });
+  if (!profile) return { studentIds: [], allowedTypes };
+  const classes = await prisma.staffClass.findMany({ where: { staffProfileId: profile.id }, select: { classId: true } });
+  const classIds = classes.map((c) => c.classId);
+  if (!classIds.length) return { studentIds: [], allowedTypes };
+  const students = await prisma.student.findMany({ where: { schoolId, classId: { in: classIds } }, select: { id: true } });
+  return { studentIds: students.map((s) => s.id), allowedTypes };
 }

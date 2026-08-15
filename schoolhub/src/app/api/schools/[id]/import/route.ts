@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { assertTenantAccess } from "@/lib/tenant";
-import { assertCan } from "@/lib/rbac";
+import { assertCan, can } from "@/lib/rbac";
 import { PERMISSIONS } from "@/lib/constants";
 import { importSchema } from "@/lib/validation";
-import { runImport } from "@/lib/import";
+import { runImport, resolveImporterScope } from "@/lib/import";
 import { handleError, ok } from "@/lib/http";
 
 type Params = { params: { id: string } };
@@ -14,10 +14,13 @@ export async function GET(_req: Request, { params }: Params) {
   try {
     const ctx = await requireAuth();
     assertTenantAccess(ctx, params.id);
-    assertCan(ctx, PERMISSIONS.MANAGE_USERS, params.id);
+    assertCan(ctx, PERMISSIONS.IMPORT_DATA, params.id);
 
+    // Full admins see all import history; a scoped importer (teacher) sees only
+    // the batches they ran themselves.
+    const fullAdmin = can(ctx, PERMISSIONS.MANAGE_USERS, params.id);
     const batches = await prisma.importBatch.findMany({
-      where: { schoolId: params.id },
+      where: { schoolId: params.id, ...(fullAdmin ? {} : { createdById: ctx.userId }) },
       orderBy: { createdAt: "desc" },
       take: 50,
       include: { createdBy: { select: { email: true } } },
@@ -47,7 +50,13 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const ctx = await requireAuth();
     assertTenantAccess(ctx, params.id);
-    assertCan(ctx, PERMISSIONS.MANAGE_USERS, params.id);
+    assertCan(ctx, PERMISSIONS.IMPORT_DATA, params.id);
+
+    // A full admin (MANAGE_USERS) imports unrestricted; anyone else with the
+    // IMPORT_DATA permission (e.g. a teacher) is scoped to their own pupils and
+    // a pupil-safe set of import types.
+    const fullAdmin = can(ctx, PERMISSIONS.MANAGE_USERS, params.id);
+    const scope = fullAdmin ? undefined : await resolveImporterScope(params.id, ctx.userId);
 
     const { type, csvText, filename } = importSchema.parse(await req.json());
     const result = await runImport({
@@ -57,6 +66,7 @@ export async function POST(req: Request, { params }: Params) {
       filename,
       actorUserId: ctx.userId,
       actorEmail: ctx.email,
+      scope,
     });
     return ok(result, 200);
   } catch (err) {

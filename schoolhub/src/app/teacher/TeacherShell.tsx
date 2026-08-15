@@ -7,12 +7,13 @@ import HelpSupport from "@/components/HelpSupport";
 import Messaging from "@/components/Messaging";
 import ScopedSearch from "@/components/ScopedSearch";
 import { useAccessGate } from "@/lib/useAccessGate";
-import { TDashboard, TTimetable, TCalendar, TStudents, TAttendance, TBehaviour, TReports, TTrips, TNotifications, THistory, TProfile, TAssistant } from "./TeacherPages";
+import { TDashboard, TTimetable, TCalendar, TStudents, TAttendance, TBehaviour, TReports, TTrips, TNotifications, THistory, TProfile, TAssistant, TImport } from "./TeacherPages";
 
 const TITLES: Record<string, string> = {
   assistant: "Ask AI Assistant", dashboard: "Dashboard", students: "My pupils", attendance: "Attendance",
   behaviour: "Behaviour", reports: "Pupil reports", timetable: "Timetable", calendar: "Calendar",
   trips: "My trips", notifications: "Notifications", history: "My history", profile: "My profile", dm: "Messages", help: "Help & support", search: "Search",
+  import: "Import data",
 };
 
 export default function TeacherShell({ email = "" }: { email?: string }) {
@@ -20,6 +21,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
   const [schools, setSchools] = useState<{ id: string; name: string }[]>([]);
   const [schoolId, setSchoolId] = useState("");
   const [unread, setUnread] = useState(0);
+  const [canImport, setCanImport] = useState(false);
   const { gate } = useAccessGate(schoolId);
 
   useEffect(() => {
@@ -28,6 +30,14 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
       if ((d.schools ?? []).length) setSchoolId(d.schools[0].id);
     }).catch(() => {});
   }, []);
+  // Show the Import tab only if the server accepts this teacher for imports
+  // (i.e. they've been granted the import_data permission for this school).
+  useEffect(() => {
+    if (!schoolId) { setCanImport(false); return; }
+    let cancelled = false;
+    fetch(`/api/schools/${schoolId}/import`).then((r) => { if (!cancelled) setCanImport(r.ok); }).catch(() => { if (!cancelled) setCanImport(false); });
+    return () => { cancelled = true; };
+  }, [schoolId]);
   const loadUnread = useCallback(() => { fetch(`/api/me/notifications`).then((r) => r.json()).then((d) => setUnread(d.unread ?? 0)).catch(() => {}); }, []);
   useEffect(() => { loadUnread(); }, [loadUnread]);
   useEffect(() => { if (active !== "notifications") loadUnread(); }, [active, loadUnread]);
@@ -44,6 +54,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
       { key: "attendance", label: "Attendance", icon: "✅" },
       { key: "behaviour", label: "Behaviour", icon: "⭐" },
       { key: "reports", label: "Pupil reports", icon: "📄" },
+      ...(canImport ? [{ key: "import", label: "Import data", icon: "📥" }] : []),
     ] },
     { label: "Schedule", items: [
       { key: "timetable", label: "Timetable", icon: "🗓️" },
@@ -62,7 +73,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
   ];
 
   function body() {
-    if (!schoolId && ["dashboard", "search", "students", "attendance", "behaviour", "reports", "timetable", "calendar", "trips", "history", "assistant"].includes(active)) {
+    if (!schoolId && ["dashboard", "search", "students", "attendance", "behaviour", "reports", "import", "timetable", "calendar", "trips", "history", "assistant"].includes(active)) {
       return schools.length === 0 ? <div className="panel"><p className="muted">You don&apos;t have a teacher role in any school yet. Ask your school administrator to assign you.</p></div> : <div className="panel">Loading…</div>;
     }
     switch (active) {
@@ -73,6 +84,7 @@ export default function TeacherShell({ email = "" }: { email?: string }) {
       case "attendance": return <TAttendance schoolId={schoolId} />;
       case "behaviour": return <TBehaviour schoolId={schoolId} />;
       case "reports": return <TReports schoolId={schoolId} />;
+      case "import": return <TImport schoolId={schoolId} />;
       case "timetable": return <TTimetable schoolId={schoolId} />;
       case "calendar": return <TCalendar schoolId={schoolId} />;
       case "trips": return <TTrips schoolId={schoolId} />;

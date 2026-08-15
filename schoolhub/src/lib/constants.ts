@@ -74,6 +74,7 @@ export const PERMISSIONS = {
   VIEW_ASSIGNED_STUDENTS: "view_assigned_students",
   MANAGE_CRM: "manage_crm",             // CRM contacts + email campaigns
   MANAGE_CONTENT: "manage_content",     // content management (how-to videos)
+  IMPORT_DATA: "import_data",           // bulk CSV import (admins; grantable to teachers, pupil-scoped)
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -98,6 +99,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     PERMISSIONS.RELEASE_REPORTS,
     PERMISSIONS.MANAGE_CRM,
     PERMISSIONS.MANAGE_CONTENT,
+    PERMISSIONS.IMPORT_DATA,
   ],
   [ROLES.SCHOOL_LEADER]: [PERMISSIONS.VIEW_DASHBOARDS, PERMISSIONS.VIEW_REPORTS, PERMISSIONS.MANAGE_CALENDAR, PERMISSIONS.MANAGE_KNOWLEDGE, PERMISSIONS.MANAGE_TRIPS, PERMISSIONS.AUTHOR_REPORTS, PERMISSIONS.RELEASE_REPORTS],
   [ROLES.TEACHER]: [PERMISSIONS.VIEW_ASSIGNED_STUDENTS, PERMISSIONS.MANAGE_CALENDAR, PERMISSIONS.MANAGE_TRIPS, PERMISSIONS.AUTHOR_REPORTS],

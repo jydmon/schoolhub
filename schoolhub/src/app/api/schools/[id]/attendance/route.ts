@@ -14,8 +14,12 @@ export async function GET(req: Request, { params }: Params) {
     const ctx = await requireAuth();
     assertTenantAccess(ctx, params.id);
     assertCan(ctx, PERMISSIONS.VIEW_DASHBOARDS, params.id);
-    const date = new URL(req.url).searchParams.get("date") || undefined;
-    const [records, summary] = await Promise.all([listAttendance(params.id, { date }), attendanceSummary(params.id, date)]);
+    const sp = new URL(req.url).searchParams;
+    const date = sp.get("date") || undefined;
+    const from = sp.get("from") || undefined;
+    const to = sp.get("to") || undefined;
+    const opts = from || to ? { from, to } : { date };
+    const [records, summary] = await Promise.all([listAttendance(params.id, opts), attendanceSummary(params.id, opts)]);
     return ok({ records, summary });
   } catch (err) { return handleError(err); }
 }

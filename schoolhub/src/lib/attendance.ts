@@ -9,13 +9,23 @@ const PRESENTISH = ["present", "late"];
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
-export async function listAttendance(schoolId: string, opts: { date?: string; status?: string } = {}) {
-  const date = opts.date || todayStr();
+export async function listAttendance(schoolId: string, opts: { date?: string; from?: string; to?: string; status?: string } = {}) {
+  // date is stored as a "YYYY-MM-DD" string, so lexical gte/lte gives correct
+  // day/week/month/term/year ranges. Single-date is the default (backwards compatible).
+  const where: Record<string, unknown> = { schoolId, ...(opts.status ? { status: opts.status } : {}) };
+  if (opts.from || opts.to) {
+    const dr: Record<string, string> = {};
+    if (opts.from) dr.gte = opts.from;
+    if (opts.to) dr.lte = opts.to;
+    where.date = dr;
+  } else {
+    where.date = opts.date || todayStr();
+  }
   const rows = await prisma.attendanceRecord.findMany({
-    where: { schoolId, date, ...(opts.status ? { status: opts.status } : {}) },
+    where,
     include: { student: { select: { firstName: true, lastName: true, reference: true, yearGroup: true, class: { select: { name: true } } } } },
-    orderBy: [{ session: "asc" }],
-    take: 2000,
+    orderBy: [{ date: "desc" }, { session: "asc" }],
+    take: 5000,
   });
   return rows.map((r) => ({
     id: r.id, studentId: r.studentId,
@@ -28,14 +38,26 @@ export async function listAttendance(schoolId: string, opts: { date?: string; st
   }));
 }
 
-export async function attendanceSummary(schoolId: string, date?: string) {
-  const d = date || todayStr();
-  const grouped = await prisma.attendanceRecord.groupBy({ by: ["status"], where: { schoolId, date: d }, _count: { _all: true } });
+export async function attendanceSummary(schoolId: string, opts: { date?: string; from?: string; to?: string } = {}) {
+  const where: Record<string, unknown> = { schoolId };
+  let label: string;
+  if (opts.from || opts.to) {
+    const dr: Record<string, string> = {};
+    if (opts.from) dr.gte = opts.from;
+    if (opts.to) dr.lte = opts.to;
+    where.date = dr;
+    label = `${opts.from ?? "…"} → ${opts.to ?? "…"}`;
+  } else {
+    const d = opts.date || todayStr();
+    where.date = d;
+    label = d;
+  }
+  const grouped = await prisma.attendanceRecord.groupBy({ by: ["status"], where, _count: { _all: true } });
   const counts: Record<string, number> = {};
   grouped.forEach((g) => { counts[g.status] = g._count._all; });
   const total = grouped.reduce((n, g) => n + g._count._all, 0);
   const present = grouped.filter((g) => PRESENTISH.includes(g.status)).reduce((n, g) => n + g._count._all, 0);
-  return { date: d, total, present, absent: total - present, rate: total ? Math.round((present / total) * 1000) / 10 : 0, counts };
+  return { date: label, total, present, absent: total - present, rate: total ? Math.round((present / total) * 1000) / 10 : 0, counts };
 }
 
 export async function upsertAttendance(schoolId: string, input: {

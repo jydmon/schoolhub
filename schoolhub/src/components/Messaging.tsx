@@ -280,7 +280,11 @@ export default function Messaging() {
   );
 }
 
-// ---- Rich-text composer: formatting toolbar, emoji, @mention, attachments ----
+// ---- Modern message composer: formatting toolbar, emoji, @mention, attachments.
+// Uses contentEditable but pastes as PLAIN TEXT (rich paste from Word/web was the
+// main source of "distorted" messages), normalises empties so the placeholder
+// always returns, and keeps everything responsive. Bodies are still sanitised
+// server-side on send. ----
 function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter, mentionMembers, onMention }: {
   editorRef: React.RefObject<HTMLDivElement>; onAddFiles: (f: FileList | null) => void;
   pending: Attachment[]; onRemove: (i: number) => void; onEnter?: () => void;
@@ -290,21 +294,47 @@ function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter, menti
   const [ment, setMent] = useState(false);
   const [mq, setMq] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const cmd = (c: string, v?: string) => { document.execCommand(c, false, v); editorRef.current?.focus(); };
-  function insertEmoji(e: string) { editorRef.current?.focus(); document.execCommand("insertText", false, e); setEmoji(false); }
-  function addLink() { const url = prompt("Link URL (https://…)"); if (url) cmd("createLink", url); }
+  // Reset a visually-empty editor (only <br>/whitespace) so the CSS placeholder
+  // reappears — the classic contentEditable placeholder bug.
+  function normalize() { const el = editorRef.current; if (el && !(el.innerText || "").trim()) el.innerHTML = ""; }
+  const cmd = (c: string, v?: string) => { editorRef.current?.focus(); document.execCommand(c, false, v); normalize(); };
+  function insertEmoji(e: string) { editorRef.current?.focus(); document.execCommand("insertText", false, e); setEmoji(false); normalize(); }
+  function onPaste(e: React.ClipboardEvent) {
+    // Strip formatting on paste — keeps messages clean and predictable.
+    e.preventDefault();
+    const text = e.clipboardData.getData("text/plain");
+    document.execCommand("insertText", false, text);
+    normalize();
+  }
+  function addLink() {
+    const sel = window.getSelection();
+    const hasSelection = !!sel && sel.rangeCount > 0 && !sel.isCollapsed;
+    const url = prompt("Link URL (https://…)"); if (!url) return;
+    editorRef.current?.focus();
+    if (hasSelection) { document.execCommand("createLink", false, url); }
+    else {
+      const label = prompt("Link text", url) || url;
+      const safe = url.replace(/"/g, "&quot;");
+      const txt = label.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      document.execCommand("insertHTML", false, `<a href="${safe}">${txt}</a>&nbsp;`);
+    }
+    normalize();
+  }
   const filteredMembers = (mentionMembers || []).filter((m) => !mq || m.name.toLowerCase().includes(mq.toLowerCase()));
   return (
     <div style={{ position: "relative" }}>
-      <div style={{ display: "flex", gap: 4, marginBottom: 6, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="dm-toolbar">
         <button type="button" className="dm-tool" title="Bold" onClick={() => cmd("bold")}><b>B</b></button>
         <button type="button" className="dm-tool" title="Italic" onClick={() => cmd("italic")}><i>I</i></button>
         <button type="button" className="dm-tool" title="Underline" onClick={() => cmd("underline")}><u>U</u></button>
         <button type="button" className="dm-tool" title="Bulleted list" onClick={() => cmd("insertUnorderedList")}>•</button>
-        <button type="button" className="dm-tool" title="Link" onClick={addLink}>🔗</button>
+        <button type="button" className="dm-tool" title="Numbered list" onClick={() => cmd("insertOrderedList")}>1.</button>
+        <button type="button" className="dm-tool" title="Add link" onClick={addLink}>🔗</button>
+        <button type="button" className="dm-tool" title="Clear formatting" onClick={() => cmd("removeFormat")}>⌫</button>
+        <span className="dm-tool-sep" />
         <button type="button" className="dm-tool" title="Emoji" onClick={() => { setEmoji((s) => !s); setMent(false); }}>😊</button>
         {onMention && mentionMembers && mentionMembers.length > 0 && <button type="button" className="dm-tool" title="Mention someone" onClick={() => { setMent((s) => !s); setEmoji(false); }}>@</button>}
-        <button type="button" className="dm-tool" title="Attach" onClick={() => fileRef.current?.click()}>📎</button>
+        <button type="button" className="dm-tool" title="Attach a file" onClick={() => fileRef.current?.click()}>📎</button>
         <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv" style={{ display: "none" }} onChange={(e) => { onAddFiles(e.target.files); if (fileRef.current) fileRef.current.value = ""; }} />
       </div>
       {emoji && (
@@ -323,11 +353,16 @@ function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter, menti
         ref={editorRef}
         className="dm-editor"
         contentEditable
+        role="textbox"
+        aria-multiline="true"
+        aria-label="Message"
         suppressContentEditableWarning
         data-placeholder="Write a message…"
+        onPaste={onPaste}
+        onInput={normalize}
         onKeyDown={(e) => { if (onEnter && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onEnter(); } }}
-        style={{ minHeight: 44, maxHeight: 160, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontSize: 13, background: "#fff" }}
       />
+      <div className="dm-hint">Enter to send · Shift+Enter for a new line · pasted text is cleaned automatically</div>
       {pending.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
           {pending.map((a, i) => (
@@ -340,6 +375,19 @@ function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter, menti
           ))}
         </div>
       )}
+      <style>{`
+        .dm-toolbar { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; flex-wrap: wrap; }
+        .dm-tool:hover { background: #eef2ff; border-color: #c7d2fe; }
+        .dm-tool-sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
+        .dm-editor { min-height: 46px; max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.5; background: #fff; }
+        .dm-editor a { color: #4f46e5; text-decoration: underline; }
+        .dm-editor ul, .dm-editor ol { margin: 4px 0 4px 20px; }
+        .dm-hint { font-size: 11px; color: #9aa3b2; margin-top: 4px; }
+        @media (max-width: 640px) {
+          .dm-editor { font-size: 16px; }
+          .dm-tool { width: 34px; height: 32px; }
+        }
+      `}</style>
     </div>
   );
 }
