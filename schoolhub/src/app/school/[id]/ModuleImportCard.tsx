@@ -10,8 +10,8 @@ import { runGuarded } from "@/lib/busy";
  * error report. Reuses the shared /api/schools/[id]/import engine.
  */
 export default function ModuleImportCard({
-  schoolId, type, title, hint, defaultOpen = false,
-}: { schoolId: string; type: string; title?: string; hint?: string; defaultOpen?: boolean }) {
+  schoolId, type, title, hint, defaultOpen = false, onImported,
+}: { schoolId: string; type: string; title?: string; hint?: string; defaultOpen?: boolean; onImported?: () => void }) {
   const [open, setOpen] = useState(defaultOpen);
   const [csvText, setCsvText] = useState("");
   const [filename, setFilename] = useState("");
@@ -43,7 +43,10 @@ export default function ModuleImportCard({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, csvText, filename: filename || undefined }),
       }));
-      setResult(await res.json().catch(() => ({ error: "Import failed" })));
+      const data = await res.json().catch(() => ({ error: "Import failed" }));
+      setResult(data);
+      // Let the host tab refresh its list after a successful import.
+      if (data && !data.error && onImported) onImported();
     } catch {
       setResult({ error: "Import failed — please check your connection and try again." });
     } finally { setBusy(false); }
@@ -61,8 +64,9 @@ export default function ModuleImportCard({
       {open && (
         <div style={{ marginTop: 12 }}>
           <div className="row">
-            <div style={{ display: "flex", alignItems: "flex-end" }}>
-              <a href={`/api/schools/${schoolId}/import/template?type=${type}`}><button type="button" className="secondary">Download template</button></a>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}>
+              <a href={`/api/schools/${schoolId}/import/template?type=${type}`}><button type="button" className="secondary">Download template (CSV)</button></a>
+              <a href={`/api/schools/${schoolId}/import/template?type=${type}&format=xlsx`}><button type="button" className="secondary">Excel template</button></a>
             </div>
             <div style={{ display: "flex", alignItems: "flex-end" }}>
               <input type="file" accept=".csv,text/csv,.xlsx,.xls" onChange={onFile} />

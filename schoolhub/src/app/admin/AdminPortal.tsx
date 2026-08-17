@@ -976,6 +976,12 @@ function Usage() {
             {USAGE_PERIODS.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
           </select>
           <button className="secondary small" onClick={exportCsv}>Export (CSV)</button>
+          {view === "census" && schoolId && (
+            <>
+              <a href={`/api/platform/usage?view=census&days=${days}&school=${encodeURIComponent(schoolId)}&format=xlsx`}><button type="button" className="secondary small">Export (Excel)</button></a>
+              <a href={`/api/platform/usage?view=census&days=${days}&school=${encodeURIComponent(schoolId)}&format=pdf`}><button type="button" className="secondary small">Export (PDF)</button></a>
+            </>
+          )}
         </div>
       </div>
       <p className="sub" style={{ marginTop: 6 }}>{schoolName ? schoolName : "All schools"} · last {days} days</p>

@@ -214,7 +214,57 @@ export function TStudents({ schoolId }: { schoolId: string }) {
 
 /* ------------------------------- Attendance ------------------------------ */
 const ATT: [string, string][] = [["present", "Present"], ["late", "Late"], ["authorised", "Auth. absent"], ["unauthorised", "Unauth. absent"]];
+const ATT_STATUSES = ["present", "late", "authorised", "unauthorised", "excused", "absent"];
+const ATT_SESSIONS: [string, string][] = [["am", "Morning"], ["pm", "Afternoon"], ["day", "Whole day"]];
+const attBadge = (s: string) => s === "present" ? "active" : s === "late" ? "trial" : s === "authorised" || s === "excused" ? "archived" : "suspended";
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+type AMode = "day" | "week" | "month" | "quarter" | "term" | "year";
+const AMODES: [AMode, string][] = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["quarter", "Quarter"], ["term", "Term"], ["year", "Year"]];
+
+// {from,to} window for a mode around an anchor day. Quarters are calendar
+// quarters; terms/years follow the UK academic convention (Sep–Aug).
+function attRange(mode: AMode, anchor: string): { from: string; to: string; label: string } {
+  const a = new Date(anchor + "T00:00:00Z");
+  const y = a.getUTCFullYear(), m = a.getUTCMonth(), day = a.getUTCDate();
+  if (mode === "day") return { from: anchor, to: anchor, label: anchor };
+  if (mode === "week") {
+    const dow = (a.getUTCDay() + 6) % 7;
+    const mon = new Date(Date.UTC(y, m, day - dow)), sun = new Date(Date.UTC(y, m, day - dow + 6));
+    return { from: isoDay(mon), to: isoDay(sun), label: `Week of ${isoDay(mon)}` };
+  }
+  if (mode === "month") {
+    const first = new Date(Date.UTC(y, m, 1)), last = new Date(Date.UTC(y, m + 1, 0));
+    return { from: isoDay(first), to: isoDay(last), label: a.toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" }) };
+  }
+  if (mode === "quarter") {
+    const q = Math.floor(m / 3), qs = q * 3;
+    const first = new Date(Date.UTC(y, qs, 1)), last = new Date(Date.UTC(y, qs + 3, 0));
+    return { from: isoDay(first), to: isoDay(last), label: `Q${q + 1} ${y}` };
+  }
+  if (mode === "term") {
+    if (m >= 8) return { from: `${y}-09-01`, to: `${y}-12-31`, label: `Autumn term ${y}` };
+    if (m <= 2) return { from: `${y}-01-01`, to: `${y}-03-31`, label: `Spring term ${y}` };
+    return { from: `${y}-04-01`, to: `${y}-08-31`, label: `Summer term ${y}` };
+  }
+  const start = m >= 8 ? y : y - 1;
+  return { from: `${start}-09-01`, to: `${start + 1}-08-31`, label: `${start}/${start + 1} academic year` };
+}
+
 export function TAttendance({ schoolId }: { schoolId: string }) {
+  const [view, setView] = useState<"register" | "records">("register");
+  return (
+    <>
+      <div className="tabs">
+        <button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button>
+        <button className={view === "records" ? "active" : ""} onClick={() => setView("records")}>Records</button>
+      </div>
+      {view === "register" ? <TAttendanceRegister schoolId={schoolId} /> : <TAttendanceRecords schoolId={schoolId} />}
+    </>
+  );
+}
+
+function TAttendanceRegister({ schoolId }: { schoolId: string }) {
   const [data, setData] = useState<any>(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [session, setSession] = useState("am");
@@ -244,7 +294,7 @@ export function TAttendance({ schoolId }: { schoolId: string }) {
       {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         <div><label>Date</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: "auto" }} /></div>
-        <div><label>Session</label><select value={session} onChange={(e) => setSession(e.target.value)} style={{ width: "auto" }}><option value="am">Morning</option><option value="pm">Afternoon</option><option value="day">Whole day</option></select></div>
+        <div><label>Session</label><select value={session} onChange={(e) => setSession(e.target.value)} style={{ width: "auto" }}>{ATT_SESSIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         {(data?.classes ?? []).length > 0 && <div><label>Class</label><select value={cls} onChange={(e) => setCls(e.target.value)} style={{ width: "auto" }}><option value="">All my pupils</option>{data.classes.map((c: string) => <option key={c} value={c}>{c}</option>)}</select></div>}
         <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}><button className="secondary small" onClick={() => setAll("present")}>All present</button></div>
       </div>
@@ -262,6 +312,87 @@ export function TAttendance({ schoolId }: { schoolId: string }) {
       </table>
       {roster.length > 0 && <button style={{ marginTop: 12 }} onClick={save}>Save register</button>}
     </div>
+  );
+}
+
+// Browse/filter historical attendance for the teacher's pupils. Filters:
+// pupil, day/week/month/quarter/term/year, status and session.
+function TAttendanceRecords({ schoolId }: { schoolId: string }) {
+  const [mode, setMode] = useState<AMode>("week");
+  const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10));
+  const [studentId, setStudentId] = useState("");
+  const [status, setStatus] = useState("");
+  const [session, setSession] = useState("");
+  const [students, setStudents] = useState<any[]>([]);
+  const [records, setRecords] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const range = useMemo(() => attRange(mode, anchor), [mode, anchor]);
+
+  useEffect(() => { fetch(`/api/teacher/students?school=${schoolId}`).then((r) => r.json()).then((d) => setStudents(d.students ?? [])).catch(() => {}); }, [schoolId]);
+  const load = useCallback(async () => {
+    const qs = new URLSearchParams({ school: schoolId, view: "records", from: range.from, to: range.to });
+    if (studentId) qs.set("student", studentId);
+    if (status) qs.set("status", status);
+    if (session) qs.set("session", session);
+    const d = await fetch(`/api/teacher/attendance?${qs}`).then((r) => r.json());
+    setRecords(d.records ?? []); setSummary(d.summary ?? null);
+  }, [schoolId, range.from, range.to, studentId, status, session]);
+  useEffect(() => { load(); }, [load]);
+
+  function shift(dir: number) {
+    const a = new Date(anchor + "T00:00:00Z");
+    const step = mode === "day" ? 1 : mode === "week" ? 7 : mode === "month" ? 30 : mode === "quarter" ? 91 : mode === "term" ? 120 : 365;
+    a.setUTCDate(a.getUTCDate() + dir * step); setAnchor(isoDay(a));
+  }
+
+  return (
+    <>
+      <div className="panel">
+        <div className="flex-between" style={{ flexWrap: "wrap", gap: 10 }}>
+          <div><h2 style={{ margin: 0 }}>Attendance records</h2><p className="sub" style={{ marginBottom: 0 }}>Attendance for your pupils. Filter by pupil, period, status and session.</p></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <div className="seg" style={{ display: "inline-flex", gap: 4 }}>{AMODES.map(([mk, ml]) => <button key={mk} className={mk === mode ? "small" : "secondary small"} onClick={() => setMode(mk)}>{ml}</button>)}</div>
+            <button className="secondary small" onClick={() => shift(-1)} title="Previous">‹</button>
+            <input type="date" value={anchor} onChange={(e) => setAnchor(e.target.value)} style={{ width: "auto" }} />
+            <button className="secondary small" onClick={() => shift(1)} title="Next">›</button>
+          </div>
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Showing <strong>{range.label}</strong>{mode !== "day" ? ` (${range.from} → ${range.to})` : ""}.</p>
+        {summary && (
+          <div className="stat-grid" style={{ marginTop: 8 }}>
+            <div className="stat"><div className="n">{summary.rate}%</div><div className="l">Attendance</div></div>
+            <div className="stat"><div className="n">{summary.present}</div><div className="l">Present/late</div></div>
+            <div className="stat"><div className="n" style={{ color: summary.absent ? "var(--danger)" : undefined }}>{summary.absent}</div><div className="l">Absent</div></div>
+            <div className="stat"><div className="n">{summary.total}</div><div className="l">Marks</div></div>
+          </div>
+        )}
+      </div>
+      <div className="panel">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
+          <select value={studentId} onChange={(e) => setStudentId(e.target.value)} style={{ width: "auto" }}><option value="">All my pupils</option>{students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto" }}><option value="">All statuses</option>{ATT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+          <select value={session} onChange={(e) => setSession(e.target.value)} style={{ width: "auto" }}><option value="">All sessions</option>{ATT_SESSIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+          <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{records.length} mark(s)</span>
+        </div>
+        <table>
+          <thead><tr><th>Date</th><th>Pupil</th><th>Class</th><th>Year</th><th>Session</th><th>Status</th><th>Note</th></tr></thead>
+          <tbody>
+            {records.map((r) => (
+              <tr key={r.id}>
+                <td className="mono muted" style={{ fontSize: 12 }}>{r.date}</td>
+                <td><strong>{r.studentName}</strong><div className="mono muted" style={{ fontSize: 11 }}>{r.studentRef}</div></td>
+                <td className="muted">{r.className || "—"}</td>
+                <td className="muted">{r.yearGroup || "—"}</td>
+                <td className="muted">{r.session}</td>
+                <td><span className={`badge ${attBadge(r.status)}`}>{r.status}</span></td>
+                <td className="muted">{r.note || "—"}</td>
+              </tr>
+            ))}
+            {records.length === 0 && <tr><td colSpan={7} className="muted">No marks for {range.label}. Widen the range or adjust filters.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

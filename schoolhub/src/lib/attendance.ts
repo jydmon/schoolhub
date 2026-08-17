@@ -9,10 +9,15 @@ const PRESENTISH = ["present", "late"];
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
-export async function listAttendance(schoolId: string, opts: { date?: string; from?: string; to?: string; status?: string } = {}) {
+export async function listAttendance(schoolId: string, opts: { date?: string; from?: string; to?: string; status?: string; session?: string; studentIds?: string[] } = {}) {
   // date is stored as a "YYYY-MM-DD" string, so lexical gte/lte gives correct
   // day/week/month/term/year ranges. Single-date is the default (backwards compatible).
-  const where: Record<string, unknown> = { schoolId, ...(opts.status ? { status: opts.status } : {}) };
+  const where: Record<string, unknown> = {
+    schoolId,
+    ...(opts.status ? { status: opts.status } : {}),
+    ...(opts.session ? { session: opts.session } : {}),
+    ...(opts.studentIds ? { studentId: { in: opts.studentIds } } : {}),
+  };
   if (opts.from || opts.to) {
     const dr: Record<string, string> = {};
     if (opts.from) dr.gte = opts.from;
@@ -38,8 +43,12 @@ export async function listAttendance(schoolId: string, opts: { date?: string; fr
   }));
 }
 
-export async function attendanceSummary(schoolId: string, opts: { date?: string; from?: string; to?: string } = {}) {
-  const where: Record<string, unknown> = { schoolId };
+export async function attendanceSummary(schoolId: string, opts: { date?: string; from?: string; to?: string; session?: string; studentIds?: string[] } = {}) {
+  const where: Record<string, unknown> = {
+    schoolId,
+    ...(opts.session ? { session: opts.session } : {}),
+    ...(opts.studentIds ? { studentId: { in: opts.studentIds } } : {}),
+  };
   let label: string;
   if (opts.from || opts.to) {
     const dr: Record<string, string> = {};
@@ -58,6 +67,28 @@ export async function attendanceSummary(schoolId: string, opts: { date?: string;
   const total = grouped.reduce((n, g) => n + g._count._all, 0);
   const present = grouped.filter((g) => PRESENTISH.includes(g.status)).reduce((n, g) => n + g._count._all, 0);
   return { date: label, total, present, absent: total - present, rate: total ? Math.round((present / total) * 1000) / 10 : 0, counts };
+}
+
+// Present/late/absent breakdown + record list for a single pupil, used by the
+// teacher pupil view. "present" and "late" both count towards the rate.
+export async function studentAttendanceBreakdown(studentId: string, opts: { from?: string; to?: string } = {}) {
+  const where: Record<string, unknown> = { studentId };
+  if (opts.from || opts.to) {
+    const dr: Record<string, string> = {};
+    if (opts.from) dr.gte = opts.from;
+    if (opts.to) dr.lte = opts.to;
+    where.date = dr;
+  }
+  const rows = await prisma.attendanceRecord.findMany({ where, orderBy: [{ date: "desc" }, { session: "asc" }], take: 2000 });
+  const present = rows.filter((r) => r.status === "present").length;
+  const late = rows.filter((r) => r.status === "late").length;
+  const total = rows.length;
+  const absent = total - present - late;
+  const rate = total ? Math.round(((present + late) / total) * 1000) / 10 : null;
+  return {
+    summary: { total, present, late, absent, rate },
+    records: rows.map((r) => ({ date: r.date, session: r.session, status: r.status, note: r.note })),
+  };
 }
 
 export async function upsertAttendance(schoolId: string, input: {

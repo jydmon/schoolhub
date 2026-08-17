@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { todayStr } from "./transport";
-import { sheetsToXls } from "./xls";
+import { sheetsToXls, type Sheet } from "./xls";
 
 const dayStr = (offset: number) => {
   const d = new Date(); d.setDate(d.getDate() + offset);
@@ -291,12 +291,28 @@ export function reportToCsv(r: Report): string {
   return lines.join("\r\n");
 }
 
-/** Excel (SpreadsheetML .xls) export of a report — summary + detail sheets. */
-export function reportToXls(r: Report): Buffer {
-  return sheetsToXls([
+/** The summary + detail sheets for a report (shared by the .xls export and the
+ *  governed export, which prepends a "Download info" sheet). */
+export function reportSheets(r: Report): Sheet[] {
+  return [
     { name: "Summary", title: r.title, headers: ["Metric", "Value"], rows: r.metrics.map((m) => [m.label, m.value]) },
     { name: "Detail", headers: r.table.headers, rows: r.table.rows },
-  ]);
+  ];
+}
+
+/** Excel (SpreadsheetML .xls) export of a report — summary + detail sheets. */
+export function reportToXls(r: Report): Buffer {
+  return sheetsToXls(reportSheets(r));
+}
+
+/** Flatten a report into text paragraphs for the branded PDF template
+ *  (metrics list followed by the detail table as monospace rows). */
+export function reportToParagraphs(r: Report): string[] {
+  const lines: string[] = [`Generated: ${r.generatedAt}`, "", "Metrics"];
+  r.metrics.forEach((m) => lines.push(`  ${m.label}: ${m.value}`));
+  lines.push("", r.table.headers.join("  |  "));
+  r.table.rows.forEach((row) => lines.push(row.map((c) => String(c ?? "")).join("  |  ")));
+  return lines;
 }
 
 /** Minimal, dependency-free single-page PDF of a report (text lines). */

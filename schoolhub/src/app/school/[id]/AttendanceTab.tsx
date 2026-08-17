@@ -10,8 +10,8 @@ const statusBadge = (s: string) => s === "present" ? "active" : s === "late" ? "
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-type Mode = "day" | "week" | "month" | "term" | "year";
-const MODES: [Mode, string][] = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["term", "Term"], ["year", "Year"]];
+type Mode = "day" | "week" | "month" | "quarter" | "term" | "year";
+const MODES: [Mode, string][] = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["quarter", "Quarter"], ["term", "Term"], ["year", "Year"]];
 
 // Compute the {from,to} date window (inclusive) for a mode around an anchor day.
 // Terms/years follow the UK academic convention (Sep–Aug); terms are an
@@ -30,6 +30,11 @@ function rangeFor(mode: Mode, anchor: string): { from: string; to: string; label
     const first = new Date(Date.UTC(y, m, 1));
     const last = new Date(Date.UTC(y, m + 1, 0));
     return { from: iso(first), to: iso(last), label: a.toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" }) };
+  }
+  if (mode === "quarter") {
+    const q = Math.floor(m / 3), qs = q * 3;                                                        // calendar quarter
+    const first = new Date(Date.UTC(y, qs, 1)), last = new Date(Date.UTC(y, qs + 3, 0));
+    return { from: iso(first), to: iso(last), label: `Q${q + 1} ${y}` };
   }
   if (mode === "term") {
     if (m >= 8) return { from: `${y}-09-01`, to: `${y}-12-31`, label: `Autumn term ${y}` };        // Sep–Dec
@@ -61,6 +66,8 @@ export default function AttendanceTab({ schoolId }: { schoolId: string }) {
   const [msg, setMsg] = useState<{ kind: string; text: string } | null>(null);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [sessionFilter, setSessionFilter] = useState("");
+  const [studentFilter, setStudentFilter] = useState("");
   const [students, setStudents] = useState<any[]>([]);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "date", dir: "desc" });
   const [f, setF] = useState({ studentId: "", date: todayStr(), session: "am", status: "present", note: "" });
@@ -80,13 +87,15 @@ export default function AttendanceTab({ schoolId }: { schoolId: string }) {
     const s = q.trim().toLowerCase();
     let list = records.filter((r) => {
       if (statusFilter && r.status !== statusFilter) return false;
+      if (sessionFilter && r.session !== sessionFilter) return false;
+      if (studentFilter && r.studentId !== studentFilter) return false;
       if (!s) return true;
       return [r.studentName, r.studentRef, r.status, r.session, r.className, r.yearGroup, r.date].some((v) => String(v ?? "").toLowerCase().includes(s));
     });
     list = [...list].sort((a, b) => { const av = sortVal(a, sort.key), bv = sortVal(b, sort.key); return av < bv ? -1 : av > bv ? 1 : 0; });
     if (sort.dir === "desc") list.reverse();
     return list;
-  }, [records, q, statusFilter, sort]);
+  }, [records, q, statusFilter, sessionFilter, studentFilter, sort]);
   const allOn = rows.length > 0 && rows.every((r) => sel.on(r.id));
 
   const selPupil = students.find((s) => s.id === f.studentId);
@@ -95,7 +104,7 @@ export default function AttendanceTab({ schoolId }: { schoolId: string }) {
 
   function shiftAnchor(dir: number) {
     const a = new Date(anchor + "T00:00:00Z");
-    const step = mode === "day" ? 1 : mode === "week" ? 7 : mode === "month" ? 30 : mode === "term" ? 120 : 365;
+    const step = mode === "day" ? 1 : mode === "week" ? 7 : mode === "month" ? 30 : mode === "quarter" ? 91 : mode === "term" ? 120 : 365;
     a.setUTCDate(a.getUTCDate() + dir * step);
     setAnchor(iso(a));
   }
@@ -162,11 +171,19 @@ export default function AttendanceTab({ schoolId }: { schoolId: string }) {
         {msg && <div className={`notice ${msg.kind}`}>{msg.text}</div>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "4px 0 12px" }}>
           <input placeholder="Search pupil, class, ref…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 220 }} />
+          <select value={studentFilter} onChange={(e) => setStudentFilter(e.target.value)} style={{ width: "auto" }}>
+            <option value="">All pupils</option>
+            {students.map((s) => <option key={s.id} value={s.id}>{s.firstName} {s.lastName}{s.reference ? ` (${s.reference})` : ""}</option>)}
+          </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ width: "auto" }}>
             <option value="">All statuses</option>
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <span className="muted" style={{ fontSize: 12 }}>{q || statusFilter ? `${rows.length} of ${records.length}` : `${records.length} mark(s)`}</span>
+          <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)} style={{ width: "auto" }}>
+            <option value="">All sessions</option>
+            {SESSIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <span className="muted" style={{ fontSize: 12 }}>{q || statusFilter || sessionFilter || studentFilter ? `${rows.length} of ${records.length}` : `${records.length} mark(s)`}</span>
         </div>
         {sel.ids.length > 0 && (
           <div className="bulkbar"><span>{sel.ids.length} selected</span>

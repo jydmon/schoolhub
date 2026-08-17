@@ -207,3 +207,38 @@ export const IMPORT_TEMPLATES: Record<
     example: ["Uniform Policy", "uniform", "text", "parent,staff", "What pupils should wear", "Full school uniform is required every day.", "published"],
   },
 };
+
+// Per-field guidance shown in the "Field guide" sheet of the Excel template.
+// Only fields that need explanation are listed; anything omitted falls back to a
+// generic note derived from whether the field is required.
+export const TEMPLATE_FIELD_NOTES: Record<string, Record<string, { required?: boolean; note: string }>> = {
+  clubs_activities: {
+    name: { required: true, note: "Club name. Used to match existing clubs (re-importing the same name updates it)." },
+    category: { note: "One of: sport, music, arts, drama, academic, stem, wellbeing, general." },
+    description: { note: "Short description shown to parents." },
+    location: { note: "Where the club meets, e.g. 'Room 12' or 'Sports hall'." },
+    cadence: { note: "How often it runs: daily, weekly, monthly, annual or adhoc." },
+    dayOfWeek: { note: "Day it runs: Mon, Tue, Wed, Thu, Fri, Sat or Sun (blank if not fixed)." },
+    startTime: { note: "Start time in 24-hour HH:MM, e.g. 15:30." },
+    endTime: { note: "End time in 24-hour HH:MM, e.g. 16:30." },
+    yearGroup: { note: "Restrict to a year group (e.g. 'Year 4'), or leave blank for all years." },
+    capacity: { note: "Maximum places (whole number). Blank = unlimited." },
+    cost: { note: "Cost per term in pounds; 0 = free." },
+    staffLead: { note: "Name of the staff member who runs the club." },
+    status: { note: "active or inactive. Defaults to active." },
+  },
+};
+
+// Build the rows for the "Field guide" sheet: field, whether it's required, an
+// example value (from the template's example row) and guidance.
+export function templateFieldGuide(type: string): { field: string; required: string; example: string; guidance: string }[] {
+  const tpl = IMPORT_TEMPLATES[type];
+  if (!tpl) return [];
+  const notes = TEMPLATE_FIELD_NOTES[type] || {};
+  return tpl.headers.map((h, i) => ({
+    field: h,
+    required: notes[h]?.required ? "Yes" : "",
+    example: String(tpl.example[i] ?? ""),
+    guidance: notes[h]?.note || "",
+  }));
+}

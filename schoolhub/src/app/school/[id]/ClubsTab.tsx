@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useSel, useSort, SortTh, Kebab, SourceBadge, DetailModal } from "./EntityKit";
+import ModuleImportCard from "./ModuleImportCard";
 
 const CATEGORIES = ["sport", "music", "arts", "drama", "academic", "stem", "wellbeing", "general"];
 const CADENCES = ["daily", "weekly", "monthly", "annual", "adhoc"];
@@ -24,7 +25,6 @@ export default function ClubsTab({ schoolId }: { schoolId: string }) {
   const [f, setF] = useState<any>({ ...BLANK });
   const [detail, setDetail] = useState<any | null>(null);
   const [detailTab, setDetailTab] = useState("Roster");
-  const [importOpen, setImportOpen] = useState(false);
   const sel = useSel();
   const srt = useSort("day");
 
@@ -69,15 +69,14 @@ export default function ClubsTab({ schoolId }: { schoolId: string }) {
 
   return (
     <>
+      <ModuleImportCard schoolId={schoolId} type="clubs_activities" title="Import clubs & activities" hint="Download the sample template (CSV or Excel), fill it in and upload. Files are validated against the template and clubs are matched by name." onImported={load} />
       <div className="panel">
         <div className="flex-between" style={{ alignItems: "flex-start" }}>
           <div><h2 style={{ margin: 0 }}>Clubs &amp; activities</h2>
-            <p className="sub" style={{ marginBottom: 0 }}>Extracurricular clubs, their members and the attendance register. Parents see only the clubs their own child belongs to. Add manually or bulk-import from a CSV.</p></div>
-          <div style={{ display: "flex", gap: 8 }}><button className="secondary" onClick={() => setImportOpen((o) => !o)}>{importOpen ? "Hide import" : "Import CSV"}</button><button onClick={() => { setF({ ...BLANK }); setShowAdd(true); setMsg(null); }}>New club</button></div>
+            <p className="sub" style={{ marginBottom: 0 }}>Extracurricular clubs, their members and the attendance register. Parents see only the clubs their own child belongs to. Add manually or bulk-import above.</p></div>
+          <div style={{ display: "flex", gap: 8 }}><button onClick={() => { setF({ ...BLANK }); setShowAdd(true); setMsg(null); }}>New club</button></div>
         </div>
         {msg && <div className={`notice ${msg.kind}`} style={{ marginTop: 10 }}>{msg.text}</div>}
-
-        {importOpen && <ImportClubs schoolId={schoolId} onDone={() => { setImportOpen(false); load(); }} />}
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", margin: "12px 0" }}>
           <input placeholder="Search clubs…" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 220 }} />
@@ -275,43 +274,6 @@ function Register({ schoolId, club, onDone }: any) {
           </table>
         </div>
       )}
-    </div>
-  );
-}
-
-function ImportClubs({ schoolId, onDone }: { schoolId: string; onDone: () => void }) {
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<any>(null);
-  const TEMPLATE = "name,category,cadence,dayOfWeek,startTime,endTime,yearGroup,location,capacity,cost,staffLead,description";
-
-  function parse(csv: string) {
-    const lines = csv.trim().split(/\r?\n/).filter(Boolean);
-    if (!lines.length) return [];
-    const head = lines[0].split(",").map((h) => h.trim());
-    return lines.slice(1).map((line) => {
-      const cells = line.split(",");
-      const o: any = {};
-      head.forEach((h, i) => { o[h] = (cells[i] ?? "").trim(); });
-      return o;
-    });
-  }
-
-  async function run() {
-    setBusy(true); setResult(null);
-    const rows = parse(text);
-    const res = await fetch(`/api/schools/${schoolId}/clubs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clubs: rows }) });
-    const d = await res.json().catch(() => ({ error: "Import failed" }));
-    setResult(d); setBusy(false);
-    if (d.created) onDone();
-  }
-
-  return (
-    <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 8, padding: 12, background: "#F8FAFC" }}>
-      <p className="sub" style={{ marginTop: 0 }}>Paste rows matching: <code style={{ fontSize: 11 }}>{TEMPLATE}</code></p>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} style={{ width: "100%", fontFamily: "ui-monospace,Menlo,monospace", fontSize: 12, padding: 10, border: "1px solid var(--line)", borderRadius: 8 }} placeholder={TEMPLATE + "\nChess Club,academic,weekly,Tue,15:30,16:30,,Library,16,0,Mr Ali,Beginners welcome"} />
-      <button style={{ marginTop: 10 }} disabled={!text.trim() || busy} onClick={run}>{busy ? "Importing…" : "Run import"}</button>
-      {result && <div className={`notice ${result.created ? "ok" : "err"}`} style={{ marginTop: 10 }}>{result.error ? result.error : `${result.created} club(s) imported${result.errors?.length ? `, ${result.errors.length} row(s) errored` : ""}.`}</div>}
     </div>
   );
 }

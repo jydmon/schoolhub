@@ -1,6 +1,6 @@
 import { requireAuth } from "@/lib/session";
 import { trustDocumentsForUser } from "@/lib/trust";
-import { textPdf } from "@/lib/pdf";
+import { recordDownload, brandedPdf } from "@/lib/download";
 import { handleError } from "@/lib/http";
 
 type Params = { params: { docId: string } };
@@ -27,9 +27,14 @@ export async function GET(_req: Request, { params }: Params) {
     ].filter(Boolean);
     const paragraphs = [...meta, d.summary ? `${d.summary}\n` : "", plain || "(No document text — see the source link.)", d.linkUrl ? `\nSource: ${d.linkUrl}` : ""].filter(Boolean);
 
-    const pdf = textPdf(d.title, paragraphs);
+    // Route through download governance so the PDF carries the standard
+    // branded letterhead, metadata block, footer and audit reference. Trust
+    // documents are platform/trust-level (no school scope), so the letterhead
+    // falls back to the SIPlat brand.
+    const dmeta = await recordDownload(ctx, { section: "Policies & acknowledgements", reportName: d.title, format: "pdf", schoolId: null });
+    const pdf = brandedPdf(dmeta, d.title, paragraphs);
     const safe = d.title.replace(/[^a-z0-9]+/gi, "-").slice(0, 40) || "policy";
-    return new Response(pdf, {
+    return new Response(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="${safe}-v${d.version}.pdf"`,
