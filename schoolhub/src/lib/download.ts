@@ -277,9 +277,9 @@ export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string
       if (meta.trustName) parts.push("BT", "/F1 9 Tf", "1 0 0 1 40 785 Tm", `(${escT(meta.trustName).slice(0, 70)}) Tj`, "ET");
       // Logo (JPEG) top-right, scaled into a 120×70 box.
       if (logo) {
-        const scale = Math.min(120 / logo.w, 70 / logo.h, 1);
+        const scale = Math.min(130 / logo.w, 44 / logo.h, 1);
         const dw = Math.round(logo.w * scale), dh = Math.round(logo.h * scale);
-        parts.push("q", `${dw} 0 0 ${dh} ${555 - dw} ${812 - dh} cm`, "/Im0 Do", "Q");
+        parts.push("q", `${dw} 0 0 ${dh} ${555 - dw} ${838 - dh} cm`, "/Im0 Do", "Q");
       }
       parts.push("0.6 0.6 0.6 RG", "0.5 w", "40 775 m", "555 775 l", "S");
       // Title
@@ -374,9 +374,9 @@ export function brandedDocPdf(meta: DownloadMeta, title: string, blocks: DocBloc
     buf.push("BT", "/F2 16 Tf", "1 0 0 1 40 800 Tm", `(${escT(school).slice(0, 60)}) Tj`, "ET");
     if (meta.trustName) buf.push("BT", "/F1 9 Tf", "1 0 0 1 40 785 Tm", `(${escT(meta.trustName).slice(0, 70)}) Tj`, "ET");
     if (logo) {
-      const scale = Math.min(120 / logo.w, 70 / logo.h, 1);
+      const scale = Math.min(130 / logo.w, 44 / logo.h, 1);
       const dw = Math.round(logo.w * scale), dh = Math.round(logo.h * scale);
-      buf.push("q", `${dw} 0 0 ${dh} ${555 - dw} ${812 - dh} cm`, "/Im0 Do", "Q");
+      buf.push("q", `${dw} 0 0 ${dh} ${555 - dw} ${838 - dh} cm`, "/Im0 Do", "Q");
     }
     buf.push("0.6 0.6 0.6 RG", "0.5 w", "40 775 m", "555 775 l", "S");
     buf.push("BT", "/F2 13 Tf", "1 0 0 1 40 760 Tm", `(${escT(title).slice(0, 80)}) Tj`, "ET");
