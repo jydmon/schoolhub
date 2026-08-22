@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { recordAudit } from "./audit";
 import { AUDIT, ROLE_LABELS } from "./constants";
 import type { Sheet } from "./xls";
+import { inflateSync, deflateSync } from "zlib";
 
 // Download governance: every PDF / Excel / CSV export runs through here so it
 // carries standardised metadata (who/when/where/what + a system audit reference)
@@ -45,6 +46,8 @@ export async function recordDownload(ctx: DownloadCtx, opts: { section: string; 
     const s = await prisma.school.findUnique({ where: { id: opts.schoolId }, select: { name: true, logoUrl: true, group: { select: { name: true } } } }).catch(() => null);
     if (s) { schoolName = s.name; logoUrl = s.logoUrl || null; trustName = s.group?.name || null; }
   }
+  // If the logo is stored as a URL, fetch it so it can be embedded in PDFs.
+  logoUrl = await resolveLogoSource(logoUrl);
   const year = now.getFullYear();
   let reference = `DL-${year}-0000`;
   try {
@@ -132,6 +135,103 @@ function jpegSize(bytes: Uint8Array): { w: number; h: number } | null {
   return null;
 }
 
+// Decode an 8-bit, non-interlaced PNG to raw RGB bytes (alpha composited over
+// white), using the built-in zlib. Handles colour types 0/2/3/4/6. Returns null
+// for anything it can't handle so the logo is simply skipped, never crashes.
+function decodePngToRgb(raw: Buffer): { w: number; h: number; rgb: Buffer } | null {
+  if (raw.length < 8 || raw[0] !== 0x89 || raw[1] !== 0x50) return null;
+  let pos = 8, width = 0, height = 0, bitDepth = 0, colorType = 0, interlace = 0;
+  let palette: Buffer | null = null, trns: Buffer | null = null;
+  const idat: Buffer[] = [];
+  while (pos + 8 <= raw.length) {
+    const len = raw.readUInt32BE(pos);
+    const type = raw.toString("latin1", pos + 4, pos + 8);
+    const data = raw.subarray(pos + 8, pos + 8 + len);
+    if (type === "IHDR") { width = data.readUInt32BE(0); height = data.readUInt32BE(4); bitDepth = data[8]; colorType = data[9]; interlace = data[12]; }
+    else if (type === "PLTE") palette = Buffer.from(data);
+    else if (type === "tRNS") trns = Buffer.from(data);
+    else if (type === "IDAT") idat.push(Buffer.from(data));
+    else if (type === "IEND") break;
+    pos += 12 + len;
+  }
+  if (!width || !height || bitDepth !== 8 || interlace !== 0) return null;
+  const channels = colorType === 2 ? 3 : colorType === 6 ? 4 : colorType === 0 ? 1 : colorType === 4 ? 2 : colorType === 3 ? 1 : 0;
+  if (!channels) return null;
+  let data: Buffer;
+  try { data = inflateSync(Buffer.concat(idat)); } catch { return null; }
+  const stride = width * channels;
+  const out = Buffer.alloc(height * stride);
+  let p = 0;
+  for (let y = 0; y < height; y++) {
+    const ft = data[p++];
+    for (let x = 0; x < stride; x++) {
+      const rb = data[p++] ?? 0;
+      const a = x >= channels ? out[y * stride + x - channels] : 0;
+      const b = y > 0 ? out[(y - 1) * stride + x] : 0;
+      const c = (x >= channels && y > 0) ? out[(y - 1) * stride + x - channels] : 0;
+      let v = rb;
+      if (ft === 1) v = rb + a;
+      else if (ft === 2) v = rb + b;
+      else if (ft === 3) v = rb + ((a + b) >> 1);
+      else if (ft === 4) { const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c); v = rb + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c); }
+      out[y * stride + x] = v & 0xff;
+    }
+  }
+  const rgb = Buffer.alloc(width * height * 3);
+  for (let i = 0, o = 0; i < width * height; i++) {
+    let r = 0, g = 0, bl = 0, al = 255;
+    if (colorType === 2) { r = out[i * 3]; g = out[i * 3 + 1]; bl = out[i * 3 + 2]; }
+    else if (colorType === 6) { r = out[i * 4]; g = out[i * 4 + 1]; bl = out[i * 4 + 2]; al = out[i * 4 + 3]; }
+    else if (colorType === 0) { r = g = bl = out[i]; }
+    else if (colorType === 4) { r = g = bl = out[i * 2]; al = out[i * 2 + 1]; }
+    else if (colorType === 3 && palette) { const idx = out[i]; r = palette[idx * 3]; g = palette[idx * 3 + 1]; bl = palette[idx * 3 + 2]; if (trns && idx < trns.length) al = trns[idx]; }
+    if (al < 255) { const k = al / 255; r = Math.round(r * k + 255 * (1 - k)); g = Math.round(g * k + 255 * (1 - k)); bl = Math.round(bl * k + 255 * (1 - k)); }
+    rgb[o++] = r; rgb[o++] = g; rgb[o++] = bl;
+  }
+  return { w: width, h: height, rgb };
+}
+
+// Resolve a school logo (data-URL, JPEG or PNG) into an embeddable PDF image.
+// JPEG embeds directly (DCTDecode); PNG is decoded to RGB and re-compressed
+// (FlateDecode). Returns null when the logo can't be embedded.
+type PdfImage = { data: string; w: number; h: number; filter: "DCTDecode" | "FlateDecode" };
+function resolveLogo(logoUrl: string | null): PdfImage | null {
+  try {
+    if (!logoUrl) return null;
+    const m = /^data:image\/(png|jpe?g);base64,/i.exec(logoUrl);
+    if (!m) return null;
+    const raw = Buffer.from(logoUrl.slice(logoUrl.indexOf(",") + 1), "base64");
+    if (/png/i.test(m[1])) {
+      const d = decodePngToRgb(raw);
+      if (!d) return null;
+      const comp = deflateSync(d.rgb);
+      return { data: comp.toString("latin1"), w: d.w, h: d.h, filter: "FlateDecode" };
+    }
+    const size = jpegSize(new Uint8Array(raw));
+    if (size && size.w > 0 && size.h > 0) return { data: raw.toString("latin1"), w: size.w, h: size.h, filter: "DCTDecode" };
+    return null;
+  } catch { return null; }
+}
+
+/** Fetch a logo stored as an http(s) URL and return it as a data-URL so it can
+ *  be embedded. Data-URLs pass through unchanged. Non-fatal on any failure. */
+async function resolveLogoSource(logoUrl: string | null): Promise<string | null> {
+  if (!logoUrl) return null;
+  if (/^data:/i.test(logoUrl)) return logoUrl;
+  if (!/^https?:\/\//i.test(logoUrl)) return logoUrl;
+  try {
+    const resp = await fetch(logoUrl);
+    if (!resp.ok) return logoUrl;
+    const ct = (resp.headers.get("content-type") || "").toLowerCase();
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length > 3_000_000) return logoUrl; // guard against huge files
+    const mime = ct.includes("png") ? "image/png" : /jpe?g/.test(ct) ? "image/jpeg"
+      : (buf[0] === 0x89 && buf[1] === 0x50) ? "image/png" : (buf[0] === 0xff && buf[1] === 0xd8) ? "image/jpeg" : null;
+    if (!mime) return logoUrl;
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch { return logoUrl; }
+}
+
 /** Build a branded, paginated PDF from a title + body paragraphs. */
 export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string[]): Buffer {
   const LEAD = 12, BODY_W = 88, BOTTOM = 64;
@@ -141,16 +241,8 @@ export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string
   const metaCount = metadataPairs(meta).length;
   const P1_TOP = 742 - metaCount * 11 - 20;
 
-  // Optional JPEG logo.
-  let logo: { data: string; w: number; h: number } | null = null;
-  try {
-    if (meta.logoUrl && /^data:image\/jpe?g;base64,/i.test(meta.logoUrl)) {
-      const b64 = meta.logoUrl.split(",")[1] || "";
-      const raw = Buffer.from(b64, "base64");
-      const size = jpegSize(new Uint8Array(raw));
-      if (size && size.w > 0 && size.h > 0) logo = { data: raw.toString("latin1"), w: size.w, h: size.h };
-    }
-  } catch { logo = null; }
+  // Optional logo (JPEG or PNG).
+  const logo = resolveLogo(meta.logoUrl);
 
   // Body lines carry a heading flag so section titles render bold (rich text).
   // A paragraph prefixed with "## " becomes a bold heading; everything else is
@@ -232,7 +324,7 @@ export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string
   }
   objs[f1 - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>";
   objs[f2 - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-  if (logo) objs[imgNum - 1] = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.data.length} >>\nstream\n${logo.data}\nendstream`;
+  if (logo) objs[imgNum - 1] = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${logo.filter} /Length ${logo.data.length} >>\nstream\n${logo.data}\nendstream`;
 
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [];
@@ -263,16 +355,8 @@ export function brandedDocPdf(meta: DownloadMeta, title: string, blocks: DocBloc
   const PN_TOP = 795;
   const CW8 = 8 * 0.6, CW9 = 9 * 0.6; // Courier char width by size
 
-  // Optional JPEG logo (same handling as brandedPdf).
-  let logo: { data: string; w: number; h: number } | null = null;
-  try {
-    if (meta.logoUrl && /^data:image\/jpe?g;base64,/i.test(meta.logoUrl)) {
-      const b64 = meta.logoUrl.split(",")[1] || "";
-      const raw = Buffer.from(b64, "base64");
-      const size = jpegSize(new Uint8Array(raw));
-      if (size && size.w > 0 && size.h > 0) logo = { data: raw.toString("latin1"), w: size.w, h: size.h };
-    }
-  } catch { logo = null; }
+  // Optional logo (JPEG or PNG).
+  const logo = resolveLogo(meta.logoUrl);
 
   const pageBufs: string[][] = [];
   let buf: string[] = [];
@@ -369,7 +453,7 @@ export function brandedDocPdf(meta: DownloadMeta, title: string, blocks: DocBloc
   }
   objs[f1 - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>";
   objs[f2 - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-  if (logo) objs[imgNum - 1] = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.data.length} >>\nstream\n${logo.data}\nendstream`;
+  if (logo) objs[imgNum - 1] = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /${logo.filter} /Length ${logo.data.length} >>\nstream\n${logo.data}\nendstream`;
 
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [];
