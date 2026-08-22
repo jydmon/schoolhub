@@ -6,6 +6,7 @@ import ModuleImportCard from "../school/[id]/ModuleImportCard";
 import { stampCsv } from "@/lib/download-client";
 
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
+const pad2 = (n: number) => String(n).padStart(2, "0");
 function dueState(dateStr?: string | null) {
   if (!dateStr) return null;
   const days = Math.round((new Date(`${dateStr}T00:00:00`).getTime() - Date.now()) / 86400000);

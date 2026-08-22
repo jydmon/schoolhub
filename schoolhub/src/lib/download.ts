@@ -152,10 +152,18 @@ export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string
     }
   } catch { logo = null; }
 
-  const body = paragraphs.flatMap((p) => wrap(p, BODY_W));
+  // Body lines carry a heading flag so section titles render bold (rich text).
+  // A paragraph prefixed with "## " becomes a bold heading; everything else is
+  // wrapped normal body text.
+  type BLine = { t: string; h: boolean };
+  const body: BLine[] = [];
+  for (const p of paragraphs) {
+    if (typeof p === "string" && p.startsWith("## ")) body.push({ t: p.slice(3), h: true });
+    else for (const w of wrap(p, BODY_W)) body.push({ t: w, h: false });
+  }
   const p1Cap = Math.max(1, Math.floor((P1_TOP - BOTTOM) / LEAD));
   const pnCap = Math.max(1, Math.floor((PN_TOP - BOTTOM) / LEAD));
-  const pages: string[][] = [];
+  const pages: BLine[][] = [];
   pages.push(body.slice(0, p1Cap));
   let idx = p1Cap;
   while (idx < body.length) { pages.push(body.slice(idx, idx + pnCap)); idx += pnCap; }
@@ -192,10 +200,16 @@ export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string
       }
       parts.push("0.85 0.85 0.85 RG", "0.5 w", `40 ${my - 2} m`, `555 ${my - 2} l`, "S");
     }
-    // Body text
+    // Body text — headings in bold (F2), normal body in Courier (F1), with the
+    // font switched per line inside the text object.
     const top = pi === 0 ? P1_TOP : PN_TOP;
-    parts.push("BT", "/F1 9 Tf", `${LEAD} TL`, `1 0 0 1 40 ${top} Tm`);
-    for (const l of lines) parts.push(`(${escT(l).slice(0, 120)}) Tj`, "T*");
+    parts.push("BT", `${LEAD} TL`, `1 0 0 1 40 ${top} Tm`, "/F1 9 Tf");
+    let cur = "/F1 9 Tf";
+    for (const l of lines) {
+      const f = l.h ? "/F2 10.5 Tf" : "/F1 9 Tf";
+      if (f !== cur) { parts.push(f); cur = f; }
+      parts.push(`(${escT(l.t).slice(0, 120)}) Tj`, "T*");
+    }
     parts.push("ET");
     parts.push(footer(pi + 1));
     return parts.join("\n");

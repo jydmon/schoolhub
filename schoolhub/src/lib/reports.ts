@@ -308,9 +308,10 @@ export function reportToXls(r: Report): Buffer {
 /** Flatten a report into text paragraphs for the branded PDF template
  *  (metrics list followed by the detail table as monospace rows). */
 export function reportToParagraphs(r: Report): string[] {
-  const lines: string[] = [`Generated: ${r.generatedAt}`, "", "Metrics"];
+  // Lines prefixed with "## " are rendered as bold headings by brandedPdf.
+  const lines: string[] = [`Generated: ${r.generatedAt}`, "", "## Summary metrics"];
   r.metrics.forEach((m) => lines.push(`  ${m.label}: ${m.value}`));
-  lines.push("", r.table.headers.join("  |  "));
+  lines.push("", "## Detail", r.table.headers.join("  |  "));
   r.table.rows.forEach((row) => lines.push(row.map((c) => String(c ?? "")).join("  |  ")));
   return lines;
 }
