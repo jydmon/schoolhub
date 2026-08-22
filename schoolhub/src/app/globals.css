@@ -243,17 +243,23 @@ td.nowrap .small { margin-bottom: 2px; }
 .cal-nav { display: inline-flex; gap: 4px; align-items: center; }
 .cal-nav button { padding: 6px 11px; }
 .cal-title { font-size: 16px; font-weight: 700; color: var(--ink); min-width: 150px; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.cal-dow { background: #f7f9fc; text-align: center; padding: 7px 4px; font-size: 11.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--muted); }
-.cal-cell { background: #fff; min-height: 96px; padding: 6px 6px 8px; display: flex; flex-direction: column; gap: 3px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); }
+.cal-dow { background: #f4f6fc; text-align: center; padding: 9px 4px; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.cal-cell { background: #fff; min-height: 120px; padding: 6px 7px 9px; display: flex; flex-direction: column; gap: 4px; transition: background .12s ease; }
+.cal-cell:hover { background: #f8faff; }
 .cal-cell.other { background: #fafbfe; }
-.cal-cell.today { background: #eef4ff; }
-.cal-daynum { font-size: 12px; font-weight: 700; color: var(--ink-soft); align-self: flex-start; }
+.cal-cell.other:hover { background: #f4f6fc; }
+.cal-cell.today { background: #eef4ff; box-shadow: inset 0 0 0 2px var(--brand); }
+.cal-daynum { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); align-self: flex-end; line-height: 1; padding: 2px; border-radius: 999px; transition: background .12s ease; }
+.cal-daynum:hover { background: #e5ecfb; }
 .cal-cell.other .cal-daynum { color: #b6c0d4; }
-.cal-cell.today .cal-daynum { background: var(--brand); color: #fff; border-radius: 999px; min-width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; }
-.cal-ev { text-align: left; border: 0; width: 100%; font-size: 11.5px; line-height: 1.25; padding: 3px 6px; border-radius: 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-weight: 600; }
+.cal-cell.today .cal-daynum { background: var(--brand); color: #fff; min-width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; }
+.cal-cell.today .cal-daynum:hover { filter: brightness(1.1); background: var(--brand); }
+.cal-ev { text-align: left; border: 0; width: 100%; font-size: 11.5px; line-height: 1.3; padding: 4px 7px; border-radius: 7px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-weight: 600; box-shadow: 0 1px 2px rgba(16,24,40,.12); transition: transform .1s ease, filter .1s ease; }
+.cal-ev:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .cal-ev.dim { opacity: .55; }
-.cal-more { font-size: 11px; color: var(--muted); background: transparent; border: 0; cursor: pointer; text-align: left; padding: 0 6px; }
+.cal-more { font-size: 11px; font-weight: 600; color: var(--brand-ink); background: #eef2ff; border: 0; border-radius: 6px; cursor: pointer; text-align: center; padding: 3px 6px; margin-top: 1px; align-self: flex-start; }
+.cal-more:hover { background: #e2e8ff; }
 .cal-week { display: grid; grid-template-columns: 56px 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .cal-wk-day { background: #fff; padding: 8px 10px; }
 .cal-wk-label { background: #f7f9fc; padding: 8px 6px; font-size: 12px; font-weight: 700; color: var(--muted); text-align: right; }
@@ -281,7 +287,7 @@ td.nowrap .small { margin-bottom: 2px; }
 .cal-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 12px; font-size: 12px; color: var(--muted); }
 .cal-legend span { display: inline-flex; align-items: center; }
 @media (max-width: 860px) {
-  .cal-cell { min-height: 76px; }
+  .cal-cell { min-height: 92px; }
   .cal-mini, .cal-mini.year { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
 }
 @media (max-width: 460px) {

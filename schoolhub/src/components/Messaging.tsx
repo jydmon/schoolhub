@@ -222,7 +222,7 @@ export default function Messaging() {
                   const seen = m.mine && idx === lastMineIdx ? readersOf(m.createdAt, m.senderId, members) : [];
                   return (
                     <div key={m.id} className="dm-msg" style={{ textAlign: m.mine ? "right" : "left", margin: "8px 0" }}>
-                      <div style={{ display: "inline-block", maxWidth: "82%", background: m.mine ? "#4f46e5" : "#fff", color: m.mine ? "#fff" : "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "8px 12px", fontSize: 13, textAlign: "left" }}>
+                      <div style={{ display: "inline-block", maxWidth: "82%", background: m.mine ? "#4f46e5" : "#fff", color: m.mine ? "#fff" : "var(--ink)", border: m.mine ? "1px solid #4f46e5" : "1px solid var(--line)", borderRadius: m.mine ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "9px 13px", fontSize: 13, textAlign: "left", boxShadow: "0 1px 2px rgba(16,24,40,.08)" }}>
                         {(!m.mine && conv.thread?.isGroup) && <div style={{ fontSize: 11, opacity: 0.75, fontWeight: 700 }}>{m.senderName}</div>}
                         {m.replyTo && <div style={{ borderLeft: "3px solid rgba(127,127,127,.5)", paddingLeft: 6, margin: "2px 0 4px", fontSize: 11, opacity: 0.8 }}><strong>{m.replyTo.senderName}</strong>: {m.replyTo.snippet}</div>}
                         {m.bodyHtml

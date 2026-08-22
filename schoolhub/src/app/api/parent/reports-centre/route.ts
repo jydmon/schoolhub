@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { requireAuth } from "@/lib/session";
 import { getChildren } from "@/lib/parent";
 import { parentReports } from "@/lib/reports-release";
-import { recordDownload, brandedPdf } from "@/lib/download";
+import { recordDownload, brandedDocPdf, type DocBlock } from "@/lib/download";
 import { handleError, ok } from "@/lib/http";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -72,31 +72,48 @@ export async function GET(req: Request) {
     const meta = { from, to, sections, generatedAt: now, parentEmail: ctx.email };
 
     if (wantPdf) {
-      const paras: string[] = [];
-      paras.push(`Reporting period: ${from} to ${to}`);
-      paras.push("");
+      // Same branded document renderer as the school-admin reports (brandedDocPdf):
+      // school letterhead + logo, the standard metadata block (who/date/time/role/
+      // school/audit reference) and rich content (bold headings + real tables) —
+      // so a parent-downloaded report matches every other portal's output.
       const dt = (v: any) => (v ? new Date(v).toLocaleDateString() : "—");
+      const blocks: DocBlock[] = [];
+      blocks.push({ kind: "text", text: `Reporting period: ${from} to ${to}` });
+      blocks.push({ kind: "text", text: `Sections: ${sections.join(", ") || "—"}` });
       for (const c of perChild) {
-        paras.push("========================================");
-        paras.push(`${c.name}  ·  ${[c.yearGroup, c.className].filter(Boolean).join(" / ") || ""}  ·  ${c.schoolName}`);
-        paras.push("========================================");
+        const sub = [c.yearGroup, c.className].filter(Boolean).join(" / ");
+        blocks.push({ kind: "heading", text: `${c.name}${sub ? " — " + sub : ""} · ${c.schoolName}` });
         if (c.attendance) {
-          paras.push(`ATTENDANCE: ${c.attendance.rate == null ? "no data" : c.attendance.rate + "%"} (present ${c.attendance.present}, late ${c.attendance.late}, absent ${c.attendance.absent}, authorised ${c.attendance.authorised}, sessions ${c.attendance.total})`);
-          for (const r of c.attendance.records.slice(0, 20)) paras.push(`  ${r.date} ${r.session || ""} — ${r.status}${r.note ? " (" + r.note + ")" : ""}`);
+          blocks.push({ kind: "text", text: `Attendance: ${c.attendance.rate == null ? "no data" : c.attendance.rate + "%"} — present ${c.attendance.present}, late ${c.attendance.late}, absent ${c.attendance.absent}, authorised ${c.attendance.authorised}, sessions ${c.attendance.total}` });
+          if (c.attendance.records.length) blocks.push({ kind: "table", headers: ["Date", "Session", "Status", "Note"], rows: c.attendance.records.slice(0, 40).map((r: any) => [r.date, r.session || "", r.status, r.note || ""]) });
         }
         if (c.behaviour) {
-          paras.push(`BEHAVIOUR: +${c.behaviour.positivePoints} positive / -${c.behaviour.negativePoints} negative points`);
-          for (const r of c.behaviour.records.slice(0, 20)) paras.push(`  ${dt(r.at)} ${r.positive ? "＋" : "－"} ${r.type || ""} ${r.points || ""} ${r.note || ""}`.trim());
+          blocks.push({ kind: "text", text: `Behaviour: +${c.behaviour.positivePoints} positive / -${c.behaviour.negativePoints} negative points` });
+          if (c.behaviour.records.length) blocks.push({ kind: "table", headers: ["Date", "Type", "Points", "+/-", "Teacher", "Note"], rows: c.behaviour.records.slice(0, 40).map((r: any) => [dt(r.at), r.type || "", r.points ?? "", r.positive ? "+" : "-", r.teacherName || "", r.note || ""]) });
         }
-        if (c.homework) { paras.push(`HOMEWORK (${c.homework.length}):`); for (const h of c.homework) paras.push(`  due ${dt(h.dueAt)} — ${h.title}${h.subject ? " (" + h.subject + ")" : ""}`); }
-        if (c.academic) { paras.push(`ACADEMIC REPORTS (${c.academic.length}):`); for (const r of c.academic) paras.push(`  ${dt(r.releasedAt)} — ${r.title}${r.term ? " · " + r.term : ""}`); }
-        if (c.trips) { paras.push(`TRIPS (${c.trips.length}):`); for (const t of c.trips) paras.push(`  ${t.date} — ${t.title}${t.destination ? " @ " + t.destination : ""} · consent ${t.consent}`); }
-        if (c.communications) { paras.push(`COMMUNICATIONS (${c.communications.length}):`); for (const m of c.communications.slice(0, 25)) paras.push(`  ${dt(m.at)} — ${m.title}`); }
-        paras.push("");
+        if (c.homework) {
+          blocks.push({ kind: "text", text: `Homework (${c.homework.length})` });
+          if (c.homework.length) blocks.push({ kind: "table", headers: ["Due", "Title", "Subject"], rows: c.homework.map((h: any) => [dt(h.dueAt), h.title || "", h.subject || ""]) });
+        }
+        if (c.academic) {
+          blocks.push({ kind: "text", text: `Academic reports (${c.academic.length})` });
+          if (c.academic.length) blocks.push({ kind: "table", headers: ["Released", "Title", "Term"], rows: c.academic.map((r: any) => [dt(r.releasedAt), r.title || "", r.term || ""]) });
+        }
+        if (c.trips) {
+          blocks.push({ kind: "text", text: `Trips (${c.trips.length})` });
+          if (c.trips.length) blocks.push({ kind: "table", headers: ["Date", "Trip", "Destination", "Consent"], rows: c.trips.map((t: any) => [t.date, t.title || "", t.destination || "", t.consent || ""]) });
+        }
+        if (c.communications) {
+          blocks.push({ kind: "text", text: `Communications (${c.communications.length})` });
+          if (c.communications.length) blocks.push({ kind: "table", headers: ["Date", "Title"], rows: c.communications.slice(0, 40).map((m: any) => [dt(m.at), m.title || ""]) });
+        }
       }
-      if (perChild.length === 0) paras.push("No children match the selected filters.");
-      const dmeta = await recordDownload(ctx, { section: "Reports", reportName: `Family report (${from} to ${to})`, format: "pdf" });
-      const pdf = brandedPdf(dmeta, "Family report", paras);
+      if (perChild.length === 0) blocks.push({ kind: "text", text: "No children match the selected filters." });
+      // Letterhead/logo come from the school; use the filtered school if one is
+      // selected, otherwise the first matched child's school.
+      const schoolId = schoolFilter !== "all" ? schoolFilter : (selected[0]?.school.id ?? null);
+      const dmeta = await recordDownload(ctx, { section: "Reports", reportName: `Family report (${from} to ${to})`, format: "pdf", schoolId });
+      const pdf = brandedDocPdf(dmeta, "Family report", blocks);
       return new Response(new Uint8Array(pdf), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="family-report-${from}_to_${to}.pdf"` } });
     }
 

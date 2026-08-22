@@ -227,7 +227,12 @@ export function ParentTrips() {
     await fetch(`/api/parent/trips/consent`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tripId, studentId, decision }) });
     load();
   }
-  if (trips.length === 0) return null;
+  if (trips.length === 0) return (
+    <div className="panel">
+      <h2>School trips</h2>
+      <p className="sub" style={{ marginBottom: 0 }}>No trips for your children right now. When your school adds a trip, consent requests, itineraries and live updates will appear here.</p>
+    </div>
+  );
   return (
     <div className="panel">
       <h2>School trips</h2>

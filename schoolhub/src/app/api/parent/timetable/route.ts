@@ -15,16 +15,26 @@ export async function GET(req: Request) {
     const c = (wanted && children.find((x) => x.student.id === wanted)) || children[0];
     const className = (c.student as any).class?.name || null;
 
-    const entries = await prisma.timetableEntry.findMany({
-      where: {
-        schoolId: c.school.id,
-        OR: [
-          ...(c.student.yearGroup ? [{ yearGroup: c.student.yearGroup }] : []),
-          ...(className ? [{ className }] : []),
-          { AND: [{ yearGroup: null }, { className: null }] },
-        ],
-      },
+    // Match the child's timetable case/whitespace-insensitively. A common reason
+    // "no timetable" showed even when one was imported is a formatting mismatch
+    // between the imported rows (e.g. "Year 6") and the student record ("year 6"
+    // / " Year 6 "). We fetch the school's entries and filter in-app on a
+    // normalised comparison, still strictly scoped to this child's own year/class
+    // (or whole-school entries with neither set).
+    const norm = (s: string | null | undefined) => (s || "").trim().toLowerCase();
+    const yg = norm(c.student.yearGroup);
+    const cn = norm(className);
+    const all = await prisma.timetableEntry.findMany({
+      where: { schoolId: c.school.id },
       orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+    });
+    const entries = all.filter((e) => {
+      const eyg = norm(e.yearGroup);
+      const ecn = norm(e.className);
+      if (!eyg && !ecn) return true;                 // whole-school slot
+      if (eyg && yg && eyg === yg) return true;       // matches the child's year
+      if (ecn && cn && ecn === cn) return true;       // matches the child's class
+      return false;
     });
     const teacherIds = Array.from(new Set(entries.map((e) => e.teacherUserId).filter(Boolean))) as string[];
     const teachers = teacherIds.length ? await prisma.user.findMany({ where: { id: { in: teacherIds } }, select: { id: true, fullName: true } }) : [];
