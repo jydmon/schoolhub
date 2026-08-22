@@ -243,3 +243,140 @@ export function brandedPdf(meta: DownloadMeta, title: string, paragraphs: string
   pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Buffer.from(pdf, "latin1");
 }
+
+// ---------------------------------------------------------------------------
+// Structured branded PDF (dependency-free) — renders a document made of blocks:
+// bold headings, paragraphs, bullet lists, and real bordered tables (bold header
+// row, ruled grid, aligned columns, page-break with header repeat). Shares the
+// same letterhead / metadata block / footer / logo as brandedPdf.
+// ---------------------------------------------------------------------------
+export type DocBlock =
+  | { kind: "heading"; text: string }
+  | { kind: "text"; text: string; underline?: boolean }
+  | { kind: "bullets"; items: string[] }
+  | { kind: "table"; headers: string[]; rows: (string | number)[][] };
+
+export function brandedDocPdf(meta: DownloadMeta, title: string, blocks: DocBlock[]): Buffer {
+  const LEFT = 40, RIGHT = 555, BOTTOM = 64, W = RIGHT - LEFT;
+  const metaCount = metadataPairs(meta).length;
+  const P1_TOP = 742 - metaCount * 11 - 20;
+  const PN_TOP = 795;
+  const CW8 = 8 * 0.6, CW9 = 9 * 0.6; // Courier char width by size
+
+  // Optional JPEG logo (same handling as brandedPdf).
+  let logo: { data: string; w: number; h: number } | null = null;
+  try {
+    if (meta.logoUrl && /^data:image\/jpe?g;base64,/i.test(meta.logoUrl)) {
+      const b64 = meta.logoUrl.split(",")[1] || "";
+      const raw = Buffer.from(b64, "base64");
+      const size = jpegSize(new Uint8Array(raw));
+      if (size && size.w > 0 && size.h > 0) logo = { data: raw.toString("latin1"), w: size.w, h: size.h };
+    }
+  } catch { logo = null; }
+
+  const pageBufs: string[][] = [];
+  let buf: string[] = [];
+  let y = 0;
+
+  function drawText(s: string, x: number, size: number, font: string) {
+    buf.push("BT", `${font} ${size} Tf`, `1 0 0 1 ${x} ${y} Tm`, `(${escT(s)}) Tj`, "ET");
+  }
+  function pageBreak() { pageBufs.push(buf); buf = []; y = PN_TOP; }
+  function ensure(space: number) { if (y - space < BOTTOM) pageBreak(); }
+
+  // Page 1 letterhead + metadata block.
+  {
+    const school = meta.schoolName || "SIPlat";
+    buf.push("BT", "/F2 16 Tf", "1 0 0 1 40 800 Tm", `(${escT(school).slice(0, 60)}) Tj`, "ET");
+    if (meta.trustName) buf.push("BT", "/F1 9 Tf", "1 0 0 1 40 785 Tm", `(${escT(meta.trustName).slice(0, 70)}) Tj`, "ET");
+    if (logo) {
+      const scale = Math.min(120 / logo.w, 70 / logo.h, 1);
+      const dw = Math.round(logo.w * scale), dh = Math.round(logo.h * scale);
+      buf.push("q", `${dw} 0 0 ${dh} ${555 - dw} ${812 - dh} cm`, "/Im0 Do", "Q");
+    }
+    buf.push("0.6 0.6 0.6 RG", "0.5 w", "40 775 m", "555 775 l", "S");
+    buf.push("BT", "/F2 13 Tf", "1 0 0 1 40 760 Tm", `(${escT(title).slice(0, 80)}) Tj`, "ET");
+    let my = 742;
+    for (const [k, v] of metadataPairs(meta)) { buf.push("BT", "/F1 8 Tf", `1 0 0 1 40 ${my} Tm`, `(${escT(`${k}: ${v}`).slice(0, 110)}) Tj`, "ET"); my -= 11; }
+    buf.push("0.85 0.85 0.85 RG", "0.5 w", `40 ${my - 2} m`, `555 ${my - 2} l`, "S");
+    y = P1_TOP;
+  }
+
+  function heading(text: string) { ensure(30); y -= 18; drawText(text, LEFT, 11, "/F2"); buf.push("0.8 0.8 0.8 RG", "0.5 w", `${LEFT} ${y - 3} m ${RIGHT} ${y - 3} l S`); y -= 14; }
+  function para(text: string, underline?: boolean) {
+    for (const ln of wrap(text, Math.floor(W / CW9))) {
+      ensure(12); y -= 12; drawText(ln, LEFT, 9, "/F1");
+      if (underline) buf.push("0.2 0.2 0.2 RG", "0.4 w", `${LEFT} ${y - 2} m ${LEFT + Math.min(W, ln.length * CW9)} ${y - 2} l S`);
+    }
+  }
+  function bullets(items: string[]) {
+    for (const it of items) {
+      const lines = wrap(it, Math.floor((W - 18) / CW9));
+      lines.forEach((ln, i) => { ensure(12); y -= 12; if (i === 0) drawText("•", LEFT + 3, 9, "/F1"); drawText(ln, LEFT + 18, 9, "/F1"); });
+    }
+  }
+  function table(headers: string[], rows: (string | number)[][]) {
+    const ncols = Math.max(1, headers.length);
+    const colW = W / ncols;
+    const maxChars = Math.max(3, Math.floor((colW - 8) / CW8));
+    const rowH = 16;
+    const trunc = (v: any) => { const s = String(v ?? ""); return s.length > maxChars ? s.slice(0, maxChars - 1) + "…" : s; };
+    const drawRow = (cells: (string | number)[], isHeader: boolean) => {
+      ensure(rowH);
+      const top = y, bottom = y - rowH;
+      buf.push("0.72 0.72 0.72 RG", "0.5 w", `${LEFT} ${bottom} ${W.toFixed(2)} ${rowH} re S`);
+      for (let c = 1; c < ncols; c++) { const x = (LEFT + c * colW).toFixed(2); buf.push(`${x} ${top} m ${x} ${bottom} l S`); }
+      const ty = top - 11;
+      for (let c = 0; c < ncols; c++) { const x = (LEFT + c * colW + 4).toFixed(2); buf.push("BT", `${isHeader ? "/F2" : "/F1"} 8 Tf`, `1 0 0 1 ${x} ${ty} Tm`, `(${escT(trunc(cells[c]))}) Tj`, "ET"); }
+      y = bottom;
+    };
+    ensure(rowH * 2); // keep header with at least one row
+    drawRow(headers, true);
+    for (const r of rows) { if (y - rowH < BOTTOM) { pageBreak(); drawRow(headers, true); } drawRow(r, false); }
+    y -= 8;
+  }
+
+  for (const b of blocks) {
+    if (b.kind === "heading") heading(b.text);
+    else if (b.kind === "bullets") bullets(b.items);
+    else if (b.kind === "table") table(b.headers, b.rows);
+    else para(b.text, b.underline);
+  }
+  pageBufs.push(buf);
+
+  const totalPages = pageBufs.length;
+  const footer = (n: number) => {
+    const left = `SIPlat${meta.schoolName ? " · " + meta.schoolName : ""} · Ref ${meta.reference}`;
+    const right = `Page ${n} of ${totalPages} · Generated ${meta.downloadedAt}`;
+    return ["BT", "/F1 8 Tf", "1 0 0 1 40 44 Tm", `(${escT(left).slice(0, 70)}) Tj`, "ET",
+      "BT", "/F1 8 Tf", "1 0 0 1 300 44 Tm", `(${escT(right).slice(0, 60)}) Tj`, "ET"].join("\n");
+  };
+  const contents = pageBufs.map((p, i) => p.join("\n") + "\n" + footer(i + 1));
+
+  const objs: string[] = [];
+  let next = 3;
+  const contentNums: number[] = [], pageNums: number[] = [];
+  for (let i = 0; i < contents.length; i++) { contentNums.push(next++); pageNums.push(next++); }
+  const f1 = next++, f2 = next++;
+  const imgNum = logo ? next++ : 0;
+
+  objs[0] = "<< /Type /Catalog /Pages 2 0 R >>";
+  objs[1] = `<< /Type /Pages /Kids [${pageNums.map((n) => `${n} 0 R`).join(" ")}] /Count ${pageNums.length} >>`;
+  for (let i = 0; i < contents.length; i++) {
+    objs[contentNums[i] - 1] = `<< /Length ${contents[i].length} >>\nstream\n${contents[i]}\nendstream`;
+    const res = `<< /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >>${logo && i === 0 ? ` /XObject << /Im0 ${imgNum} 0 R >>` : ""} >>`;
+    objs[pageNums[i] - 1] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources ${res} /Contents ${contentNums[i]} 0 R >>`;
+  }
+  objs[f1 - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>";
+  objs[f2 - 1] = "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+  if (logo) objs[imgNum - 1] = `<< /Type /XObject /Subtype /Image /Width ${logo.w} /Height ${logo.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.data.length} >>\nstream\n${logo.data}\nendstream`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objs.forEach((o, i) => { offsets.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  offsets.forEach((off) => { pdf += `${String(off).padStart(10, "0")} 00000 n \n`; });
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf, "latin1");
+}

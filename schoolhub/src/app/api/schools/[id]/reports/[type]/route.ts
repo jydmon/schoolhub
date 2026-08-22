@@ -2,8 +2,8 @@ import { requireAuth } from "@/lib/session";
 import { assertTenantAccess } from "@/lib/tenant";
 import { assertCan } from "@/lib/rbac";
 import { PERMISSIONS } from "@/lib/constants";
-import { buildReport, reportToCsv, reportToParagraphs, reportSheets } from "@/lib/reports";
-import { recordDownload, brandedPdf, csvWithMetadata, xlsMetaSheet } from "@/lib/download";
+import { buildReport, reportToCsv, reportToBlocks, reportSheets } from "@/lib/reports";
+import { recordDownload, brandedDocPdf, csvWithMetadata, xlsMetaSheet } from "@/lib/download";
 import { sheetsToXls } from "@/lib/xls";
 import { handleError, ok } from "@/lib/http";
 
@@ -38,7 +38,7 @@ export async function GET(req: Request, { params }: Params) {
     }
     if (format === "pdf") {
       const dmeta = await recordDownload(ctx, { section: "Reports", reportName: report.title, format: "pdf", schoolId: params.id });
-      return new Response(new Uint8Array(brandedPdf(dmeta, report.title, reportToParagraphs(report))), {
+      return new Response(new Uint8Array(brandedDocPdf(dmeta, report.title, reportToBlocks(report))), {
         headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${base}.pdf"` },
       });
     }

@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { todayStr } from "./transport";
 import { sheetsToXls, type Sheet } from "./xls";
+import type { DocBlock } from "./download";
 
 const dayStr = (offset: number) => {
   const d = new Date(); d.setDate(d.getDate() + offset);
@@ -314,6 +315,18 @@ export function reportToParagraphs(r: Report): string[] {
   lines.push("", "## Detail", r.table.headers.join("  |  "));
   r.table.rows.forEach((row) => lines.push(row.map((c) => String(c ?? "")).join("  |  ")));
   return lines;
+}
+
+/** Structured blocks for the rich branded PDF: metrics and the detail grid are
+ *  rendered as real bordered tables, with bold section headings. */
+export function reportToBlocks(r: Report): DocBlock[] {
+  return [
+    { kind: "text", text: `Generated: ${r.generatedAt}` },
+    { kind: "heading", text: "Summary metrics" },
+    { kind: "table", headers: ["Metric", "Value"], rows: r.metrics.map((m) => [m.label, m.value]) },
+    { kind: "heading", text: "Detail" },
+    { kind: "table", headers: r.table.headers, rows: r.table.rows },
+  ];
 }
 
 /** Minimal, dependency-free single-page PDF of a report (text lines). */
