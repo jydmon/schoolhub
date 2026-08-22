@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const TABS = ["Profile", "Attendance", "Behaviour", "Homework", "Reports", "Trips", "Contacts", "Messages"];
 const dt = (v: any) => (v ? new Date(v).toLocaleString() : "—");
@@ -67,20 +67,7 @@ export default function ParentChildren({ children }: { children: { id: string; n
               </tbody></table>
             )}
 
-            {tab === "Attendance" && (
-              <>
-                <div className="stat-grid">
-                  <div className="stat"><div className="n">{data.attendance.summary.rate != null ? `${data.attendance.summary.rate}%` : "—"}</div><div className="l">Attendance (60 days)</div></div>
-                  <div className="stat"><div className="n">{data.attendance.summary.present}</div><div className="l">Present</div></div>
-                  <div className="stat"><div className="n">{data.attendance.summary.late}</div><div className="l">Late</div></div>
-                  <div className="stat"><div className="n" style={{ color: data.attendance.summary.absent ? "var(--danger)" : undefined }}>{data.attendance.summary.absent}</div><div className="l">Absent</div></div>
-                </div>
-                <table style={{ marginTop: 12 }}><thead><tr><th>Date</th><th>Session</th><th>Status</th><th>Note</th></tr></thead><tbody>
-                  {data.attendance.records.map((a: any, i: number) => <tr key={i}><td className="mono muted">{a.date}</td><td>{a.session}</td><td><span className={`badge ${attBadge(a.status)}`}>{a.status}</span></td><td className="muted">{a.note || ""}</td></tr>)}
-                  {data.attendance.records.length === 0 && <tr><td colSpan={4} className="muted">No attendance recorded in this period.</td></tr>}
-                </tbody></table>
-              </>
-            )}
+            {tab === "Attendance" && <ParentAttendance childId={childId} />}
 
             {tab === "Behaviour" && (
               <table><thead><tr><th>When</th><th>Type</th><th>Points</th><th>Note</th><th>By</th></tr></thead><tbody>
@@ -192,5 +179,94 @@ function ReportReader({ report }: { report: any }) {
 
       {report.fileUrl && <p style={{ marginTop: 12 }}><a className="linklike" href={report.fileUrl} target="_blank" rel="noreferrer">📎 Download attached report file</a></p>}
     </div>
+  );
+}
+
+/* ---------------------------- Attendance (filtered) ---------------------- */
+const ATT_STATUSES = ["present", "late", "authorised", "unauthorised", "excused", "absent"];
+const ATT_SESSIONS: [string, string][] = [["am", "Morning"], ["pm", "Afternoon"], ["day", "Full day"]];
+type PMode = "day" | "week" | "month" | "quarter" | "term" | "year";
+const PMODES: [PMode, string][] = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["quarter", "Quarter"], ["term", "Term"], ["year", "Year"]];
+const pIso = (d: Date) => d.toISOString().slice(0, 10);
+
+// {from,to} window for a mode around an anchor day. Quarters are calendar
+// quarters; terms/years follow the UK academic convention (Sep–Aug).
+function pRange(mode: PMode, anchor: string): { from: string; to: string; label: string } {
+  const a = new Date(anchor + "T00:00:00Z");
+  const y = a.getUTCFullYear(), m = a.getUTCMonth(), dd = a.getUTCDate();
+  if (mode === "day") return { from: anchor, to: anchor, label: anchor };
+  if (mode === "week") {
+    const dow = (a.getUTCDay() + 6) % 7;
+    const mon = new Date(Date.UTC(y, m, dd - dow)), sun = new Date(Date.UTC(y, m, dd - dow + 6));
+    return { from: pIso(mon), to: pIso(sun), label: `Week of ${pIso(mon)}` };
+  }
+  if (mode === "month") {
+    const first = new Date(Date.UTC(y, m, 1)), last = new Date(Date.UTC(y, m + 1, 0));
+    return { from: pIso(first), to: pIso(last), label: a.toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" }) };
+  }
+  if (mode === "quarter") {
+    const q = Math.floor(m / 3), qs = q * 3;
+    const first = new Date(Date.UTC(y, qs, 1)), last = new Date(Date.UTC(y, qs + 3, 0));
+    return { from: pIso(first), to: pIso(last), label: `Q${q + 1} ${y}` };
+  }
+  if (mode === "term") {
+    if (m >= 8) return { from: `${y}-09-01`, to: `${y}-12-31`, label: `Autumn term ${y}` };
+    if (m <= 2) return { from: `${y}-01-01`, to: `${y}-03-31`, label: `Spring term ${y}` };
+    return { from: `${y}-04-01`, to: `${y}-08-31`, label: `Summer term ${y}` };
+  }
+  const start = m >= 8 ? y : y - 1;
+  return { from: `${start}-09-01`, to: `${start + 1}-08-31`, label: `${start}/${start + 1} academic year` };
+}
+
+function ParentAttendance({ childId }: { childId: string }) {
+  const [mode, setMode] = useState<PMode>("month");
+  const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10));
+  const [status, setStatus] = useState("");
+  const [session, setSession] = useState("");
+  const [data, setData] = useState<any>(null);
+  const range = useMemo(() => pRange(mode, anchor), [mode, anchor]);
+
+  const load = useCallback(async () => {
+    const qs = new URLSearchParams({ from: range.from, to: range.to });
+    if (childId) qs.set("student", childId);
+    if (status) qs.set("status", status);
+    if (session) qs.set("session", session);
+    const d = await fetch(`/api/parent/attendance?${qs}`).then((r) => r.json()).catch(() => null);
+    setData(d);
+  }, [childId, range.from, range.to, status, session]);
+  useEffect(() => { load(); }, [load]);
+
+  function shift(dir: number) {
+    const a = new Date(anchor + "T00:00:00Z");
+    const step = mode === "day" ? 1 : mode === "week" ? 7 : mode === "month" ? 30 : mode === "quarter" ? 91 : mode === "term" ? 120 : 365;
+    a.setUTCDate(a.getUTCDate() + dir * step); setAnchor(pIso(a));
+  }
+
+  const summary = data?.summary;
+  const records: any[] = data?.records ?? [];
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <div className="seg" style={{ display: "inline-flex", gap: 4 }}>{PMODES.map(([mk, ml]) => <button key={mk} className={mk === mode ? "small" : "secondary small"} onClick={() => setMode(mk)}>{ml}</button>)}</div>
+        <button className="secondary small" onClick={() => shift(-1)} title="Previous">‹</button>
+        <input type="date" value={anchor} onChange={(e) => setAnchor(e.target.value)} style={{ width: "auto" }} />
+        <button className="secondary small" onClick={() => shift(1)} title="Next">›</button>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: "auto" }}><option value="">All statuses</option>{ATT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+        <select value={session} onChange={(e) => setSession(e.target.value)} style={{ width: "auto" }}><option value="">All sessions</option>{ATT_SESSIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>Showing <strong>{range.label}</strong>{mode !== "day" ? ` (${range.from} → ${range.to})` : ""}.</p>
+      {summary && (
+        <div className="stat-grid">
+          <div className="stat"><div className="n">{summary.rate != null ? `${summary.rate}%` : "—"}</div><div className="l">Attendance</div></div>
+          <div className="stat"><div className="n">{summary.present}</div><div className="l">Present</div></div>
+          <div className="stat"><div className="n">{summary.late}</div><div className="l">Late</div></div>
+          <div className="stat"><div className="n" style={{ color: summary.absent ? "var(--danger)" : undefined }}>{summary.absent}</div><div className="l">Absent</div></div>
+        </div>
+      )}
+      <table style={{ marginTop: 12 }}><thead><tr><th>Date</th><th>Session</th><th>Status</th><th>Note</th></tr></thead><tbody>
+        {records.map((a: any, i: number) => <tr key={i}><td className="mono muted">{a.date}</td><td>{a.session}</td><td><span className={`badge ${attBadge(a.status)}`}>{a.status}</span></td><td className="muted">{a.note || ""}</td></tr>)}
+        {records.length === 0 && <tr><td colSpan={4} className="muted">No attendance for {range.label}. Widen the range or adjust filters.</td></tr>}
+      </tbody></table>
+    </>
   );
 }
