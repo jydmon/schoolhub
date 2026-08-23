@@ -261,15 +261,15 @@ export default function Messaging() {
         .dm-mention { background: rgba(79,70,229,.14); color: inherit; border-radius: 4px; padding: 0 3px; font-weight: 600; }
         .dm-editor:empty:before { content: attr(data-placeholder); color: #9aa3b2; }
         .dm-editor:focus { outline: 2px solid #c7d2fe; }
-        .dm-tool { border: 1px solid var(--line); background: #fff; border-radius: 6px; width: 30px; height: 28px; cursor: pointer; font-size: 13px; }
+        .dm-tool { display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 6px; width: 30px; height: 28px; cursor: pointer; font-size: 13px; font-weight: 700; box-shadow: none; padding: 0; }
         .dm-emoji-pop, .dm-mention-pop { position: absolute; z-index: 20; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
         .dm-emoji-pop { display: grid; grid-template-columns: repeat(10, 1fr); gap: 2px; width: 320px; }
-        .dm-emoji-pop button { border: none; background: transparent; font-size: 18px; cursor: pointer; padding: 3px; border-radius: 6px; }
-        .dm-emoji-pop button:hover { background: #eef2ff; }
+        .dm-emoji-pop button { border: none; background: transparent; color: var(--ink); font-size: 18px; cursor: pointer; padding: 3px; border-radius: 6px; box-shadow: none; }
+        .dm-emoji-pop button:hover { background: #eef2ff; box-shadow: none; transform: none; filter: none; }
         .dm-mention-pop { width: 240px; max-height: 200px; overflow-y: auto; }
-        .dm-mention-pop button { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 5px 8px; cursor: pointer; font-size: 13px; border-radius: 6px; }
-        .dm-mention-pop button:hover { background: #eef2ff; }
-        .dm-react { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 1px 7px; font-size: 12px; cursor: pointer; }
+        .dm-mention-pop button { display: block; width: 100%; text-align: left; border: none; background: transparent; color: var(--ink); padding: 5px 8px; cursor: pointer; font-size: 13px; font-weight: 500; border-radius: 6px; box-shadow: none; }
+        .dm-mention-pop button:hover { background: #eef2ff; box-shadow: none; transform: none; filter: none; }
+        .dm-react { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 12px; padding: 1px 7px; font-size: 12px; cursor: pointer; box-shadow: none; font-weight: 500; }
         .dm-react.mine { background: #eef2ff; border-color: #c7d2fe; }
         .dm-reply-btn { border: none; background: transparent; color: #6b7280; font-size: 11px; cursor: pointer; padding: 1px 4px; }
         .dm-reply-btn:hover { color: #4f46e5; text-decoration: underline; }
@@ -377,7 +377,7 @@ function RichComposer({ editorRef, onAddFiles, pending, onRemove, onEnter, menti
       )}
       <style>{`
         .dm-toolbar { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; flex-wrap: wrap; }
-        .dm-tool:hover { background: #eef2ff; border-color: #c7d2fe; }
+        .dm-tool:hover { background: #eef2ff; border-color: #c7d2fe; box-shadow: none; transform: none; filter: none; }
         .dm-tool-sep { width: 1px; height: 20px; background: var(--line); margin: 0 3px; }
         .dm-editor { min-height: 46px; max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 14px; line-height: 1.5; background: #fff; }
         .dm-editor a { color: #4f46e5; text-decoration: underline; }
