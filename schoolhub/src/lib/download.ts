@@ -414,10 +414,11 @@ export function brandedDocPdf(meta: DownloadMeta, title: string, blocks: DocBloc
       for (let c = 0; c < ncols; c++) { const x = (LEFT + c * colW + 4).toFixed(2); buf.push("BT", `${isHeader ? "/F2" : "/F1"} 8 Tf`, `1 0 0 1 ${x} ${ty} Tm`, `(${escT(trunc(cells[c]))}) Tj`, "ET"); }
       y = bottom;
     };
+    y -= 8; // breathing room between the preceding text/label and the table
     ensure(rowH * 2); // keep header with at least one row
     drawRow(headers, true);
     for (const r of rows) { if (y - rowH < BOTTOM) { pageBreak(); drawRow(headers, true); } drawRow(r, false); }
-    y -= 8;
+    y -= 10;
   }
 
   for (const b of blocks) {
