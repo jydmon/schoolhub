@@ -46,7 +46,7 @@ export type FieldMap = { domain: string; externalField: string; internalField: s
 export type Connector = {
   key: string;
   name: string;
-  category: "mis" | "identity" | "calendar" | "docs" | "maps" | "gps" | "email" | "behaviour";
+  category: "mis" | "identity" | "calendar" | "docs" | "maps" | "gps" | "email" | "behaviour" | "government" | "custom";
   description: string;
   methods: IntegrationMethod[];
   domains: string[]; // data domains this connector can own
@@ -222,6 +222,31 @@ export const CONNECTOR_CATALOG: Connector[] = [
       { domain: "rewards", externalField: "Points", internalField: "reward.points", direction: "in" },
       { domain: "rewards", externalField: "PupilRef", internalField: "student.reference", direction: "in" },
     ],
+  },
+  {
+    // Generic REST/JSON connector — lets a school (scaffolded by the super admin)
+    // connect any provider not yet in the catalog by supplying a base URL + auth.
+    key: "generic-rest",
+    name: "Generic REST API",
+    category: "custom",
+    description: "Connect any REST/JSON API by base URL — for providers not yet in the catalog. Configurable shell; the school supplies the endpoint and credentials.",
+    methods: ["rest", "scheduled", "webhook", "manual"],
+    domains: [],
+    sourceLabel: "Custom API",
+    defaultMappings: [],
+  },
+  {
+    // DfE "Find and use an API" service (e.g. GIAS establishment data). Register
+    // the application on the DfE portal to obtain sandbox — then production —
+    // access; the school then adds the sandbox base URL + credentials.
+    key: "dfe-find-use-api",
+    name: "DfE — Find and use an API",
+    category: "government",
+    description: "Department for Education 'Find and use an API' service. Register your application on the DfE portal for sandbox (then production) access, then connect with the sandbox base URL + credentials.",
+    methods: ["rest", "scheduled"],
+    domains: [],
+    sourceLabel: "DfE Find & use an API",
+    defaultMappings: [],
   },
 ];
 

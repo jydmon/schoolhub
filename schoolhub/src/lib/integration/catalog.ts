@@ -12,7 +12,7 @@ import { CONNECTOR_CATALOG, getConnector } from "../connectors";
 export const CONNECTOR_CATEGORIES = [
   "mis", "rostering", "lms", "behaviour", "safeguarding", "attendance", "payment", "meals",
   "calendar", "email", "docs", "gps", "maps", "navigation", "identity",
-  "communication", "storage", "custom",
+  "communication", "storage", "government", "custom",
 ] as const;
 export type ConnectorCategory = (typeof CONNECTOR_CATEGORIES)[number];
 
@@ -22,7 +22,7 @@ export const CATEGORY_LABELS: Record<ConnectorCategory, string> = {
   payment: "Payment Platform", meals: "School Meals",
   calendar: "Calendar", email: "Email", docs: "Document Repository", gps: "GPS & Telematics",
   maps: "Maps & Routing", navigation: "Navigation (deep-link)", identity: "Identity Provider",
-  communication: "Communication Platform", storage: "File Storage", custom: "Custom Integration",
+  communication: "Communication Platform", storage: "File Storage", government: "Government / DfE", custom: "Custom Integration",
 };
 
 export const CONNECTION_TYPES = ["rest", "webhook", "sftp", "cloud_files", "file_upload", "oauth_api"] as const;
@@ -254,6 +254,9 @@ export const HUB_CATALOG: ConnectorTemplate[] = [
   { key: "excel-import", name: "Excel import", provider: "SchoolHub", category: "custom", description: "Upload an .xlsx; preview, map, validate, import.", connectionType: "file_upload", authMethod: "none", supportedObjects: ["Student", "Parent", "Staff"], supportedOperations: ["import"], status: "available", setupComplexity: "low", defaultFrequency: "manual", requiresProviderCredentials: false, configFields: [], icon: "📊" },
   { key: "json-import", name: "JSON import", provider: "SchoolHub", category: "custom", description: "Upload a JSON array; map, validate, import.", connectionType: "file_upload", authMethod: "none", supportedObjects: ["*"], supportedOperations: ["import"], status: "available", setupComplexity: "low", defaultFrequency: "manual", requiresProviderCredentials: false, configFields: [], icon: "🧾" },
   { key: "xml-import", name: "XML import", provider: "SchoolHub", category: "custom", description: "Upload XML (e.g. CTF); map, validate, import.", connectionType: "file_upload", authMethod: "none", supportedObjects: ["Student"], supportedOperations: ["import"], status: "beta", setupComplexity: "medium", defaultFrequency: "manual", requiresProviderCredentials: false, configFields: [], icon: "📑" },
+
+  // --- Government / DfE ---
+  { key: "dfe-find-use-api", name: "DfE — Find and use an API (sandbox)", provider: "Department for Education", category: "government", description: "DfE 'Find and use an API' service (e.g. establishment data). Register your application on the DfE portal to obtain sandbox — then production — access, then supply the sandbox base URL and credentials here. Configurable shell — we never call an API you haven't authorised.", connectionType: "rest", authMethod: "oauth2", supportedObjects: ["Establishment", "*"], supportedOperations: ["read", "import"], status: "custom", setupComplexity: "high", defaultFrequency: "daily", requiresProviderCredentials: true, configFields: [{ key: "baseUrl", label: "Sandbox base URL", type: "url", required: true, help: "The sandbox endpoint shown on the specific DfE API's documentation page." }, { key: "clientId", label: "Client ID", type: "text", help: "For OAuth2 / client-credentials APIs." }, { key: "clientSecret", label: "Client secret", type: "secret", secret: true }, { key: "apiKey", label: "API / subscription key", type: "secret", secret: true, help: "If the DfE API uses a subscription/API key instead of OAuth." }, { key: "scheduleCron", label: "Schedule (cron, optional)", type: "text" }], docsUrl: "https://find-and-use-an-api.education.gov.uk/", icon: "🏛️" },
 ];
 
 export function getTemplate(key: string): ConnectorTemplate | undefined {
