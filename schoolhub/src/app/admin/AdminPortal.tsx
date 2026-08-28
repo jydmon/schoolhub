@@ -569,7 +569,7 @@ function Groups() {
 function Team() {
   const { data, err, reload } = useJson<any>("/api/platform/staff");
   const roles = useJson<any>("/api/platform/staff/roles");
-  const [f, setF] = useState({ userId: "", email: "", name: "", roleKey: "", scopeCounties: "", scopeCountries: "" });
+  const [f, setF] = useState({ userId: "", email: "", name: "", password: "", roleKey: "", scopeCounties: "", scopeCountries: "" });
   const [msg, setMsg] = useState<{ k: string; t: string } | null>(null);
   // Custom-role builder
   const [rf, setRf] = useState<{ name: string; areas: Record<string, boolean> }>({ name: "", areas: {} });
@@ -586,10 +586,13 @@ function Team() {
     e.preventDefault(); setMsg(null);
     try {
       const roleKey = effRoleKey;
-      const payload: any = { userId: f.userId, email: f.email, name: f.name, roleKey };
+      const payload: any = { email: f.email, name: f.name, roleKey };
+      if (f.userId.trim()) payload.userId = f.userId.trim();
+      if (f.password) payload.password = f.password;
       if (roleKey === "account_manager") { payload.scopeCounties = splitList(f.scopeCounties); payload.scopeCountries = splitList(f.scopeCountries); }
-      await send("/api/platform/staff", payload);
-      setMsg({ k: "ok", t: "Staff member saved." }); setF({ userId: "", email: "", name: "", roleKey: "", scopeCounties: "", scopeCountries: "" }); reload();
+      const res: any = await send("/api/platform/staff", payload);
+      setMsg({ k: "ok", t: res?.userCreated ? "Account created. They can sign in with their email and the temporary password you set, then change it in their profile." : res?.passwordSet ? "Staff member saved; temporary password updated." : "Staff member saved." });
+      setF({ userId: "", email: "", name: "", password: "", roleKey: "", scopeCounties: "", scopeCountries: "" }); reload();
     }
     catch (e: any) { setMsg({ k: "err", t: e.message }); }
   }
@@ -675,17 +678,24 @@ function Team() {
 
       <div className="panel">
         <h2>Add / update a staff member</h2>
-        <p className="sub">Grant an existing user platform-staff access with a role. Roles: {roleList.map((r) => r.name).join(", ") || "loading…"}</p>
+        <p className="sub">Add a platform staff member (e.g. an Account Manager) by email. If they don&apos;t already have a SIPlat account, set a temporary password — they sign in to the staff portal with their email and that password, then change it in their profile. Roles: {roleList.map((r) => r.name).join(", ") || "loading…"}</p>
         <Notice msg={msg} />
         <form onSubmit={add}>
           <div className="row">
-            <div><label>User ID</label><input value={f.userId} onChange={(e) => setF({ ...f, userId: e.target.value })} required /></div>
             <div><label>Email</label><input type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} required /></div>
+            <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
           </div>
           <div className="row">
-            <div><label>Name</label><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
             <div><label>Role</label><select value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value })}>{roleList.map((r) => <option key={r.key} value={r.key}>{r.name}</option>)}</select></div>
+            <div><label>Temporary password {f.userId.trim() ? "(optional)" : ""}</label><input type="text" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} minLength={8} placeholder="at least 8 characters" autoComplete="new-password" /></div>
           </div>
+          <details style={{ margin: "2px 0 8px" }}>
+            <summary className="muted" style={{ fontSize: 12, cursor: "pointer" }}>Advanced — link an existing account by User ID</summary>
+            <div className="row" style={{ marginTop: 6 }}>
+              <div><label>Existing User ID (optional)</label><input value={f.userId} onChange={(e) => setF({ ...f, userId: e.target.value })} placeholder="leave blank to match/create by the email above" /></div>
+              <div />
+            </div>
+          </details>
           {isAM && (
             <>
               <div className="notice info" style={{ marginTop: 4 }}>An Account Manager covers a geographic portfolio of schools. Enter the counties/states and/or countries they cover — a school is in their portfolio if its county or country matches. Separate multiple entries with commas.</div>

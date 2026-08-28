@@ -1,6 +1,7 @@
 import { prisma } from "./db";
 import { recordAudit } from "./audit";
 import { AUDIT } from "./constants";
+import { hashPassword } from "./auth";
 import { PLATFORM_ROLES, validateStaff, normalizeAreas, canAccessArea, normalizeScope, managerCoversSchool } from "./platform-staff-logic";
 
 // SIPlat internal staff & access management (platform plane, separate from tenant
@@ -64,27 +65,58 @@ export async function listStaff() {
   }));
 }
 
-/** Add or update a staff member's role/status. */
+/** Add or update a staff member's role/status. If no userId is supplied, the
+ *  user is resolved by email — found if they already have a SIPlat account, or
+ *  created with a temporary password so they can sign in to the staff portal. */
 export async function upsertStaff(input: {
-  userId: string; email: string; name?: string; roleKey: string; status?: string;
+  userId?: string; email: string; name?: string; password?: string; roleKey: string; status?: string;
   scopeCounties?: string[]; scopeCountries?: string[]; actorUserId?: string | null;
-}): Promise<{ id: string }> {
+}): Promise<{ id: string; userId: string; userCreated: boolean; passwordSet: boolean }> {
   await ensurePlatformRoles();
   const roleKeys = (await prisma.platformRole.findMany({ select: { key: true } })).map((r) => r.key);
   const check = validateStaff(input, roleKeys);
   if (!check.ok) throw new Error(check.reason);
+
+  // Resolve the user this staff record belongs to. Prefer an explicit userId;
+  // otherwise find-or-create by email so the super admin can onboard a brand-new
+  // account manager (with a temporary password) without a pre-existing account.
+  const email = input.email.toLowerCase().trim();
+  let userId = (input.userId ?? "").trim();
+  let userCreated = false;
+  let passwordSet = false;
+  if (!userId) {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      userId = existing.id;
+      if (input.name && !existing.fullName) await prisma.user.update({ where: { id: existing.id }, data: { fullName: input.name } });
+      // Only (re)set the password for an existing user if one was explicitly supplied.
+      if (input.password) { await prisma.user.update({ where: { id: existing.id }, data: { passwordHash: await hashPassword(input.password) } }); passwordSet = true; }
+    } else {
+      if (!input.password || input.password.length < 8) {
+        throw new Error("Set a temporary password (at least 8 characters) so the new staff member can sign in.");
+      }
+      const created = await prisma.user.create({
+        data: { email, fullName: input.name ?? null, passwordHash: await hashPassword(input.password), status: "active" },
+      });
+      userId = created.id; userCreated = true; passwordSet = true;
+    }
+  } else {
+    // Explicit userId path: optionally (re)set a temporary password if supplied.
+    if (input.password) { await prisma.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(input.password) } }); passwordSet = true; }
+  }
+
   // Geo scope only applies to the Account Manager role; clear it for any other role.
   const geo = input.roleKey === "account_manager";
   const counties = geo ? normalizeScope(input.scopeCounties) : [];
   const countries = geo ? normalizeScope(input.scopeCountries) : [];
   const scope = { scopeCountiesJson: JSON.stringify(counties), scopeCountriesJson: JSON.stringify(countries) };
   const s = await prisma.platformStaff.upsert({
-    where: { userId: input.userId },
-    update: { email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", ...scope },
-    create: { userId: input.userId, email: input.email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", invitedById: input.actorUserId ?? null, ...scope },
+    where: { userId },
+    update: { email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", ...scope },
+    create: { userId, email, name: input.name ?? null, roleKey: input.roleKey, status: input.status ?? "active", invitedById: input.actorUserId ?? null, ...scope },
   });
-  await recordAudit({ action: AUDIT.STAFF_UPDATED, actorUserId: input.actorUserId, targetType: "PlatformStaff", targetId: s.id, metadata: { roleKey: input.roleKey, status: input.status ?? "active", scopeCounties: counties, scopeCountries: countries } });
-  return { id: s.id };
+  await recordAudit({ action: AUDIT.STAFF_UPDATED, actorUserId: input.actorUserId, targetType: "PlatformStaff", targetId: s.id, metadata: { roleKey: input.roleKey, status: input.status ?? "active", scopeCounties: counties, scopeCountries: countries, userCreated, passwordSet } });
+  return { id: s.id, userId, userCreated, passwordSet };
 }
 
 export async function setStaffStatus(id: string, status: string, actor?: { userId?: string | null }): Promise<void> {

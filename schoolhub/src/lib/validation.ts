@@ -829,9 +829,12 @@ export const previewSchema = z.object({
 
 const scopeList = z.array(z.string().max(80)).max(200).optional();
 export const platformStaffSchema = z.object({
-  userId: z.string().min(1),
+  // userId is optional: if omitted, the staff member is resolved (or created) by
+  // email. A temporary password creates a brand-new sign-in when the email is new.
+  userId: z.string().min(1).optional(),
   email: z.string().email(),
   name: z.string().max(120).optional(),
+  password: z.string().min(8).max(200).optional(),
   roleKey: z.string().min(1),
   status: z.enum(["active", "suspended", "invited"]).optional(),
   scopeCounties: scopeList,
